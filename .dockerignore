@@ -1,0 +1,8 @@
+# sử dụng docker ignore để lờ đi khi mà đẩy lên dockerhub, sẽ bỏ qua những file không
+# cần thiết
+.idea/
+*.iml
+*.iws
+target/
+.sonar/
+.sonarlint/

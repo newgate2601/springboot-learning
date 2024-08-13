@@ -1,0 +1,26 @@
+version: "3.7"
+volumes:
+  postgres_data:
+services:
+  api_service:
+    build: .
+    restart: always
+    ports:
+      - "8085:8086"
+    depends_on:
+      - postgres
+    links:
+      - postgres:postgres
+  postgres:
+    image: "postgres"
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: learning
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 101119
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+
