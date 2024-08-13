@@ -10,7 +10,27 @@ management:
     web:
       exposure:
         include: '*'
+topic:
+  partitions: 3
+  replicas: 1
 spring:
+  kafka:
+    topic: library-events
+    bootstrap-servers: localhost:9092
+    group-id: my-group-id
+    producer:
+      bootstrap-servers: localhost:9092
+#      key-serializer: org.apache.kafka.common.serialization.IntegerSerializer
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+#      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        acks: all
+        retries: 10
+        retry.backoff.ms: 1000
+    admin:
+      properties:
+        bootstrap.servers: localhost:9092
   jpa:
     show-sql: true
     open-in-view: false
@@ -31,7 +51,7 @@ spring:
       hibernate.query.in_clause_parameter_padding: true
       hibernate.format_sql: true
   datasource:
-    url: jdbc:postgresql://postgresql:5432/learning
+    url: jdbc:postgresql://localhost:5432/learning
     username: postgres
     password: 101119
     driver-class-name: org.postgresql.Driver

@@ -1,26 +1,16 @@
-version: "3.7"
-volumes:
-  postgres_data:
+version: '3'
 services:
-  api_service:
-    build: .
-    restart: always
+  zookeeper:
+    image: wurstmeister/zookeeper
     ports:
-      - "8085:8086"
-    depends_on:
-      - postgres
-    links:
-      - postgres:postgres
-  postgres:
-    image: "postgres"
-    restart: always
+      - "2181:2181"
+  kafka:
+    image: wurstmeister/kafka
     ports:
-      - "5432:5432"
+      - "9092:9092"
     environment:
-      POSTGRES_DB: learning
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 101119
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-
+      KAFKA_ADVERTISED_HOST_NAME: 127.0.0.1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+#      KAFKA_LISTENERS: PLAINTEXT://localhost:9092
+#      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
