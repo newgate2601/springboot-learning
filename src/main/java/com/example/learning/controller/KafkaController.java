@@ -1,5 +1,6 @@
-package com.example.learning.kafka.producer.c;
+package com.example.learning.controller;
 
+import com.example.learning.kafka.producer.MessageProducer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
