@@ -1,10 +1,10 @@
 package com.example.learning.entity;
 
 import lombok.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-import javax.persistence.*;
-
-@Entity
 @Table(name = "tbl_user")
 @Getter
 @Setter
@@ -13,7 +13,6 @@ import javax.persistence.*;
 @Builder
 public class UserEntity {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     private String username;
     private String password;
