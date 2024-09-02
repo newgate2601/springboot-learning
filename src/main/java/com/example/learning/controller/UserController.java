@@ -1,6 +1,6 @@
 package com.example.learning.controller;
 
-import com.example.learning.dto.SeedDto;
+import com.example.learning.dto.IdNameResponse;
 import com.example.learning.dto.UserSignUpRequest;
 
 import com.example.learning.entity.UserEntity;
@@ -26,8 +26,7 @@ public class UserController {
 
     @PostMapping("/sign-up")
     @Operation(summary = "Đăng ký")
-    public SeedDto signUp(@RequestBody UserSignUpRequest userSignUpRequest){
-        System.out.println("KAKAKAKAAKAKAKAK");
+    public IdNameResponse signUp(@RequestBody UserSignUpRequest userSignUpRequest){
         return userService.signUp(userSignUpRequest);
     }
 }
