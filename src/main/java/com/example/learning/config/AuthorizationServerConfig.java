@@ -35,18 +35,4 @@ public class AuthorizationServerConfig extends AuthorizationServerConfigurerAdap
                 .authorizedGrantTypes("password").scopes("read", "write");
 
     }
-
-    @Configuration
-    protected static class AuthenticationManagerConfiguration extends GlobalAuthenticationConfigurerAdapter {
-
-        @Override
-        public void init(AuthenticationManagerBuilder auth) throws Exception {
-            PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-            auth.inMemoryAuthentication()
-                    .withUser("javainuse-user")
-                    .password("javainuse-pass")
-//                    .password(passwordEncoder.encode("javainuse-pass"))
-                    .roles("USER");
-        }
-    }
 }
