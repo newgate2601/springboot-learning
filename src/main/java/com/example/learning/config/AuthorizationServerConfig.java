@@ -23,7 +23,6 @@ import org.springframework.security.oauth2.config.annotation.web.configurers.Aut
 public class AuthorizationServerConfig extends AuthorizationServerConfigurerAdapter {
     private final AuthenticationManager authenticationManager;
     private final PasswordEncoder passwordEncoder;
-    private final CustomUserDetailsService customUserDetailsService;
 
     @Override
     public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
@@ -33,7 +32,8 @@ public class AuthorizationServerConfig extends AuthorizationServerConfigurerAdap
     @Override
     public void configure(ClientDetailsServiceConfigurer clients) throws Exception {
         clients.inMemory().withClient("javainuse-client")
-                .secret("javainuse-secret")
+                .secret(passwordEncoder.encode("javainuse-secret"))
+//                .secret("javainuse-secret")
                 .authorizedGrantTypes("password").scopes("read", "write");
     }
 }

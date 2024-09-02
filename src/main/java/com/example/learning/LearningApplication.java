@@ -19,6 +19,7 @@ import java.util.Base64;
 // https://www.javainuse.com/spring/springboot-oauth2-password-grant
 // https://www.techgeeknext.com/spring-boot-security/springboot-oauth2-password-grant
 // https://docs.spring.io/spring-authorization-server/reference/overview.html
+// encode with secrete :) https://onexception.dev/news/1221772/spring-boot-oauth-bcrypt-client-secret
 @RestController
 @SpringBootApplication(exclude = {SecurityAutoConfiguration.class, ManagementWebSecurityAutoConfiguration.class})
 @EnableResourceServer
