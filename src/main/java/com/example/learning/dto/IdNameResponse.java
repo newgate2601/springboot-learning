@@ -10,4 +10,5 @@ import lombok.*;
 public class IdNameResponse {
     private Long id;
     private String name;
+    private String password;
 }

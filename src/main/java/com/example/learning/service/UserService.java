@@ -6,6 +6,7 @@ import com.example.learning.entity.UserEntity;
 import com.example.learning.mapper.UserMapper;
 import com.example.learning.repository.UserRepository;
 import lombok.AllArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,7 @@ import java.util.Objects;
 public class UserService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
     public List<UserEntity> getUsers(){
@@ -28,10 +30,12 @@ public class UserService {
     @Transactional
     public IdNameResponse signUp(UserSignUpRequest userSignUpRequest){
         UserEntity userEntity = userMapper.getEntityBy(userSignUpRequest);
+        userEntity.setPassword(passwordEncoder.encode(userSignUpRequest.getPassword()));
         userRepository.save(userEntity);
         return IdNameResponse.builder()
                 .id(userEntity.getId())
                 .name(userEntity.getUsername())
+                .password(userEntity.getPassword())
                 .build();
     }
 }

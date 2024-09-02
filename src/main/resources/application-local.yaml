@@ -5,6 +5,7 @@ logging:
     root: INFO
     org.springframework.web: DEBUG
     org.hibernate: ERROR
+    org.springframework.security: DEBUG
 management:
   endpoints:
     web:
@@ -31,7 +32,7 @@ spring:
       hibernate.query.in_clause_parameter_padding: true
       hibernate.format_sql: true
   datasource:
-    url: jdbc:postgresql://postgresql:5432/learning
+    url: jdbc:postgresql://localhost:5432/learning
     username: postgres
     password: 101119
     driver-class-name: org.postgresql.Driver
