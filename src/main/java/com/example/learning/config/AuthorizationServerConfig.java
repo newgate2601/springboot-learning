@@ -1,5 +1,6 @@
 package com.example.learning.config;
 
+import com.example.learning.service.CustomUserDetailsService;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -21,7 +22,8 @@ import org.springframework.security.oauth2.config.annotation.web.configurers.Aut
 @AllArgsConstructor
 public class AuthorizationServerConfig extends AuthorizationServerConfigurerAdapter {
     private final AuthenticationManager authenticationManager;
-//    private final PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
+    private final CustomUserDetailsService customUserDetailsService;
 
     @Override
     public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
@@ -33,20 +35,5 @@ public class AuthorizationServerConfig extends AuthorizationServerConfigurerAdap
         clients.inMemory().withClient("javainuse-client")
                 .secret("javainuse-secret")
                 .authorizedGrantTypes("password").scopes("read", "write");
-
-    }
-
-    @Configuration
-    protected static class AuthenticationManagerConfiguration extends GlobalAuthenticationConfigurerAdapter {
-
-        @Override
-        public void init(AuthenticationManagerBuilder auth) throws Exception {
-            PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-            auth.inMemoryAuthentication()
-                    .withUser("javainuse-user")
-                    .password("javainuse-pass")
-//                    .password(passwordEncoder.encode("javainuse-pass"))
-                    .roles("USER");
-        }
     }
 }

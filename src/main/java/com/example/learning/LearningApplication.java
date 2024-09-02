@@ -13,10 +13,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.config.annotation.web.configuration.EnableResourceServer;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 import java.security.Principal;
 import java.util.Base64;
 
+// https://www.javainuse.com/spring/springboot-oauth2-password-grant
+// https://www.techgeeknext.com/spring-boot-security/springboot-oauth2-password-grant
+// https://docs.spring.io/spring-authorization-server/reference/overview.html
 @RestController
 @SpringBootApplication(exclude = {SecurityAutoConfiguration.class, ManagementWebSecurityAutoConfiguration.class})
 @EnableResourceServer
