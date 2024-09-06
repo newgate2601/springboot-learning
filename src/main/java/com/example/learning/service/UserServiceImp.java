@@ -1,20 +1,20 @@
-package com.example.learning.webflux;
+package com.example.learning.service;
 
 import com.example.learning.dto.UserSignUpRequest;
 import com.example.learning.entity.UserEntity;
 import com.example.learning.mapper.UserMapper;
 import com.example.learning.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Service
-public class UserService1Impl implements UserService1 {
-
-    @Autowired
-    private UserRepository userRepository;
-    private UserMapper userMapper;
+@AllArgsConstructor
+public class UserServiceImp implements UserService {
+    private final UserRepository userRepository;
+    private final UserMapper userMapper;
 
 
     @Override
@@ -43,10 +43,8 @@ public class UserService1Impl implements UserService1 {
     }
 
     @Override
-    public Flux<UserEntity> list() {
-        System.out.println("---------------------");
-        Flux<UserEntity> userEntityFlux = userRepository.findAll();
-        System.out.println("---------------------");
-        return userEntityFlux;
+    public Flux<UserEntity> list(ServerWebExchange exchange) {
+        System.out.println(exchange.getRequest().getHeaders().getFirst("abc"));
+        return userRepository.findAll();
     }
 }
