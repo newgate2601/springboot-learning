@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8080
 logging:
   level:
     root: INFO
@@ -18,7 +18,7 @@ spring:
       base-url: http://localhost:9411  # Zipkin server URL (update if needed)
       enabled: true
   application:
-    name: user-service
+    name: order-service
   jpa:
     show-sql: true
     open-in-view: false

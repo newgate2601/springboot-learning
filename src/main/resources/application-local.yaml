@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8080
 logging:
   level:
     root: INFO
@@ -19,7 +19,7 @@ spring:
     hikari:
       maximum-pool-size: 10
   application:
-    name: user-service
+    name: order-service
   sleuth:
     sampler:
       probability: 1.0  # Always sample requests for tracing
