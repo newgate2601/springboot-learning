@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8088
 logging:
   level:
     root: INFO
@@ -10,45 +10,28 @@ management:
     web:
       exposure:
         include: '*'
+
+
 spring:
-  jpa:
-    show-sql: true
-    open-in-view: false
-    hibernate:
-      ddl-auto: update
-    properties:
-      hibernate.jdbc.time_zone: UTC
-      hibernate.id.new_generator_mappings: true
-      hibernate.cache.use_second_level_cache: false
-      hibernate.cache.use_query_cache: false
-      hibernate.generate_statistics: true
-      hibernate.jdbc.lob.non_contextual_creation: true
-      # modify batch size as necessary
-      hibernate.jdbc.batch_size: 50
-      hibernate.order_inserts: true
-      hibernate.order_updates: true
-      hibernate.query.fail_on_pagination_over_collection_fetch: true
-      hibernate.query.in_clause_parameter_padding: true
-      hibernate.format_sql: true
-  datasource:
-    url: jdbc:postgresql://postgresql:5432/learning
-    username: postgres
-    password: 101119
-    driver-class-name: org.postgresql.Driver
-#    url: jdbc:mysql://localhost:3306/ims?useSSL=false&serverTimezone=UTC
-#    username: root
-#    password: 123456
-#    driver-class-name: com.mysql.cj.jdbc.Driver
-    hikari:
-      maximum-pool-size: 10
-#  mail:
-#    host: smtp.gmail.com
-#    port: 587
-#    username: pphuc9122002@gmail.com
-#    password: efxxykccrzktdmmv
-#    properties:
-#      mail:
-#        smtp:
-#          auth: true
-#          starttls:
-#            enable: true
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true # service name to lower-case in url
+          predicates:
+            - name: Path
+              args:
+                pattern: "'/services/' + serviceId + '/**'"   ## config pattern accept call api
+          filters:
+            - name: RewritePath
+              args:
+                regexp: "'/services/' + serviceId + '/?(?<remaining>.*)'" ## replacement path to routing service
+                replacement: "'/${remaining}'"
+eureka:
+  client:
+    enabled: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
