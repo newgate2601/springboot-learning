@@ -37,7 +37,27 @@ public class UserController {
     }
 
     @GetMapping("/list")
-    public Flux<UserEntity> list(ServerWebExchange exchange) {
-        return userService.list(exchange);
+    public Flux<UserEntity> list(ServerWebExchange exchange) throws InterruptedException {
+//        Mono.deferContextual(context -> {
+//            System.out.print("----------- isA: ");
+//            System.out.println(context.getOrEmpty("isA"));
+//            System.out.print("----------- isB: ");
+//            System.out.println(context.getOrEmpty("isB"));
+//            return Mono.just(0);
+//        }).subscribe();
+//        return userService.list(exchange);
+        Thread.sleep(2000);
+        return userService.list(exchange)
+                .doOnEach(signal -> {
+                    signal.getContextView().getOrEmpty("isA").ifPresent(isA -> {
+                        System.out.print("----------- isA: ");
+                        System.out.println(isA);
+                    });
+
+                    signal.getContextView().getOrEmpty("isB").ifPresent(isB -> {
+                        System.out.print("----------- isB: ");
+                        System.out.println(isB);
+                    });
+                });
     }
 }
