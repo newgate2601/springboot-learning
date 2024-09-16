@@ -1,10 +1,12 @@
 server:
-  port: 8086
+  port: 8080
 logging:
   level:
     root: INFO
     org.springframework.web: DEBUG
+    org.springframework.security: DEBUG  # Ghi log chi tiết cho Spring Security
     org.hibernate: ERROR
+
 management:
   endpoints:
     web:
@@ -37,6 +39,34 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
+#  security:
+#    user:
+#      name: user1
+#      password: password
+#    oauth2:
+#      authorizationserver:
+#        client:
+#          messaging-client:
+#            registration:
+#              client-id: "messaging-client"
+#              client-secret: "{noop}secret"
+#              client-authentication-methods:
+#                - "client_secret_basic"
+#              authorization-grant-types:
+#                - "authorization_code"
+#                - "refresh_token"
+#                - "client_credentials"
+#              redirect-uris:
+#                - "http://127.0.0.1:8080/login/oauth2/code/messaging-client-oidc"
+#                - "http://127.0.0.1:8080/authorized"
+#              post-logout-redirect-uris:
+#                - "http://127.0.0.1:8080/logged-out"
+#              scopes:
+#                - "openid"
+#                - "profile"
+#                - "message.read"
+#                - "message.write"
+#            require-authorization-consent: true
 
 springdoc:
   api-docs:
