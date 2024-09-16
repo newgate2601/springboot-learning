@@ -1,8 +1,7 @@
 package com.example.learning.entity;
 
+import jakarta.persistence.*;
 import lombok.*;
-
-import javax.persistence.*;
 
 @Entity
 @Table(name = "tbl_user")

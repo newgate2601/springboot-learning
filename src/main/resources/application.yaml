@@ -31,25 +31,9 @@ spring:
       hibernate.query.in_clause_parameter_padding: true
       hibernate.format_sql: true
   datasource:
-    url: jdbc:postgresql://postgres:5432/learning
-#    url: jdbc:postgresql://localhost:5432/learning
+    url: jdbc:postgresql://localhost:5432/learning
     username: postgres
     password: 101119
     driver-class-name: org.postgresql.Driver
-    #    url: jdbc:mysql://localhost:3306/ims?useSSL=false&serverTimezone=UTC
-    #    username: root
-    #    password: 123456
-    #    driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 10
-#  mail:
-#    host: smtp.gmail.com
-#    port: 587
-#    username: pphuc9122002@gmail.com
-#    password: efxxykccrzktdmmv
-#    properties:
-#      mail:
-#        smtp:
-#          auth: true
-#          starttls:
-#            enable: true
