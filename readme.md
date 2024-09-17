@@ -1,6 +1,7 @@
 # _OAuth2AuthorizationServerProperties_
     
-    // Class sử dụng để full-customize cho Authorization Server
+    // Class sử dụng để customize properties cho Authorization Server
+    // dạng file config: application.yaml
     @ConfigurationProperties(prefix = "spring.security.oauth2.authorizationserver")
     public class OAuth2AuthorizationServerProperties implements InitializingBean {
         // đại diện cho Authorization Server Issuer Identificaion
@@ -27,6 +28,7 @@
 # _OAuth2AuthorizationServerConfiguration_
 https://docs.spring.io/spring-authorization-server/docs/current/api/org/springframework/security/oauth2/server/authorization/config/annotation/web/configuration/OAuth2AuthorizationServerConfiguration.html
 + Đây là 1 class cung cấp _default-mini config_ cho OAuth2 Authorization Server
++ Nhưng trên thực tế thì hiếm khi dùng, mà thường dùng qua OAuth2AuthorizationServerConfigurer
 
  
     @Configuration(proxyBeanMethods = false)
