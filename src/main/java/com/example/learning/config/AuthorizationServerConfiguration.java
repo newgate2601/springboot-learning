@@ -57,11 +57,40 @@ public class AuthorizationServerConfiguration {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
         OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
-        http.getConfigurer(OAuth2AuthorizationServerConfigurer.class).oidc(Customizer.withDefaults());
-        return http.formLogin(Customizer.withDefaults()).build();
+        http.getConfigurer(OAuth2AuthorizationServerConfigurer.class);
+//                .oidc(Customizer.withDefaults());
+//        return http.formLogin(Customizer.withDefaults()).build();
+        return http.build();
     }
 
-//
+    @Bean
+    public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
+        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
+    }
+
+    @Bean
+    public JWKSource<SecurityContext> jwkSource() throws NoSuchAlgorithmException {
+        RSAKey rsaKey = generateRsa();
+        JWKSet jwkSet = new JWKSet(rsaKey);
+        return (jwkSelector, securityContext) -> jwkSelector.select(jwkSet);
+    }
+    private static RSAKey generateRsa() throws NoSuchAlgorithmException {
+        KeyPair keyPair = generateRsaKey();
+        RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
+        RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
+        return new RSAKey.Builder(publicKey)
+                .privateKey(privateKey)
+                .keyID(UUID.randomUUID().toString())
+                .build();
+    }
+
+    private static KeyPair generateRsaKey() throws NoSuchAlgorithmException {
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+        keyPairGenerator.initialize(2048);
+        return keyPairGenerator.generateKeyPair();
+    }
+
+    //
 //    @Bean
 //    public AuthorizationServerSettings authorizationServerSettings() {
 //        return AuthorizationServerSettings.builder()
@@ -78,7 +107,7 @@ public class AuthorizationServerConfiguration {
 //    }
 //
 
-//
+
 //    @Bean
 //    public RegisteredClientRepository registeredClientRepository() {
 //
@@ -91,33 +120,6 @@ public class AuthorizationServerConfiguration {
 //                .build();
 //
 //        return new InMemoryRegisteredClientRepository(registeredClient);
-//    }
-//
-//    @Bean
-//    public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
-//        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
-//    }
-//
-//    @Bean
-//    public JWKSource<SecurityContext> jwkSource() throws NoSuchAlgorithmException {
-//        RSAKey rsaKey = generateRsa();
-//        JWKSet jwkSet = new JWKSet(rsaKey);
-//        return (jwkSelector, securityContext) -> jwkSelector.select(jwkSet);
-//    }
-//    private static RSAKey generateRsa() throws NoSuchAlgorithmException {
-//        KeyPair keyPair = generateRsaKey();
-//        RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
-//        RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
-//        return new RSAKey.Builder(publicKey)
-//                .privateKey(privateKey)
-//                .keyID(UUID.randomUUID().toString())
-//                .build();
-//    }
-//
-//    private static KeyPair generateRsaKey() throws NoSuchAlgorithmException {
-//        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-//        keyPairGenerator.initialize(2048);
-//        return keyPairGenerator.generateKeyPair();
 //    }
 }
 //curl --location 'http://localhost:8080/oauth2/token' \
