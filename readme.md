@@ -1,7 +1,8 @@
 # _OAuth2AuthorizationServerProperties_
-    
-    // Class sử dụng để customize properties cho Authorization Server
-    // dạng file config: application.yaml
++ Class sử dụng để customize properties cho Authorization Server
++ Dạng file config: application.yaml
+
+
     @ConfigurationProperties(prefix = "spring.security.oauth2.authorizationserver")
     public class OAuth2AuthorizationServerProperties implements InitializingBean {
         // đại diện cho Authorization Server Issuer Identificaion
@@ -27,7 +28,7 @@
 
 # _OAuth2AuthorizationServerConfiguration_
 https://docs.spring.io/spring-authorization-server/docs/current/api/org/springframework/security/oauth2/server/authorization/config/annotation/web/configuration/OAuth2AuthorizationServerConfiguration.html
-+ Đây là 1 class cung cấp _default-mini config_ cho OAuth2 Authorization Server
++ Đây là 1 class cung cấp config cơ bản cho OAuth2 Authorization Server
 + Nhưng trên thực tế thì hiếm khi dùng, mà thường dùng qua OAuth2AuthorizationServerConfigurer
 
  
@@ -47,4 +48,61 @@ https://docs.spring.io/spring-authorization-server/docs/current/api/org/springfr
         public static JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource);
     }
 
-https://chatgpt.com/c/66e93a36-b5b0-8010-a1ec-b6d86921c196
+# _OAuth2AuthorizationServerConfigurer_
++ Đây là class phổ biến nhất để customize đầy đủ cho OAuth2 Authorization Server
+
+    
+    // sử dụng để config apply auth với OAuth2
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
+                new OAuth2AuthorizationServerConfigurer();
+
+        http
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(authorizeRequests -> authorizeRequests
+                        .requestMatchers("/**").permitAll()
+                        .anyRequest().authenticated())
+                .apply(authorizationServerConfigurer); // (*) sử dụng để apply với filter chain
+        return http.build();
+    }
+
+### _AuthorizationServerSettings_ class
++ Config uri protocol endpoint và iss
++ Nếu không chỉ rõ iss cho config AuthorizationServerSettings
++ _AuthorizationServerContext_ class thì nắm giữ thông tin về Authorization Server tại runtime cấp khả năng access 
+vào AuthorizationServerSettings và current iss
++ Nếu không config iss trong AuthorizationServerSettings class thì có thể lấy nó trong current request qua 
+_AuthorizationServerContextHolder_ class (associate với current request sử dụng Thread Local) để lấy được _AuthorizationServerContext_
+
+
+    OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = new OAuth2AuthorizationServerConfigurer();
+    authorizationServerConfigurer.authorizationServerSettings(authorizationServerSettings());
+
+    public AuthorizationServerSettings authorizationServerSettings() {
+        return AuthorizationServerSettings.builder()
+                .build();
+    }
+
+### _OAuth2ClientAuthenticationConfigurer_ class
++ Sử dụng để config OAuth2 client authentication request của client
++ Support xử lí thêm phần pre-processing, main-processing, post-processing logic trong 1 client authentication request
++ OAuth2ClientAuthenticationConfigurer sẽ config OAuth2ClientAuthenticationFilter và đăng kí với OAuth2 authorization 
+server SecurityFilterChain @Bean + OAuth2ClientAuthenticationFilter là Filter mà processes client authentication requests.
++ Sau cùng, nó sẽ convert current HttpServletRequest thành 1 instance của OAuth2ClientAuthenticationToken để các step tiếp theo 
+dựa vào instance này để authen
+
+
+    OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = new OAuth2AuthorizationServerConfigurer();
+    .clientAuthentication(clientAuthentication ->
+			clientAuthentication
+				.authenticationConverter(authenticationConverter)   
+				.authenticationConverters(authenticationConvertersConsumer) 
+				.authenticationProvider(authenticationProvider) 
+				.authenticationProviders(authenticationProvidersConsumer)   
+				.authenticationSuccessHandler(authenticationSuccessHandler) 
+				.errorResponseHandler(errorResponseHandler) 
+		);
+
