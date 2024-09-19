@@ -7,6 +7,6 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 @Repository
-public interface ClientRepository extends JpaRepository<ClientEntity, Long> {
+public interface ClientJpaRepository extends JpaRepository<ClientEntity, Long> {
     Optional<ClientEntity> findByClientId(String clientId);
 }

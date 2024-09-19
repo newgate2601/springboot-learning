@@ -2,15 +2,10 @@ package com.example.learning.controller;
 
 import com.example.learning.dto.ClientRequest;
 import com.example.learning.entity.ClientEntity;
-import com.example.learning.repository.client.ClientRepository;
-import com.example.learning.repository.client.JpaRegisteredClientRepository;
+import com.example.learning.repository.client.ClientJpaRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Random;
 
 @RestController
 @RequestMapping("/api/v1/client")
@@ -18,11 +13,11 @@ import java.util.Random;
 @CrossOrigin
 public class ClientController {
     private final PasswordEncoder passwordEncoder;
-    private final ClientRepository clientRepository;
+    private final ClientJpaRepository clientJpaRepository;
 
     @PostMapping
     public void create(@RequestBody ClientRequest clientRequest) {
-        clientRepository.save(
+        clientJpaRepository.save(
                 ClientEntity.builder()
                         .clientId(clientRequest.getClientId())
                         .clientSecret(passwordEncoder.encode(clientRequest.getClientSecret()))
