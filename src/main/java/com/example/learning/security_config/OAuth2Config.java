@@ -5,6 +5,7 @@ import com.example.learning.repository.client.RegisterClientRepository;
 import com.example.learning.security_config.passwordgranttype.CustomPasswordAuthenticationConverter;
 import com.example.learning.security_config.passwordgranttype.CustomPasswordAuthenticationProvider;
 import com.example.learning.security_config.passwordgranttype.CustomPasswordUser;
+import com.example.learning.service.UserService;
 import com.nimbusds.jose.proc.SecurityContext;
 import lombok.AllArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -63,6 +64,7 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class OAuth2Config {
     private final ClientJpaRepository clientJpaRepository;
+    private final UserService userService;
     private final PasswordEncoder passwordEncoder;
 
     @Bean
@@ -83,8 +85,11 @@ public class OAuth2Config {
                 .registeredClientRepository(registeredClientRepository())
                 .authorizationServerSettings(authorizationServerSettings())
                 .tokenEndpoint(tokenEndpoint -> tokenEndpoint
-                        .accessTokenRequestConverter(new CustomPasswordAuthenticationConverter())
-                        .authenticationProvider(new CustomPasswordAuthenticationProvider(authorizationService(), tokenGenerator(), userDetailsService()))
+                                .accessTokenRequestConverter(new CustomPasswordAuthenticationConverter())
+                                .authenticationProvider(new CustomPasswordAuthenticationProvider(
+                                                authorizationService(), tokenGenerator(), userDetailsService(), passwordEncoder
+                                        )
+                                )
 //                        .accessTokenRequestConverters(getConverters())
 //                        .authenticationProviders(getProviders())
                 );
@@ -141,12 +146,18 @@ public class OAuth2Config {
     }
 
     @Bean
-    public UserDetailsService userDetailsService(){
-        UserDetails user = User.withUsername("user")
-                .password(passwordEncoder.encode("password"))
-                .build();
-        return new InMemoryUserDetailsManager(user);
+    public UserDetailsService userDetailsService() {
+        return userService;
     }
+
+//    @Bean
+//    public UserDetailsService userDetailsService(){
+//        UserDetails user = User.withUsername("user")
+////                .password(passwordEncoder.encode("password"))
+//                .password("password")
+//                .build();
+//        return new InMemoryUserDetailsManager(user);
+//    }
 
     // config uri protocol endpoint + iss
     public AuthorizationServerSettings authorizationServerSettings() {
@@ -154,36 +165,36 @@ public class OAuth2Config {
                 .build();
     }
 
-    // register client
-//    private RegisteredClientRepository registeredClientRepository() {
-//        return new RegisterClientRepository(clientJpaRepository);
-//    }
-
-    @Bean
-    public RegisteredClientRepository registeredClientRepository() {
-        RegisteredClient registeredClient = RegisteredClient.withId("client")
-                .clientId("client")
-                .clientSecret("secret")
-                .scope("read")
-                .scope(OidcScopes.OPENID)
-                .scope(OidcScopes.PROFILE)
-                .scope("message.read")
-                .scope("message.write")
-                .scope("read")
-                .redirectUri("http://127.0.0.1:8080/login/oauth2/code/myoauth2")
-                .redirectUri("http://insomnia")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .authorizationGrantType(AuthorizationGrantType.JWT_BEARER)
-                .authorizationGrantType(new AuthorizationGrantType("custom_password"))
-//                .tokenSettings(tokenSettings())
-//                .clientSettings(clientSettings())
-                .build();
-
-        return new InMemoryRegisteredClientRepository(registeredClient);
+    //     register client
+    private RegisteredClientRepository registeredClientRepository() {
+        return new RegisterClientRepository(clientJpaRepository);
     }
+
+//    @Bean
+//    public RegisteredClientRepository registeredClientRepository() {
+//        RegisteredClient registeredClient = RegisteredClient.withId("client")
+//                .clientId("client")
+//                .clientSecret("secret")
+//                .scope("read")
+//                .scope(OidcScopes.OPENID)
+//                .scope(OidcScopes.PROFILE)
+//                .scope("message.read")
+//                .scope("message.write")
+//                .scope("read")
+//                .redirectUri("http://127.0.0.1:8080/login/oauth2/code/myoauth2")
+//                .redirectUri("http://insomnia")
+//                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+//                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+//                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+//                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+//                .authorizationGrantType(AuthorizationGrantType.JWT_BEARER)
+//                .authorizationGrantType(new AuthorizationGrantType("custom_password"))
+////                .tokenSettings(tokenSettings())
+////                .clientSettings(clientSettings())
+//                .build();
+//
+//        return new InMemoryRegisteredClientRepository(registeredClient);
+//    }
 
     @Bean
     public JWKSource<SecurityContext> jwkSource() {

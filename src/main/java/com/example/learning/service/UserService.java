@@ -6,6 +6,11 @@ import com.example.learning.entity.UserEntity;
 import com.example.learning.mapper.UserMapper;
 import com.example.learning.repository.UserRepository;
 import lombok.AllArgsConstructor;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,9 +20,10 @@ import java.util.Objects;
 
 @Service
 @AllArgsConstructor
-public class UserService {
+public class UserService implements UserDetailsService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
     public List<UserEntity> getUsers(){
@@ -28,10 +34,19 @@ public class UserService {
     @Transactional
     public IdNameResponse signUp(UserSignUpRequest userSignUpRequest){
         UserEntity userEntity = userMapper.getEntityBy(userSignUpRequest);
+        userEntity.setPassword(passwordEncoder.encode(userEntity.getPassword()));
         userRepository.save(userEntity);
         return IdNameResponse.builder()
                 .id(userEntity.getId())
                 .name(userEntity.getUsername())
                 .build();
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        UserEntity userEntity = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        System.out.println("----------------PASSWORD: " + userEntity.getPassword());
+        return new User(userEntity.getUsername(), userEntity.getPassword(), new ArrayList<>());
     }
 }

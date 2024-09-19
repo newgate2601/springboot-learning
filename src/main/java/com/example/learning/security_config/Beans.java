@@ -13,7 +13,7 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequest
 public class Beans {
     @Bean
     public PasswordEncoder passwordEncoder(){
-//        return new BCryptPasswordEncoder();
-        return NoOpPasswordEncoder.getInstance();
+        return new BCryptPasswordEncoder();
+//        return NoOpPasswordEncoder.getInstance();
     }
 }

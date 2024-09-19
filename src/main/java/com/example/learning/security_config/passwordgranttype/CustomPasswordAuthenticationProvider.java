@@ -13,6 +13,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClaimAccessor;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -40,13 +41,15 @@ public class CustomPasswordAuthenticationProvider implements AuthenticationProvi
     private final OAuth2AuthorizationService authorizationService;
     private final UserDetailsService userDetailsService;
     private final OAuth2TokenGenerator<? extends OAuth2Token> tokenGenerator;
+    private final PasswordEncoder passwordEncoder;
     private String username = "";
     private String password = "";
     private Set<String> authorizedScopes = new HashSet<>();
 
     public CustomPasswordAuthenticationProvider(OAuth2AuthorizationService authorizationService,
-                                               OAuth2TokenGenerator<? extends OAuth2Token> tokenGenerator,
-                                               UserDetailsService userDetailsService) {
+                                                OAuth2TokenGenerator<? extends OAuth2Token> tokenGenerator,
+                                                UserDetailsService userDetailsService,
+                                                PasswordEncoder passwordEncoder) {
 
         Assert.notNull(authorizationService, "authorizationService cannot be null");
         Assert.notNull(tokenGenerator, "TokenGenerator cannot be null");
@@ -54,6 +57,7 @@ public class CustomPasswordAuthenticationProvider implements AuthenticationProvi
         this.authorizationService = authorizationService;
         this.tokenGenerator = tokenGenerator;
         this.userDetailsService = userDetailsService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
@@ -67,10 +71,13 @@ public class CustomPasswordAuthenticationProvider implements AuthenticationProvi
         User user = null;
         try {
             user = (User) userDetailsService.loadUserByUsername(username);
+            System.out.println("oke");
+            System.out.println("oke");
+            System.out.println("oke");
         } catch (UsernameNotFoundException e) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.ACCESS_DENIED);
         }
-        if (!user.getPassword().equals(password) || !user.getUsername().equals(username)) {
+        if (!user.getUsername().equals(username) || !passwordEncoder.matches(password, user.getPassword())) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.ACCESS_DENIED);
         }
         authorizedScopes = user.getAuthorities().stream()
