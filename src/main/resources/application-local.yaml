@@ -6,6 +6,7 @@ logging:
     org.springframework.web: DEBUG
     org.springframework.security: DEBUG  # Ghi log chi tiết cho Spring Security
     org.hibernate: ERROR
+    org.springframework.security.oauth2.server.authorization.authentication.OAuth2RefreshTokenAuthenticationProvider: TRACE
 
 management:
   endpoints:

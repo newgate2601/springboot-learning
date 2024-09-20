@@ -27,8 +27,7 @@ public class UserService implements UserDetailsService {
 
     @Transactional(readOnly = true)
     public List<UserEntity> getUsers(){
-        List<UserEntity> userEntities = userRepository.findAll();
-        return Objects.nonNull(userEntities) ? userEntities : new ArrayList<>();
+        return userRepository.findAll();
     }
 
     @Transactional
@@ -42,11 +41,15 @@ public class UserService implements UserDetailsService {
                 .build();
     }
 
+    public UserEntity getUser(String username) {
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+    }
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         UserEntity userEntity = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-        System.out.println("----------------PASSWORD: " + userEntity.getPassword());
         return new User(userEntity.getUsername(), userEntity.getPassword(), new ArrayList<>());
     }
 }

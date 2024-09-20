@@ -66,6 +66,7 @@ public class RegisterClientRepository implements RegisteredClientRepository {
 //                .clientSecret("{noop}" + client.getClientSecret())
                 .clientSecret(client.getClientSecret())
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .authorizationGrantType(new AuthorizationGrantType("custom_password"));
         return builder.build();
     }
