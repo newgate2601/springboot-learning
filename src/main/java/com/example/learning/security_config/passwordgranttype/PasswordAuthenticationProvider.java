@@ -91,9 +91,11 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
                 generatedRefreshToken.getIssuedAt(),
                 generatedRefreshToken.getExpiresAt()
         );
+        authorizationBuilder.refreshToken(refreshToken);
 
         OAuth2Authorization authorization = authorizationBuilder.build();
         this.authorizationService.save(authorization);
+
         Map<String, Object> map = new HashMap<>();
         map.put("test1", "okeke");
         map.put("kaka", new ClientRequest("1", "2"));

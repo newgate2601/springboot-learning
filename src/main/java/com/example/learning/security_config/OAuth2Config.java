@@ -6,27 +6,39 @@ import com.example.learning.security_config.passwordgranttype.PasswordAuthentica
 import com.example.learning.security_config.passwordgranttype.PasswordAuthenticationProvider;
 import com.example.learning.service.UserService;
 import com.example.learning.token_config.CustomPayloadValue;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.Module;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.deser.std.MapDeserializer;
 import com.nimbusds.jose.proc.SecurityContext;
 import lombok.AllArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.jackson2.SecurityJackson2Modules;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2Token;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.oauth2.server.authorization.jackson2.OAuth2AuthorizationServerJackson2Module;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.*;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -36,10 +48,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 // https://www.appsdeveloperblog.com/spring-authorization-server-tutorial/
 // config model: https://docs.spring.io/spring-authorization-server/reference/1.4/configuration-model.html
@@ -53,6 +62,10 @@ public class OAuth2Config {
     private final ClientJpaRepository clientJpaRepository;
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+    private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("custom_password");
+    private static final AuthorizationGrantType CLIENT_CREDENTIALS_GRANT_TYPE = new AuthorizationGrantType("client_credentials");
+    private final JdbcTemplate jdbcTemplate;
+//    private final JpaOAuth2AuthorizationService jdbcOAuth2AuthorizationService;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -78,6 +91,7 @@ public class OAuth2Config {
                                 )
                                 .authenticationProvider(
                                         PasswordAuthenticationProvider.builder()
+//                                                .authorizationService(authorizationService())
                                                 .authorizationService(authorizationService())
                                                 .userService(userService)
                                                 .tokenGenerator(tokenGenerator())
@@ -99,7 +113,7 @@ public class OAuth2Config {
 
     @Bean
     public OAuth2AuthorizationService authorizationService() {
-        return new InMemoryOAuth2AuthorizationService();
+        return new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository());
     }
 
     @Bean
@@ -119,26 +133,30 @@ public class OAuth2Config {
     public OAuth2TokenCustomizer<JwtEncodingContext> accessTokenCustomizer() {
         return context -> {
             OAuth2ClientAuthenticationToken principal = context.getPrincipal();
-            context.getClaims().claims(claims -> {
-                claims.entrySet().removeIf(entry -> {
-                    String claimKey = entry.getKey();
-                    return !claimKey.equals("jti") && !claimKey.equals("exp");
+            if (PASSWORD_GRANT_TYPE.equals(context.getAuthorizationGrantType())) {
+                context.getClaims().claims(claims -> {
+                    claims.entrySet().removeIf(entry -> {
+                        String claimKey = entry.getKey();
+                        return !claimKey.equals("jti") && !claimKey.equals("exp");
+                    });
                 });
-            });
-            CustomPayloadValue customPayloadValue = (CustomPayloadValue) principal.getDetails();
-            if (Objects.nonNull(customPayloadValue.getAti())){
-                context.getClaims().claim("ati", customPayloadValue.getAti());
+                CustomPayloadValue customPayloadValue = (CustomPayloadValue) principal.getDetails();
+                if (Objects.nonNull(customPayloadValue.getAti())){
+                    context.getClaims().claim("ati", customPayloadValue.getAti());
+                }
+                else {
+                    Map<String, Object> claimsMap = context.getClaims().build().getClaims();
+                    customPayloadValue.setAti((String) claimsMap.get("jti"));
+                }
+                context.getClaims().claim("exp", 9999);
+                context.getClaims().claim("user_id", customPayloadValue.getUserId());
+                context.getClaims().claim("user_name", customPayloadValue.getUserName());
+                context.getClaims().claim("scope", customPayloadValue.getScope());
+                context.getClaims().claim("authorities", customPayloadValue.getAuthorities());
+                context.getClaims().claim("client_id", customPayloadValue.getClientId());
+            } else if (CLIENT_CREDENTIALS_GRANT_TYPE.equals(context.getAuthorizationGrantType())) {
+                context.getClaims().claim("client_test", 9999);
             }
-            else {
-                Map<String, Object> claimsMap = context.getClaims().build().getClaims();
-                customPayloadValue.setAti((String) claimsMap.get("jti"));
-            }
-            context.getClaims().claim("exp", 9999);
-            context.getClaims().claim("user_id", customPayloadValue.getUserId());
-            context.getClaims().claim("user_name", customPayloadValue.getUserName());
-            context.getClaims().claim("scope", customPayloadValue.getScope());
-            context.getClaims().claim("authorities", customPayloadValue.getAuthorities());
-            context.getClaims().claim("client_id", customPayloadValue.getClientId());
         };
     }
 
@@ -183,6 +201,8 @@ public class OAuth2Config {
         }
         return keyPair;
     }
+
+
 }
 //curl --location 'http://localhost:8080/oauth2/token' \
 //        --header 'Authorization: Basic Y2xpZW50MTpteUNsaWVudFNlY3JldFZhbHVl' \
