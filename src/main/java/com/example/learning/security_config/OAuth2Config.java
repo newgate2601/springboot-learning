@@ -48,6 +48,9 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 // https://www.appsdeveloperblog.com/spring-authorization-server-tutorial/
@@ -64,8 +67,9 @@ public class OAuth2Config {
     private final PasswordEncoder passwordEncoder;
     private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("custom_password");
     private static final AuthorizationGrantType CLIENT_CREDENTIALS_GRANT_TYPE = new AuthorizationGrantType("client_credentials");
-    private final JdbcTemplate jdbcTemplate;
-//    private final JpaOAuth2AuthorizationService jdbcOAuth2AuthorizationService;
+    private static final AuthorizationGrantType REFRESH_TOKEN_GRANT_TYPE = new AuthorizationGrantType("refresh_token");
+
+    private final JpaOAuth2AuthorizationService jpaOAuth2AuthorizationService;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -91,8 +95,8 @@ public class OAuth2Config {
                                 )
                                 .authenticationProvider(
                                         PasswordAuthenticationProvider.builder()
+                                                .authorizationService(jpaOAuth2AuthorizationService)
 //                                                .authorizationService(authorizationService())
-                                                .authorizationService(authorizationService())
                                                 .userService(userService)
                                                 .tokenGenerator(tokenGenerator())
                                                 .passwordEncoder(passwordEncoder)
@@ -111,10 +115,10 @@ public class OAuth2Config {
         return http.build();
     }
 
-    @Bean
-    public OAuth2AuthorizationService authorizationService() {
-        return new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository());
-    }
+//    @Bean
+//    public OAuth2AuthorizationService authorizationService() {
+//        return new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository());
+//    }
 
     @Bean
     public OAuth2TokenGenerator<? extends OAuth2Token> tokenGenerator() {
@@ -133,7 +137,8 @@ public class OAuth2Config {
     public OAuth2TokenCustomizer<JwtEncodingContext> accessTokenCustomizer() {
         return context -> {
             OAuth2ClientAuthenticationToken principal = context.getPrincipal();
-            if (PASSWORD_GRANT_TYPE.equals(context.getAuthorizationGrantType())) {
+            if (PASSWORD_GRANT_TYPE.equals(context.getAuthorizationGrantType())
+                    || REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType())) {
                 context.getClaims().claims(claims -> {
                     claims.entrySet().removeIf(entry -> {
                         String claimKey = entry.getKey();
@@ -148,11 +153,12 @@ public class OAuth2Config {
                     Map<String, Object> claimsMap = context.getClaims().build().getClaims();
                     customPayloadValue.setAti((String) claimsMap.get("jti"));
                 }
-                context.getClaims().claim("exp", 9999);
+                Instant expirationTime = ZonedDateTime.now().plusYears(10).toInstant();
+                context.getClaims().claim("exp", expirationTime);
                 context.getClaims().claim("user_id", customPayloadValue.getUserId());
                 context.getClaims().claim("user_name", customPayloadValue.getUserName());
                 context.getClaims().claim("scope", customPayloadValue.getScope());
-                context.getClaims().claim("authorities", customPayloadValue.getAuthorities());
+//                context.getClaims().claim("authorities", customPayloadValue.getAuthorities());
                 context.getClaims().claim("client_id", customPayloadValue.getClientId());
             } else if (CLIENT_CREDENTIALS_GRANT_TYPE.equals(context.getAuthorizationGrantType())) {
                 context.getClaims().claim("client_test", 9999);

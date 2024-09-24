@@ -68,30 +68,37 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         OAuth2Authorization.Builder authorizationBuilder = getAuthorizationBuilder(registeredClient, clientPrincipal, authorizedScopes);
 
         //-----------ACCESS TOKEN----------
-        DefaultOAuth2TokenContext.Builder accessTokenContextBuilder = getTokenContextBuilder(registeredClient, clientPrincipal, authorizedScopes, passwordAuthenticationToken);
-        OAuth2TokenContext accessTokenContext = accessTokenContextBuilder.tokenType(OAuth2TokenType.ACCESS_TOKEN).build();
-        OAuth2Token generatedAccessToken = this.tokenGenerator.generate(accessTokenContext);
+        DefaultOAuth2TokenContext.Builder tokenContextBuilder = getTokenContextBuilder(registeredClient, clientPrincipal, authorizedScopes, passwordAuthenticationToken);
+        OAuth2TokenContext tokenContext = tokenContextBuilder.tokenType(OAuth2TokenType.ACCESS_TOKEN).build();
+        OAuth2Token generatedAccessToken = this.tokenGenerator.generate(tokenContext);
 
         OAuth2AccessToken accessToken = new OAuth2AccessToken(
                 OAuth2AccessToken.TokenType.BEARER,
                 generatedAccessToken.getTokenValue(),
                 generatedAccessToken.getIssuedAt(),
                 generatedAccessToken.getExpiresAt(),
-                accessTokenContext.getAuthorizedScopes()
+                tokenContext.getAuthorizedScopes()
         );
         authorizationBuilder.accessToken(accessToken);
 
         //-----------REFRESH TOKEN----------
-        DefaultOAuth2TokenContext.Builder refreshTokenContextBuilder = getTokenContextBuilder(registeredClient, clientPrincipal, authorizedScopes, passwordAuthenticationToken);
-        OAuth2TokenContext refreshTokenContext = refreshTokenContextBuilder.tokenType(OAuth2TokenType.ACCESS_TOKEN).build();
-        OAuth2Token generatedRefreshToken = this.tokenGenerator.generate(refreshTokenContext);
+//        DefaultOAuth2TokenContext.Builder refreshTokenContextBuilder = getTokenContextBuilder(registeredClient, clientPrincipal, authorizedScopes, passwordAuthenticationToken);
+//        OAuth2TokenContext refreshTokenContext = refreshTokenContextBuilder.tokenType(OAuth2TokenType.ACCESS_TOKEN).build();
+//        OAuth2Token generatedRefreshToken = this.tokenGenerator.generate(refreshTokenContext);
+        OAuth2RefreshToken refreshToken = null;
+        if (registeredClient.getAuthorizationGrantTypes().contains(AuthorizationGrantType.REFRESH_TOKEN)) {
+            tokenContext = tokenContextBuilder.tokenType(OAuth2TokenType.REFRESH_TOKEN).build();
+            OAuth2Token generatedRefreshToken = this.tokenGenerator.generate(tokenContext);
+            refreshToken = (OAuth2RefreshToken) generatedRefreshToken;
+            authorizationBuilder.refreshToken(refreshToken);
 
-        OAuth2RefreshToken refreshToken = new OAuth2RefreshToken(
-                generatedRefreshToken.getTokenValue(),
-                generatedRefreshToken.getIssuedAt(),
-                generatedRefreshToken.getExpiresAt()
-        );
-        authorizationBuilder.refreshToken(refreshToken);
+            refreshToken = new OAuth2RefreshToken(
+                    generatedRefreshToken.getTokenValue(),
+                    generatedRefreshToken.getIssuedAt(),
+                    generatedRefreshToken.getExpiresAt()
+            );
+            authorizationBuilder.refreshToken(refreshToken);
+        }
 
         OAuth2Authorization authorization = authorizationBuilder.build();
         this.authorizationService.save(authorization);
