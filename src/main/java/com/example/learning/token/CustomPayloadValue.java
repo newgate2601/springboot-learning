@@ -1,7 +1,5 @@
-package com.example.learning.token_config;
+package com.example.learning.token;
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.*;
 
 import java.util.HashSet;

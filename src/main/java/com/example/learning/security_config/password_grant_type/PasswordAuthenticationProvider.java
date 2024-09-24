@@ -1,4 +1,4 @@
-package com.example.learning.security_config.passwordgranttype;
+package com.example.learning.security_config.password_grant_type;
 
 import java.security.Principal;
 import java.util.*;
@@ -6,18 +6,14 @@ import java.util.*;
 import com.example.learning.dto.ClientRequest;
 import com.example.learning.entity.UserEntity;
 import com.example.learning.service.UserService;
-import com.example.learning.token_config.CustomPayloadValue;
+import com.example.learning.token.CustomPayloadValue;
 import lombok.Builder;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
@@ -34,7 +30,8 @@ import org.springframework.security.oauth2.server.authorization.token.DefaultOAu
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
 
-// GrantType(name)-Provider (main-processor) thường sử dụng để auth Authentication nhận được từ bước converter
+// GrantType(name)-Provider (main-processor)
+// use to auth Authentication instance receiver from Converter
 @Builder
 public class PasswordAuthenticationProvider implements AuthenticationProvider {
     private static final AuthorizationGrantType GRANT_TYPE = new AuthorizationGrantType("custom_password");
@@ -47,28 +44,32 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
-        CustomPasswordAuthenticationToken passwordAuthenticationToken =
-                (CustomPasswordAuthenticationToken) authentication;
+        PasswordAuthenticationToken passwordAuthenticationToken =
+                (PasswordAuthenticationToken) authentication;
         String usernameRequest = passwordAuthenticationToken.getUsername();
         String passwordRequest = passwordAuthenticationToken.getPassword();
-        Set<String> authorizedScopes = new HashSet<>();
-        OAuth2ClientAuthenticationToken clientPrincipal = (OAuth2ClientAuthenticationToken) authentication.getPrincipal();
+        // continue to validate scope of use if use have scopes
+        Set<String> requestScopes = passwordAuthenticationToken.getScopes();
+        OAuth2ClientAuthenticationToken clientPrincipal =
+                (OAuth2ClientAuthenticationToken) authentication.getPrincipal();
         RegisteredClient registeredClient = clientPrincipal.getRegisteredClient();
 
         UserEntity userEntity = userService.getUser(usernameRequest);
         validateUser(userEntity, usernameRequest, passwordRequest);
 
-        // set thông tin bổ sung cho context
+        // addition info for context
         OAuth2ClientAuthenticationToken oAuth2ClientAuthenticationToken =
                 (OAuth2ClientAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
         CustomPayloadValue customPayloadValue = getCustomPayloadValue(userEntity, registeredClient);
         oAuth2ClientAuthenticationToken.setDetails(customPayloadValue);
 
         //-----------TOKEN BUILDERS----------
-        OAuth2Authorization.Builder authorizationBuilder = getAuthorizationBuilder(registeredClient, clientPrincipal, authorizedScopes);
+        OAuth2Authorization.Builder authorizationBuilder = getAuthorizationBuilder(registeredClient,
+                clientPrincipal, requestScopes);
 
         //-----------ACCESS TOKEN----------
-        DefaultOAuth2TokenContext.Builder tokenContextBuilder = getTokenContextBuilder(registeredClient, clientPrincipal, authorizedScopes, passwordAuthenticationToken);
+        DefaultOAuth2TokenContext.Builder tokenContextBuilder = getTokenContextBuilder(registeredClient,
+                clientPrincipal, requestScopes, passwordAuthenticationToken);
         OAuth2TokenContext tokenContext = tokenContextBuilder.tokenType(OAuth2TokenType.ACCESS_TOKEN).build();
         OAuth2Token generatedAccessToken = this.tokenGenerator.generate(tokenContext);
 
@@ -103,22 +104,22 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         OAuth2Authorization authorization = authorizationBuilder.build();
         this.authorizationService.save(authorization);
 
-        Map<String, Object> map = new HashMap<>();
-        map.put("test1", "okeke");
-        map.put("kaka", new ClientRequest("1", "2"));
+        Map<String, Object> additionResponse = new HashMap<>();
+        additionResponse.put("test1", "okeke");
+        additionResponse.put("kaka", new ClientRequest("1", "2"));
         // config response for login
         return new OAuth2AccessTokenAuthenticationToken(
                 registeredClient,
                 clientPrincipal,
                 accessToken,
                 refreshToken,
-                map
+                additionResponse
         );
     }
 
     @Override
     public boolean supports(Class<?> authentication) {
-        return CustomPasswordAuthenticationToken.class.isAssignableFrom(authentication);
+        return PasswordAuthenticationToken.class.isAssignableFrom(authentication);
     }
 
     private OAuth2Authorization.Builder getAuthorizationBuilder(RegisteredClient registeredClient,
@@ -153,14 +154,10 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
                 .userId(userEntity.getId())
                 .userName(userEntity.getUsername())
                 .scope(new HashSet<>())
-                .authorities(new HashSet<>())
+                .authorities(new HashSet<>(Set.of("SYSTEM_ADMIN", "DESIGN")))
                 .jti(null)
                 .clientId(registeredClient.getClientId())
                 .build();
-    }
-
-    private OAuth2AccessToken generateAccessToken() {
-        return null;
     }
 
     private void validateUser(UserEntity userEntity,

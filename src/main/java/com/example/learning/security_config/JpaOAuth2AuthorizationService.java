@@ -1,17 +1,14 @@
 package com.example.learning.security_config;
 
 import com.example.learning.entity.AuthorizationEntity;
-import com.example.learning.repository.AuthorizationRepository;
-import com.example.learning.token_config.CustomPayloadValue;
-import com.example.learning.token_config.CustomPayloadValueMixin;
+import com.example.learning.repository.AuthorizationJpaRepository;
+import com.example.learning.token.CustomPayloadValue;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DataRetrievalFailureException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.jackson2.SecurityJackson2Modules;
 import org.springframework.security.oauth2.core.*;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -36,15 +33,15 @@ import java.util.function.Consumer;
 
 @Component
 public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService {
-    private final AuthorizationRepository authorizationRepository;
+    private final AuthorizationJpaRepository authorizationJpaRepository;
     private final RegisteredClientRepository registeredClientRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public JpaOAuth2AuthorizationService(AuthorizationRepository authorizationRepository,
+    public JpaOAuth2AuthorizationService(AuthorizationJpaRepository authorizationJpaRepository,
                                          RegisteredClientRepository registeredClientRepository) {
-        Assert.notNull(authorizationRepository, "authorizationRepository cannot be null");
+        Assert.notNull(authorizationJpaRepository, "authorizationRepository cannot be null");
         Assert.notNull(registeredClientRepository, "registeredClientRepository cannot be null");
-        this.authorizationRepository = authorizationRepository;
+        this.authorizationJpaRepository = authorizationJpaRepository;
         this.registeredClientRepository = registeredClientRepository;
 
         ClassLoader classLoader = JpaOAuth2AuthorizationService.class.getClassLoader();
@@ -56,19 +53,19 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
     @Override
     public void save(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
-        this.authorizationRepository.save(toEntity(authorization));
+        this.authorizationJpaRepository.save(toEntity(authorization));
     }
 
     @Override
     public void remove(OAuth2Authorization authorization) {
         Assert.notNull(authorization, "authorization cannot be null");
-        this.authorizationRepository.deleteById(authorization.getId());
+        this.authorizationJpaRepository.deleteById(authorization.getId());
     }
 
     @Override
     public OAuth2Authorization findById(String id) {
         Assert.hasText(id, "id cannot be empty");
-        return this.authorizationRepository.findById(id).map(this::toObject).orElse(null);
+        return this.authorizationJpaRepository.findById(id).map(this::toObject).orElse(null);
     }
 
     @Override
@@ -77,21 +74,21 @@ public class JpaOAuth2AuthorizationService implements OAuth2AuthorizationService
 
         Optional<AuthorizationEntity> result;
         if (tokenType == null) {
-            result = this.authorizationRepository.findByStateOrAuthorizationCodeValueOrAccessTokenValueOrRefreshTokenValueOrOidcIdTokenValueOrUserCodeValueOrDeviceCodeValue(token);
+            result = this.authorizationJpaRepository.findByStateOrAuthorizationCodeValueOrAccessTokenValueOrRefreshTokenValueOrOidcIdTokenValueOrUserCodeValueOrDeviceCodeValue(token);
         } else if (OAuth2ParameterNames.STATE.equals(tokenType.getValue())) {
-            result = this.authorizationRepository.findByState(token);
+            result = this.authorizationJpaRepository.findByState(token);
         } else if (OAuth2ParameterNames.CODE.equals(tokenType.getValue())) {
-            result = this.authorizationRepository.findByAuthorizationCodeValue(token);
+            result = this.authorizationJpaRepository.findByAuthorizationCodeValue(token);
         } else if (OAuth2ParameterNames.ACCESS_TOKEN.equals(tokenType.getValue())) {
-            result = this.authorizationRepository.findByAccessTokenValue(token);
+            result = this.authorizationJpaRepository.findByAccessTokenValue(token);
         } else if (OAuth2ParameterNames.REFRESH_TOKEN.equals(tokenType.getValue())) {
-            result = this.authorizationRepository.findByRefreshTokenValue(token);
+            result = this.authorizationJpaRepository.findByRefreshTokenValue(token);
         } else if (OidcParameterNames.ID_TOKEN.equals(tokenType.getValue())) {
-            result = this.authorizationRepository.findByOidcIdTokenValue(token);
+            result = this.authorizationJpaRepository.findByOidcIdTokenValue(token);
         } else if (OAuth2ParameterNames.USER_CODE.equals(tokenType.getValue())) {
-            result = this.authorizationRepository.findByUserCodeValue(token);
+            result = this.authorizationJpaRepository.findByUserCodeValue(token);
         } else if (OAuth2ParameterNames.DEVICE_CODE.equals(tokenType.getValue())) {
-            result = this.authorizationRepository.findByDeviceCodeValue(token);
+            result = this.authorizationJpaRepository.findByDeviceCodeValue(token);
         } else {
             result = Optional.empty();
         }

@@ -1,4 +1,4 @@
-package com.example.learning.security_config.passwordgranttype;
+package com.example.learning.security_config.password_grant_type;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -19,42 +19,44 @@ import org.springframework.util.StringUtils;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-// GrantType(name)-Converter (pre-processor): giúp extract credential từ HttpServletRequest
-// và wrap thành 1 OAuth2ClientAuthenticationToken instance
+// GrantType(name)-Converter (pre-processor):
+// extract credential from HttpServletRequest -> 1 OAuth2ClientAuthenticationToken instance
 @Builder
 public class PasswordAuthenticationConverter implements AuthenticationConverter {
-    private final String GRANT_TYPE_NAME = "custom_password";
+    private final String PASSWORD_GRANT_TYPE = "custom_password";
 
     @Override
     public Authentication convert(HttpServletRequest request) {
-        String grantType = request.getParameter(OAuth2ParameterNames.GRANT_TYPE);
-        if (!GRANT_TYPE_NAME.equals(grantType)) {
-            return null;
+        String grantType = request.getParameter(OAuth2ParameterNames.GRANT_TYPE); // "grant_type"
+        if (!PASSWORD_GRANT_TYPE.equals(grantType)) {
+            return null; // ignore provider of "password" grant type because not this grant type
         }
 
         MultiValueMap<String, String> parameters = getParameters(request);
         String scope = parameters.getFirst(OAuth2ParameterNames.SCOPE);
 
-        validateCredential(parameters, scope);
-
+        // have scopes, split "read write delete" -> ["read", "write", "delete"]
+        // don't have scopes -> null
         Set<String> requestedScopes = StringUtils.hasText(scope)
                 ? new HashSet<>(Arrays.asList(StringUtils.delimitedListToStringArray(scope, " ")))
                 : null;
 
-        Map<String, Object> additionalParameters = new HashMap<>();
+        validateCredential(parameters, requestedScopes);
+
+        Map<String, Object> credentialParams = new HashMap<>();
         parameters.forEach((key, value) -> {
             if (!key.equals(OAuth2ParameterNames.GRANT_TYPE) &&
                     !key.equals(OAuth2ParameterNames.SCOPE)) {
-                additionalParameters.put(key, value.get(0));
+                credentialParams.put(key, value.getFirst());
             }
         });
 
         Authentication clientPrincipal = SecurityContextHolder.getContext().getAuthentication();
-        return new CustomPasswordAuthenticationToken(clientPrincipal, requestedScopes, additionalParameters);
+        return new PasswordAuthenticationToken(clientPrincipal, requestedScopes, credentialParams);
     }
 
     private void validateCredential(MultiValueMap<String, String> parameters,
-                                    String scope) {
+                                    Set<String> requestedScopes) {
         String username = parameters.getFirst(OAuth2ParameterNames.USERNAME);
         if (!StringUtils.hasText(username) ||
                 parameters.get(OAuth2ParameterNames.USERNAME).size() != 1) {

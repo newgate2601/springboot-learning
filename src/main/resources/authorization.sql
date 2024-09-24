@@ -1,3 +1,18 @@
+CREATE TABLE tbl_user
+(
+    id       BIGSERIAL PRIMARY KEY,
+    username VARCHAR,
+    password VARCHAR,
+    seed     VARCHAR
+);
+
+CREATE TABLE tbl_client
+(
+    id            BIGSERIAL PRIMARY KEY,
+    client_id     VARCHAR,
+    client_secret VARCHAR
+);
+
 CREATE TABLE tbl_authorization
 (
     id                            varchar(255) NOT NULL,
