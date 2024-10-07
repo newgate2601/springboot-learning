@@ -105,8 +105,8 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         this.authorizationService.save(authorization);
 
         Map<String, Object> additionResponse = new HashMap<>();
-        additionResponse.put("test1", "okeke");
-        additionResponse.put("kaka", new ClientRequest("1", "2"));
+//        additionResponse.put("test1", "okeke");
+//        additionResponse.put("kaka", new ClientRequest("1", "2"));
         // config response for login
         return new OAuth2AccessTokenAuthenticationToken(
                 registeredClient,

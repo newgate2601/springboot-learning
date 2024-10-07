@@ -1,5 +1,6 @@
 package com.example.learning.token;
 
+import com.example.learning.dto.ClientRequest;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,13 +23,14 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 public class TokenEndpointResponseHandle implements AuthenticationSuccessHandler {
-    private final HttpMessageConverter<OAuth2AccessTokenResponse> accessTokenResponseConverter = new OAuth2AccessTokenResponseHttpMessageConverter();
+    private final HttpMessageConverter<OAuth2AccessTokenResponse> accessTokenResponseConverter
+            = new OAuth2AccessTokenResponseHttpMessageConverter();
     private Consumer<OAuth2AccessTokenAuthenticationContext> accessTokenResponseCustomizer;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
-                                        Authentication authentication) throws IOException, ServletException {
+                                        Authentication authentication) throws IOException {
         if (!(authentication instanceof OAuth2AccessTokenAuthenticationToken accessTokenAuthentication)) {
             OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
                     "Unable to process the access token response.", null);
@@ -41,6 +43,7 @@ public class TokenEndpointResponseHandle implements AuthenticationSuccessHandler
         Map<String, Object> newAdditionalParameters = new HashMap<>(additionalParameters);
         newAdditionalParameters.put("adzc", "kaka");
         newAdditionalParameters.put("adzc2", "kaka1");
+        newAdditionalParameters.put("kaka", new ClientRequest("1", "2"));
 
         OAuth2AccessTokenResponse.Builder builder = OAuth2AccessTokenResponse.withToken(accessToken.getTokenValue())
                 .tokenType(accessToken.getTokenType())
