@@ -11,6 +11,11 @@ management:
       exposure:
         include: '*'
 spring:
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: 101119
   jpa:
     show-sql: true
     open-in-view: false
