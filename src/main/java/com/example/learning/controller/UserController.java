@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1/user")
+@RequestMapping("/uaa/api/v1/user")
 @AllArgsConstructor
 @CrossOrigin
 public class UserController {
