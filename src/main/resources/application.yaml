@@ -37,3 +37,9 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
+
+multi-tenancy:
+  resolver: true
+  routing-data-source: true
+  default-database: product_manufactor_service
+  data-source-settings-endpoint: http://uaa/internal-api/v1/tenant/data-source
