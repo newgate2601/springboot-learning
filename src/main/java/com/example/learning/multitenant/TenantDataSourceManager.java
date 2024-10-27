@@ -83,7 +83,7 @@ public class TenantDataSourceManager {
 
     private String createJdbcUrl(@NonNull String tenantId, @NonNull DataSourceSettings settings) {
 //        String url = settings.getBaseUrl() + defaultDatabaseName + tenantId + settings.getRequestParameters();
-        String url = settings.getBaseUrl() + defaultDatabaseName + tenantId;
+        String url = settings.getBaseUrl() + defaultDatabaseName + tenantId + "?currentSchema=tenant";
         log.error("Create DataSource with url: " + url);
         return url;
     }
