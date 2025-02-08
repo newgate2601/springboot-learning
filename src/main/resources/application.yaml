@@ -31,9 +31,13 @@ spring:
       hibernate.query.in_clause_parameter_padding: true
       hibernate.format_sql: true
   datasource:
-    url: jdbc:postgresql://localhost:5432/learning
+    url: jdbc:postgresql://37.27.49.227/apus201?currentSchema=public&useSSL=false&useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&reWriteBatchedInserts=true
     username: postgres
-    password: 101119
+    password: azEryMn01EPBxHczti6gEnIB3cSCIZ2024
+#  datasource:
+#    url: jdbc:postgresql://localhost:5432/learning
+#    username: postgres
+#    password: 101119
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10

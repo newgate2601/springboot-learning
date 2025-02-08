@@ -18,6 +18,30 @@ import java.util.List;
 public class UserController {
     private final UserService userService;
 
+    @GetMapping("/1")
+    @Operation(summary = "Get1")
+    public List<UserEntity> get(@RequestParam Long id) {
+        return userService.get(id);
+    }
+
+    @GetMapping("/2")
+    @Operation(summary = "Get2")
+    public UserEntity get2(@RequestParam Long id) {
+        return userService.get2(id);
+    }
+
+    @PutMapping("/1")
+    @Operation(summary = "Update1")
+    public void update(@RequestParam Long id) {
+        userService.update(id);
+    }
+
+    @PutMapping("/2")
+    @Operation(summary = "Update2")
+    public void update2(@RequestParam Long id) {
+        userService.update2(id);
+    }
+
     @GetMapping("/list")
     @Operation(summary = "Lấy danh sách user")
     public List<UserEntity> getUsers(){
