@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8080
 logging:
   level:
     root: INFO
@@ -37,3 +37,11 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: 1052861535777-2461ob04raogljbuagm3qji65v23ol1a.apps.googleusercontent.com
+            client-secret: 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
+
