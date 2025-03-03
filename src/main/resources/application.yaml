@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8080
 logging:
   level:
     root: INFO
@@ -11,6 +11,16 @@ management:
       exposure:
         include: '*'
 spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: 1052861535777-2461ob04raogljbuagm3qji65v23ol1a.apps.googleusercontent.com
+            client-secret: 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
+#        provider:
+#          google:
+#            authorization-uri: http://localhost:8080/oauth2/authorization/google
   jpa:
     show-sql: true
     open-in-view: false

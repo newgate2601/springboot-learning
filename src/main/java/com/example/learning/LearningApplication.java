@@ -8,6 +8,7 @@ import reactor.core.publisher.Hooks;
 
 @SpringBootApplication(exclude = {SecurityAutoConfiguration.class})
 @EnableScheduling
+// https://accounts.google.com/logout
 public class LearningApplication {
 	public static void main(String[] args)	 {
 		Hooks.enableAutomaticContextPropagation();

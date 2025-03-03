@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -99,7 +100,10 @@ public class OAuth2Config {
                         )
                         .accessTokenResponseHandler(new TokenEndpointResponseHandle())
                 );
-        return http.build();
+        return http
+                .oauth2Login(Customizer.withDefaults())
+                .formLogin(Customizer.withDefaults())
+                .build();
     }
 
     // config attributes of Token previous creat token
