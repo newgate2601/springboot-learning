@@ -3,9 +3,8 @@ package com.example.learning.security_config.password_grant_type;
 import java.security.Principal;
 import java.util.*;
 
-import com.example.learning.dto.ClientRequest;
 import com.example.learning.entity.UserEntity;
-import com.example.learning.service.UserService;
+import com.example.learning.service.UserServiceImpl;
 import com.example.learning.token.CustomPayloadValue;
 import lombok.Builder;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -38,7 +37,7 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
     private static final String ERROR_URI = "https://datatracker.ietf.org/doc/html/rfc6749#section-5.2";
 
     private final OAuth2AuthorizationService authorizationService;
-    private final UserService userService;
+    private final UserServiceImpl userServiceImpl;
     private final OAuth2TokenGenerator<? extends OAuth2Token> tokenGenerator;
     private final PasswordEncoder passwordEncoder;
 
@@ -54,7 +53,7 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
                 (OAuth2ClientAuthenticationToken) authentication.getPrincipal();
         RegisteredClient registeredClient = clientPrincipal.getRegisteredClient();
 
-        UserEntity userEntity = userService.getUser(usernameRequest);
+        UserEntity userEntity = userServiceImpl.getUser(usernameRequest);
         validateUser(userEntity, usernameRequest, passwordRequest);
 
         // addition info for context

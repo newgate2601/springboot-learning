@@ -5,6 +5,9 @@ logging:
     root: INFO
     org.springframework.web: DEBUG
     org.hibernate: ERROR
+    org:
+      springframework:
+        security: DEBUG
 management:
   endpoints:
     web:

@@ -4,14 +4,12 @@ import com.example.learning.repository.client.ClientJpaRepository;
 import com.example.learning.repository.client.RegisterClientRepository;
 import com.example.learning.security_config.password_grant_type.PasswordAuthenticationConverter;
 import com.example.learning.security_config.password_grant_type.PasswordAuthenticationProvider;
-import com.example.learning.service.UserService;
+import com.example.learning.service.UserServiceImpl;
 import com.example.learning.token.CustomPayloadValue;
+import com.example.learning.token.OAuth2LoginSuccessHandler;
 import com.example.learning.token.TokenEndpointResponseHandle;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.proc.SecurityContext;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,16 +19,11 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.client.endpoint.AbstractOAuth2AuthorizationGrantRequest;
-import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2Token;
-import org.springframework.security.oauth2.core.endpoint.OAuth2AccessTokenResponse;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
-import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
@@ -40,9 +33,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.JWKSource;
-import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.web.cors.CorsConfiguration;
 
-import java.io.IOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
@@ -61,7 +53,7 @@ import java.util.*;
 @AllArgsConstructor
 public class OAuth2Config {
     private final ClientJpaRepository clientJpaRepository;
-    private final UserService userService;
+    private final UserServiceImpl userServiceImpl;
     private final PasswordEncoder passwordEncoder;
     private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("custom_password");
     private static final AuthorizationGrantType CLIENT_CREDENTIALS_GRANT_TYPE = new AuthorizationGrantType("client_credentials");
@@ -76,9 +68,19 @@ public class OAuth2Config {
 
         http
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(AbstractHttpConfigurer::disable)
+//                .cors(AbstractHttpConfigurer::disable)
+                .cors(
+                        cors -> cors.configurationSource(request -> {
+                            CorsConfiguration config = new CorsConfiguration();
+                            config.setAllowedOriginPatterns(List.of("*"));
+                            config.setAllowedMethods(List.of("GET", "POST"));
+                            config.setAllowedHeaders(List.of("*"));
+                            config.setAllowCredentials(true);
+                            return config;
+                        })
+                )
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
-                        .requestMatchers("/**").permitAll()
+                        .requestMatchers("/**", "/oauth2/**").permitAll()
                         .anyRequest().authenticated())
                 .apply(authorizationServerConfigurer);
 
@@ -93,7 +95,7 @@ public class OAuth2Config {
                         .authenticationProvider(
                                 PasswordAuthenticationProvider.builder()
                                         .authorizationService(jpaOAuth2AuthorizationService)
-                                        .userService(userService)
+                                        .userServiceImpl(userServiceImpl)
                                         .tokenGenerator(tokenGenerator())
                                         .passwordEncoder(passwordEncoder)
                                         .build()
@@ -101,7 +103,8 @@ public class OAuth2Config {
                         .accessTokenResponseHandler(new TokenEndpointResponseHandle())
                 );
         return http
-                .oauth2Login(Customizer.withDefaults())
+//                .oauth2Login(Customizer.withDefaults())
+                .oauth2Login(oauth2 -> oauth2.successHandler(new OAuth2LoginSuccessHandler(new ObjectMapper())))
                 .formLogin(Customizer.withDefaults())
                 .build();
     }
@@ -157,7 +160,7 @@ public class OAuth2Config {
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return userService;
+        return userServiceImpl;
     }
 
     // config uri protocol endpoint + iss

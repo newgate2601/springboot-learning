@@ -1,7 +1,6 @@
 package com.example.learning.token;
 
 import com.example.learning.dto.ClientRequest;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -19,7 +18,6 @@ import java.io.IOException;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Consumer;
 
 public class TokenEndpointResponseHandle implements AuthenticationSuccessHandler {
