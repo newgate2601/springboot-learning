@@ -30,6 +30,8 @@ spring:
       hibernate.query.fail_on_pagination_over_collection_fetch: true
       hibernate.query.in_clause_parameter_padding: true
       hibernate.format_sql: true
+      hibernate:
+        default_batch_fetch_size: 100
   datasource:
     url: jdbc:postgresql://localhost:5432/learning
     username: postgres
