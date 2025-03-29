@@ -16,4 +16,11 @@ public class CustomResponse<T> {
     private Integer status;
     private List<ErrorResponse> errors;
     private T body;
+
+    public static <T> CustomResponse ok(T body) {
+        return CustomResponse.builder()
+                .status(200)
+                .body(body)
+                .build();
+    }
 }

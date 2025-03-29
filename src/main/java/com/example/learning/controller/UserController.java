@@ -4,6 +4,9 @@ import com.example.learning.dto.IdNameResponse;
 import com.example.learning.dto.UserSignUpRequest;
 
 import com.example.learning.entity.UserEntity;
+import com.example.learning.responsehandle.CustomResponse;
+import com.example.learning.responsehandle.error.ErrorCodes;
+import com.example.learning.responsehandle.exception.RequestException;
 import com.example.learning.responsehandle.message.MessageService;
 import com.example.learning.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,8 +32,8 @@ public class UserController {
 
     @PostMapping("/sign-up")
     @Operation(summary = "Đăng ký")
-    public IdNameResponse signUp(@RequestBody UserSignUpRequest userSignUpRequest){
-        return userService.signUp(userSignUpRequest);
+    public CustomResponse<IdNameResponse> signUp(@RequestBody UserSignUpRequest userSignUpRequest){
+        return CustomResponse.ok(userService.signUp(userSignUpRequest));
     }
 
     @GetMapping("/message")

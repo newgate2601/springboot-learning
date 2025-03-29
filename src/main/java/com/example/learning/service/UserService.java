@@ -29,12 +29,12 @@ public class UserService {
 
     @Transactional
     public IdNameResponse signUp(UserSignUpRequest userSignUpRequest){
-        UserEntity userEntity = userMapper.getEntityBy(userSignUpRequest);
-        userRepository.save(userEntity);
-        if (Objects.nonNull(userEntity.getId())){
+        if ("string".equals(userSignUpRequest.getUsername())){
             throw new RequestException(ErrorCodes.ERROR);
 //            throw new TestException("loi roi nhe");
         }
+        UserEntity userEntity = userMapper.getEntityBy(userSignUpRequest);
+        userRepository.save(userEntity);
         return IdNameResponse.builder()
                 .id(userEntity.getId())
                 .name(userEntity.getUsername())
