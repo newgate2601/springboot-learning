@@ -3,6 +3,8 @@ package com.example.learning.service;
 import com.example.learning.dto.IdNameResponse;
 import com.example.learning.dto.UserSignUpRequest;
 import com.example.learning.entity.UserEntity;
+import com.example.learning.responsehandle.error.ErrorCodes;
+import com.example.learning.responsehandle.exception.RequestException;
 import com.example.learning.mapper.UserMapper;
 import com.example.learning.repository.UserRepository;
 import lombok.AllArgsConstructor;
@@ -29,6 +31,10 @@ public class UserService {
     public IdNameResponse signUp(UserSignUpRequest userSignUpRequest){
         UserEntity userEntity = userMapper.getEntityBy(userSignUpRequest);
         userRepository.save(userEntity);
+        if (Objects.nonNull(userEntity.getId())){
+            throw new RequestException(ErrorCodes.ERROR);
+//            throw new TestException("loi roi nhe");
+        }
         return IdNameResponse.builder()
                 .id(userEntity.getId())
                 .name(userEntity.getUsername())
