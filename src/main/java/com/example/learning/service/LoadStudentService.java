@@ -9,6 +9,7 @@ import com.example.learning.entity.StudentEntity;
 import com.example.learning.mapper.StudentMapper;
 import com.example.learning.repository.CustomSpecification;
 import com.example.learning.repository.StudentRepository;
+import jakarta.persistence.criteria.JoinType;
 import lombok.AllArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -59,6 +60,8 @@ public class LoadStudentService {
         });
     }
 
+//    https://chatgpt.com/share/67e964d8-2d8c-8010-ab0a-d933d8f57550
+
     private Specification<StudentEntity> getSpecification(StudentPageDto studentPageDto) {
 //        return CustomSpecification.builder(StudentEntity.class)
 //                .search()
@@ -76,6 +79,9 @@ public class LoadStudentService {
                 .filter()
                 .isEquals("age", studentPageDto.getAge())
                 .isEquals("gender", studentPageDto.getGender())
+                .join(StudentCourseMapEntity.class, "studentCourseMaps", JoinType.INNER)
+                .isEqual("score", studentPageDto.getScore())
+                .isEqual("grade", studentPageDto.getGrade())
                 .build();
     }
 

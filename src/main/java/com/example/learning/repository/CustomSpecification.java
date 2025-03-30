@@ -1,10 +1,11 @@
 package com.example.learning.repository;
 
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Path;
 import org.springframework.data.jpa.domain.Specification;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 public class CustomSpecification {
     public static <T> SpecificationBuilder<T> builder() {
@@ -20,6 +21,8 @@ public class CustomSpecification {
         private final List<Specification<T>> andSpecifications = new ArrayList<>();
         private List<Specification<T>> currentPredicates = andSpecifications;
         private Class<T> tClass;
+        private final Map<String, Join<T, ?>> joins = new HashMap<>();
+
 
         public SpecificationBuilder(Class tClass) {
             this.tClass = tClass;
@@ -38,6 +41,38 @@ public class CustomSpecification {
             currentPredicates = andSpecifications;
             return this;
         }
+
+        public <R> Join<T, R> join(String joinField, JoinType joinType) {
+            return (Join<T, R>) joins.computeIfAbsent(joinField, key -> (root, query, criteriaBuilder) -> root.join(joinField, joinType));
+        }
+
+//        public <R> SpecificationBuilder<T> join(Class<R> joinClass, String joinField,
+//                                                String fieldName, Object value, JoinType joinType) {
+//            if (Objects.nonNull(value)) {
+//                Specification<T> spec = (root, query, criteriaBuilder) -> {
+//                    Join<T, R> join = root.join(joinField, joinType);
+//                    return criteriaBuilder.equal(join.get(fieldName), value);
+//                };
+//                currentPredicates.add(spec);
+//            }
+//            return this;
+//        }
+
+//        public <R, V extends Comparable<V>> SpecificationBuilder<T> join(Class<R> joinClass,
+//                                                                         String joinField,
+//                                                                         String fieldName,
+//                                                                         V value,
+//                                                                         JoinType joinType) {
+//            if (Objects.nonNull(value)) {
+//                Specification<T> spec = (root, query, criteriaBuilder) -> {
+//                    Join<T, R> join = root.join(joinField, joinType);
+//                    Path<V> path = join.get(fieldName); // Ép kiểu
+//                    return criteriaBuilder.greaterThanOrEqualTo(path, value);
+//                };
+//                currentPredicates.add(spec);
+//            }
+//            return this;
+//        }
 
         public SpecificationBuilder<T> isLike(String fieldName, String value) {
             if (Objects.nonNull(value)) {
