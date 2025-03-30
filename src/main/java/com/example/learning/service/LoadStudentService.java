@@ -4,14 +4,11 @@ import com.example.learning.dto.student.CourseDto;
 import com.example.learning.dto.student.StudentCourseMapDto;
 import com.example.learning.dto.student.StudentDto;
 import com.example.learning.dto.student.StudentPageDto;
-import com.example.learning.entity.CourseEntity;
 import com.example.learning.entity.StudentCourseMapEntity;
 import com.example.learning.entity.StudentEntity;
 import com.example.learning.mapper.StudentMapper;
+import com.example.learning.repository.CustomSpecification;
 import com.example.learning.repository.StudentRepository;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
-import jakarta.persistence.criteria.Predicate;
 import lombok.AllArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -63,46 +60,66 @@ public class LoadStudentService {
     }
 
     private Specification<StudentEntity> getSpecification(StudentPageDto studentPageDto) {
-        return (root, query, criteriaBuilder) -> {
-            List<Predicate> orPredicates = new ArrayList<>();
-            List<Predicate> andPredicates = new ArrayList<>();
-
-            // OR: (name LIKE ? OR code LIKE ?)
-            if (Objects.nonNull(studentPageDto.getName())) {
-                orPredicates.add(criteriaBuilder.like(root.get("name"), "%" + studentPageDto.getName() + "%"));
-            }
-            if (Objects.nonNull(studentPageDto.getCode())) {
-                orPredicates.add(criteriaBuilder.like(root.get("code"), "%" + studentPageDto.getCode() + "%"));
-            }
-
-            // AND: (age = ? AND gender = ? AND score >= ?)
-            if (Objects.nonNull(studentPageDto.getAge())) {
-                andPredicates.add(criteriaBuilder.equal(root.get("age"), studentPageDto.getAge()));
-            }
-            if (Objects.nonNull(studentPageDto.getGender())) {
-                andPredicates.add(criteriaBuilder.equal(root.get("gender"), studentPageDto.getGender()));
-            }
-
-            // JOIN với bảng StudentCourseMapEntity (scm)
-            Join<StudentEntity, StudentCourseMapEntity> studentCourseJoin =
-                    root.join("studentCourseMaps", JoinType.INNER);
-            if (Objects.nonNull(studentPageDto.getScore())) {
-                andPredicates.add(criteriaBuilder.greaterThanOrEqualTo(studentCourseJoin.get("score"), studentPageDto.getScore()));
-            }
-
-            Join<StudentCourseMapEntity, CourseEntity> courseJoin = studentCourseJoin.join("course", JoinType.INNER);
-
-            if (Objects.nonNull(studentPageDto.getCourseName())) {
-                andPredicates.add(criteriaBuilder.like(courseJoin.get("name"), "%" + studentPageDto.getCourseName() + "%"));
-            }
-
-            // Combine predicates
-            Predicate orPredicate = orPredicates.isEmpty() ? criteriaBuilder.conjunction() : criteriaBuilder.or(orPredicates.toArray(new Predicate[0]));
-            Predicate andPredicate = andPredicates.isEmpty() ? criteriaBuilder.conjunction() : criteriaBuilder.and(andPredicates.toArray(new Predicate[0]));
-
-            return criteriaBuilder.and(orPredicate, andPredicate);
-        };
+//        return CustomSpecification.builder(StudentEntity.class)
+//                .search()
+//                .isLike("code", studentPageDto.getCode())
+//                .isLike("name", studentPageDto.getName())
+//
+//                .filter()
+//                .isEquals("age", studentPageDto.getAge())
+//                .isEquals("gender", studentPageDto.getGender())
+//                .build();
+        return CustomSpecification.<StudentEntity>builder()
+                .search()
+                .isLike("code", studentPageDto.getCode())
+                .isLike("name", studentPageDto.getName())
+                .filter()
+                .isEquals("age", studentPageDto.getAge())
+                .isEquals("gender", studentPageDto.getGender())
+                .build();
     }
+
+//    private Specification<StudentEntity> getSpecification(StudentPageDto studentPageDto) {
+//        return (root, query, criteriaBuilder) -> {
+//            List<Predicate> orPredicates = new ArrayList<>();
+//            List<Predicate> andPredicates = new ArrayList<>();
+//
+//            // OR: (name LIKE ? OR code LIKE ?)
+//            if (Objects.nonNull(studentPageDto.getName())) {
+//                orPredicates.add(criteriaBuilder.like(root.get("name"), "%" + studentPageDto.getName() + "%"));
+//            }
+//            if (Objects.nonNull(studentPageDto.getCode())) {
+//                orPredicates.add(criteriaBuilder.like(root.get("code"), "%" + studentPageDto.getCode() + "%"));
+//            }
+//
+//            // AND: (age = ? AND gender = ? AND score >= ?)
+//            if (Objects.nonNull(studentPageDto.getAge())) {
+//                andPredicates.add(criteriaBuilder.equal(root.get("age"), studentPageDto.getAge()));
+//            }
+//            if (Objects.nonNull(studentPageDto.getGender())) {
+//                andPredicates.add(criteriaBuilder.equal(root.get("gender"), studentPageDto.getGender()));
+//            }
+//
+//            // JOIN với bảng StudentCourseMapEntity (scm)
+//            Join<StudentEntity, StudentCourseMapEntity> studentCourseJoin =
+//                    root.join("studentCourseMaps", JoinType.INNER);
+//            if (Objects.nonNull(studentPageDto.getScore())) {
+//                andPredicates.add(criteriaBuilder.greaterThanOrEqualTo(studentCourseJoin.get("score"), studentPageDto.getScore()));
+//            }
+//
+//            Join<StudentCourseMapEntity, CourseEntity> courseJoin = studentCourseJoin.join("course", JoinType.INNER);
+//
+//            if (Objects.nonNull(studentPageDto.getCourseName())) {
+//                andPredicates.add(criteriaBuilder.like(courseJoin.get("name"), "%" + studentPageDto.getCourseName() + "%"));
+//            }
+//
+//            // Combine predicates
+//            Predicate orPredicate = orPredicates.isEmpty() ? criteriaBuilder.conjunction() : criteriaBuilder.or(orPredicates.toArray(new Predicate[0]));
+//            Predicate andPredicate = andPredicates.isEmpty() ? criteriaBuilder.conjunction() : criteriaBuilder.and(andPredicates.toArray(new Predicate[0]));
+//
+//            return criteriaBuilder.and(orPredicate, andPredicate);
+//        };
+//    }
 
 //    private Specification<StudentEntity> getSpecification(StudentPageDto studentPageDto) {
 //        Specification<StudentEntity> specification = Specification.where(null);
