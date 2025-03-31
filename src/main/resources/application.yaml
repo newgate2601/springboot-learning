@@ -37,3 +37,13 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
+#  data:
+#    redis:
+#      host: redis-11951.c85.us-east-1-2.ec2.redns.redis-cloud.com
+#      port: 11951
+#      password: oOJNSLQSbgfhTYwIaq2ZO2aBSmD3zB7B
+
+# https://www.anhdh.net/blog/redis-distributed-locking
+# https://medium.com/@egorponomarev/distributed-lock-with-redis-and-spring-boot-2c3f51a44c65
+# https://redis.io/docs/latest/develop/use/patterns/distributed-locks/
+# https://viblo.asia/p/methods-to-implement-distributed-locking-in-spring-boot-with-redisson-GAWVpeK5405
