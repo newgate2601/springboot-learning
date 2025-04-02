@@ -1,26 +1,47 @@
-version: "3.7"
-volumes:
-  postgres_data:
+version: '3.8'
+
 services:
-  api_service:
-    build: .
-    restart: always
+  kafka:
+    image: apache/kafka:4.0.0
+    container_name: kafka
+    hostname: kafka
+    user: "1000:1000"  # Sử dụng cùng UID/GID như trong log
     ports:
-      - "8085:8086"
-    depends_on:
-      - postgres
-    links:
-      - postgres:postgres
-  postgres:
-    image: "postgres"
-    restart: always
-    ports:
-      - "5432:5432"
+      - "9092:9092"
+      - "9093:9093"
     environment:
-      POSTGRES_DB: learning
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 101119
+      KAFKA_ENABLE_KRAFT: "yes"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CLUSTER_ID: "5L6g3nShT-eMCtK--X86sw"
+      KAFKA_LOG_DIRS: "/kafka/data"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./kafka-data:/kafka/data
+    tmpfs:
+      - /tmp  # Sử dụng tmpfs cho thư mục tạm
 
-
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "Local-Kafka-4"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
+      KAFKA_CLUSTERS_0_KRAFT: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy
+volumes:
+  kafka-data:
