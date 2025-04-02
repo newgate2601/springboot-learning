@@ -1,5 +1,6 @@
 package com.example.learning.controller;
 
+import com.example.learning.dto.SearchProductDto;
 import com.example.learning.entity.product.AllProductViewEntity;
 import com.example.learning.service.ProductService;
 import lombok.AllArgsConstructor;
@@ -19,7 +20,7 @@ public class ProductController {
     private final ProductService productService;
 
     @GetMapping("/list")
-    public Page<AllProductViewEntity> getList(@ParameterObject Pageable pageable) {
-        return productService.getList(pageable);
+    public Page<AllProductViewEntity> getList(SearchProductDto searchProductDto, @ParameterObject Pageable pageable) {
+        return productService.getList(searchProductDto, pageable);
     }
 }

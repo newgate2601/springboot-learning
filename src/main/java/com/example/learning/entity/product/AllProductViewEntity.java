@@ -21,7 +21,7 @@ import org.springframework.data.annotation.Immutable;
 //@Subselect("SELECT * FROM all_product_view")
 public class AllProductViewEntity {
     @Id
-    private Long id;
+    private String id;
 
     private String productCode;
     private String partCode;
