@@ -12,19 +12,25 @@ management:
         include: '*'
 spring:
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:9099
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
       retries: 3
-      batch-size: 16384
+      batch-size: 1 #16384
+      linger-ms: 200
       buffer-memory: 33554432
     properties:
-      delivery.timeout.ms: 120000
-      request.timeout.ms: 30000
+      delivery.timeout.ms: 180000
+      request.timeout.ms: 60000
       enable.idempotence: true
       max.in.flight.requests.per.connection: 5
+    admin:
+      fail-fast: true
+      properties:
+        retries: 5
+        retry.backoff.ms: 1000
   jpa:
     show-sql: true
     open-in-view: false
