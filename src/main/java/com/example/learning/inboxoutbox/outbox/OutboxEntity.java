@@ -27,7 +27,9 @@ public class OutboxEntity {
 
   private String payload;
 
-  private String status; // PENDING or PROCESSED
+  private String status; // PENDING or PROCESSED 
+  
+  private String destination;
 
   private LocalDateTime createdAt;
 }
