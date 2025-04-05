@@ -5,15 +5,20 @@ logging:
     root: INFO
     org.springframework.web: DEBUG
     org.hibernate: ERROR
+    org.springframework.kafka: DEBUG
+    org.apache.kafka: DEBUG
 management:
   endpoints:
     web:
       exposure:
         include: '*'
 spring:
+  main:
+    allow-bean-definition-overriding: true
   kafka:
     bootstrap-servers: localhost:9099
     producer:
+      bootstrap-servers: localhost:9099
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
@@ -21,16 +26,27 @@ spring:
       batch-size: 1 #16384
       linger-ms: 200
       buffer-memory: 33554432
-    properties:
-      delivery.timeout.ms: 180000
-      request.timeout.ms: 60000
-      enable.idempotence: true
-      max.in.flight.requests.per.connection: 5
+    consumer:
+      group-id: my-group-id
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+#      enable-auto-commit: true
+#      auto-commit-interval: 1000
+      auto-offset-reset: earliest
+      bootstrap-servers: localhost:9099
+      sessionTimeout: 90000
+
+#    properties:
+#      delivery.timeout.ms: 180000
+#      request.timeout.ms: 60000
+#      enable.idempotence: true
+#      max.in.flight.requests.per.connection: 5
     admin:
-      fail-fast: true
+#      fail-fast: true
       properties:
-        retries: 5
-        retry.backoff.ms: 1000
+        bootstrap-servers: localhost:9099
+#        retries: 5
+#        retry.backoff.ms: 1000
   jpa:
     show-sql: true
     open-in-view: false

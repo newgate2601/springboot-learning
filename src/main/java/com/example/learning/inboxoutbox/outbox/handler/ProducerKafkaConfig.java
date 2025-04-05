@@ -1,4 +1,4 @@
-package com.example.learning.inboxoutbox.kafka;
+package com.example.learning.inboxoutbox.outbox.handler;
 
 import lombok.AllArgsConstructor;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -9,7 +9,7 @@ import org.springframework.kafka.core.ProducerFactory;
 
 @Configuration
 @AllArgsConstructor
-public class KafkaConfig {
+public class ProducerKafkaConfig {
     private final ProducerFactory<String, String> producerFactory;
 
     @Bean
