@@ -5,5 +5,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface InboxRepository extends JpaRepository<InboxEntity, String> {
-
+    boolean existsById(String id);
 }
