@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!--
+        Gửi log từ Spring boot tới Logstash
+        LogstashTcpSocketAppender: send log based on TCP to Logstash
+        destination: send to port 5000
+        LogstashEncoder: encode format log to JSON before send to Logstash (format that Logstash can understand)
+        (if no LogstashEncoder, send plaintext, Logstash cannot understand
+    -->
+    <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+        <destination>localhost:5000</destination> <!-- Logstash destination -->
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder" />
+    </appender>
+
+<!--     Optional: log ra console nữa-->
+<!--    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">-->
+<!--        <encoder>-->
+<!--            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>-->
+<!--        </encoder>-->
+<!--    </appender>-->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Log level INFO trở lên sẽ được gửi tới cả console và Logstash-->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="LOGSTASH" />
+    </root>
+</configuration>
+
+<!--logstash.conf là 1 file config của Logstash-->
+<!--dùng để thiết lập pipeline để xử lý log của application qua TCP rồi đẩy vào Elasticsearch-->
+
+<!--        Phần input - Tiếp nhận log từ ứng dụng Spring Boot-->
+<!--        input {-->
+<!--            tcp {-->
+<!--                port => 5000          # Logstash lắng nghe kết nối TCP trên cổng 5000-->
+<!--                codec => json         # chỉ định cách Logstash hiểu và parse log từ Spring boot (dữ liệu nhận được dạng JSON do LogstashEncoder), -->
+<!--            }-->
+<!--        }-->
+
+<!--        Phần output - Đẩy log đến Elasticsearch và hiển thị ra console-->
+<!--        output {-->
+<!--            elasticsearch {-->
+<!--                hosts => ["http://elasticsearch:9200"]  # URL kết nối Elasticsearch-->
+<!--                index => "spring-logs-%{+YYYY.MM.dd}"   # Tạo index theo ngày , đẩy log vào index này (ví dụ: spring-logs-2023.10.01)-->
+<!--            }-->
+
+<!--            stdout { codec => rubydebug }            # In log ra console của Logstash để debug-->
+<!--        }-->
+

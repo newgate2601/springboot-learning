@@ -1,26 +1,76 @@
-version: "3.7"
-volumes:
-  postgres_data:
+version: '3'
+
 services:
-  api_service:
-    build: .
-    restart: always
-    ports:
-      - "8085:8086"
-    depends_on:
-      - postgres
-    links:
-      - postgres:postgres
-  postgres:
-    image: "postgres"
-    restart: always
-    ports:
-      - "5432:5432"
+#  prometheus:
+#    image: "prom/prometheus"
+#    volumes:
+#      - "./src/main/resources/prometheus.yml:/etc/prometheus/prometheus.yml"
+#    ports:
+#      - "9090:9090"
+#    container_name: prometheus
+#    networks:
+#      - monitoring
+#
+#  grafana:
+#    image: "grafana/grafana"
+#    ports:
+#      - "3000:3000"
+#    container_name: grafana
+#    networks:
+#      - monitoring
+#    environment:
+#      - GF_SECURITY_ADMIN_PASSWORD=admin # Có thể cấu hình mật khẩu admin cho Grafana nếu cần
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
     environment:
-      POSTGRES_DB: learning
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 101119
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - esdata:/usr/share/elasticsearch/data
+    networks:
+      - monitoring
 
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=["http://elasticsearch:9200"]
+    networks:
+      - monitoring
 
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.0
+    volumes:
+      - ./src/main/resources/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./src/main/resources/logstash.yml:/usr/share/logstash/config/logstash.yml
+    ports:
+      - "5000:5000"      # TCP input từ Spring Boot
+      - "9600:9600"      # HTTP monitoring
+    depends_on:
+      - elasticsearch
+    networks:
+      - monitoring
+#  fluentd:
+#    build: ./fluentd
+#    volumes:
+#      - ./fluentd/conf:/fluentd/etc
+#    ports:
+#      - "24224:24224"
+#      - "24224:24224/udp"
+#    depends_on:
+#      - elasticsearch
+volumes:
+  esdata:
+
+networks:
+  monitoring:
+    driver: bridge

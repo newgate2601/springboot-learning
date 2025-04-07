@@ -1,0 +1,3 @@
+http.host: "0.0.0.0"  # accept all ip request to Logstash
+xpack.monitoring.enabled: false
+log.level: info # accept log > info (fatal, error, warn, info, debug, trace)

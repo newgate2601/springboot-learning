@@ -1,11 +1,14 @@
 server:
-  port: 8086
+  port: 8080
 logging:
   level:
     root: INFO
     org.springframework.web: DEBUG
     org.hibernate: ERROR
 management:
+  endpoint:
+    health:
+      show-details: always
   endpoints:
     web:
       exposure:
