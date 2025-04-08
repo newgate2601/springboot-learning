@@ -37,3 +37,11 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
+  data:
+    mongodb:
+      host: localhost
+      port: 27017
+      username: root
+      password: secret
+      authentication-database: admin
+      database: phutest # ← thay bằng tên DB bạn muốn dùng
