@@ -95,6 +95,26 @@ services:
     networks:
       - kafka-network
 
+  debezium:
+    image: debezium/connect:2.7.3.Final
+    ports:
+      - "8083:8083"  # Debezium REST API
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9093
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_connect_configs
+      OFFSET_STORAGE_TOPIC: debezium_connect_offsets
+      STATUS_STORAGE_TOPIC: debezium_connect_statuses
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      REST_ADVERTISED_HOST_NAME: debezium
+    depends_on:
+      - kafka
+    networks:
+      - kafka-network
+
 networks:
   kafka-network:
     driver: bridge
