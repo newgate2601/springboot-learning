@@ -11,11 +11,14 @@ management:
       exposure:
         include: '*'
 spring:
+  liquibase:
+    change-log: classpath:/db/changelog/master.xml
+    enabled: true
   jpa:
-    show-sql: true
-    open-in-view: false
     hibernate:
       ddl-auto: update
+    show-sql: true
+    open-in-view: false
     properties:
       hibernate.jdbc.time_zone: UTC
       hibernate.id.new_generator_mappings: true
