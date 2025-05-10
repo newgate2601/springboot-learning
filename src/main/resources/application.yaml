@@ -41,7 +41,7 @@ spring:
     mongodb:
       host: localhost
       port: 27017
-      username: root
-      password: secret
-      authentication-database: admin
-      database: phutest # ← thay bằng tên DB bạn muốn dùng
+#      username: root
+#      password: secret
+#      authentication-database: admin
+      database: learnmongo
