@@ -2,10 +2,12 @@ package com.example.learning.controller;
 
 import com.example.learning.dto.IdNameResponse;
 import com.example.learning.entity.CreditCardEntity;
+import com.example.learning.redis.redislockregistry.DistributedLock;
 import com.example.learning.service.CreditCardService;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 @RestController
@@ -18,6 +20,14 @@ public class CreditCardController {
     @PostMapping
     public IdNameResponse createDefaultCreditCard() {
         return creditCardService.createDefaultCreditCard();
+    }
+
+    @PutMapping("/sync-invoice")
+    @DistributedLock(lockName = "purchase-invoice-sync-orc", parameters = {"#invoiceNos", "#shipmentNo"})
+    public void syncInvoices(@RequestParam(required = false) List<String> invoiceNos,
+                             @RequestParam(required = false) String shipmentNo) {
+        Integer abc = 1;
+        System.out.println("<<<<<<<<<<<<< " + abc + " >>>>>>>>>>>>>");
     }
 
     @GetMapping
