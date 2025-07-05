@@ -1,26 +1,26 @@
-version: "3.7"
-volumes:
-  postgres_data:
+version: '3.8'
+
 services:
-  api_service:
-    build: .
-    restart: always
-    ports:
-      - "8085:8086"
-    depends_on:
-      - postgres
-    links:
-      - postgres:postgres
-  postgres:
-    image: "postgres"
-    restart: always
-    ports:
-      - "5432:5432"
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
     environment:
-      POSTGRES_DB: learning
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 101119
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://host.docker.internal:5432/keycloak
+      - KC_DB_USERNAME=postgres
+      - KC_DB_PASSWORD=your_password
+      - KC_HOSTNAME=localhost
+      - KC_HTTP_CORS_ALLOWED_ORIGINS=http://localhost:8081
+      - KC_PROXY=edge
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["start-dev"]
+    networks:
+      - keycloak-network
 
-
+networks:
+  keycloak-network:
+    driver: bridge

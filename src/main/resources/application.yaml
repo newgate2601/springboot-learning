@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8081
 logging:
   level:
     root: INFO
@@ -10,6 +10,13 @@ management:
     web:
       exposure:
         include: '*'
+
+keycloak:
+  realm: pre-prod
+  auth-server-url: http://localhost:8080  # URL Keycloak server
+  resource: learning-app  # Client ID đã tạo trong Keycloak
+  credentials:
+    secret: 9rm0Y3Azt6R8xXKzFLSepU6L9t5aBKlO  # Lấy từ tab "Credentials" trong Keycloak Admin Console
 spring:
   jpa:
     show-sql: true
