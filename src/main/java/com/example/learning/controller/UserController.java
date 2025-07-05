@@ -1,6 +1,7 @@
 package com.example.learning.controller;
 
 import com.example.learning.dto.IdNameResponse;
+import com.example.learning.dto.UpdateUserRequest;
 import com.example.learning.dto.UserSignUpRequest;
 
 import com.example.learning.entity.UserEntity;
@@ -17,6 +18,11 @@ import java.util.List;
 @CrossOrigin
 public class UserController {
     private final UserService userService;
+
+    @PutMapping
+    public void updateUser(Long userId, UpdateUserRequest updateUserRequest, Boolean isSleep){
+        userService.updateUser(userId, updateUserRequest, isSleep);
+    }
 
     @GetMapping("/list")
     @Operation(summary = "Lấy danh sách user")
