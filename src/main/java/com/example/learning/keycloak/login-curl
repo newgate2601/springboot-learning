@@ -1,0 +1,7 @@
+curl --location 'http://localhost:8080/realms/pre-prod/protocol/openid-connect/token' \
+--header 'Content-Type: application/x-www-form-urlencoded' \
+--data-urlencode 'grant_type=password' \
+--data-urlencode 'client_id=learning-app' \
+--data-urlencode 'username=newgate2601' \
+--data-urlencode 'password=daicaphu2601' \
+--data-urlencode 'client_secret=9rm0Y3Azt6R8xXKzFLSepU6L9t5aBKlO'

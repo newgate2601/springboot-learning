@@ -17,7 +17,27 @@ keycloak:
   resource: learning-app  # Client ID đã tạo trong Keycloak
   credentials:
     secret: 9rm0Y3Azt6R8xXKzFLSepU6L9t5aBKlO  # Lấy từ tab "Credentials" trong Keycloak Admin Console
+jwt:
+  auth:
+    converter:
+      # Client ID được cấu hình trong Keycloak mà ứng dụng này đại diện,
+      # Token phải chứa claim aud (audience) khớp với giá trị này mới được chấp nhận
+      resource-id: learning-app
+      principal-attribute: principal_username
 spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Spring Security sẽ sử dụng URI này để:
+          # + Xác thực rằng token được phát hành bởi Keycloak realm này
+          # + Tải metadata OIDC tự động (thông qua endpoint /.well-known/openid-configuration)
+          # + Giá trị này phải khớp với claim iss trong JWT token
+          issuer-uri: http://localhost:8080/realms/pre-prod
+          # Địa chỉ để lấy public keys (JWK - JSON Web Key) dùng để verify chữ ký của JWT:
+          # + Spring sẽ sử dụng các public key này để xác thực chữ ký của token nhận được
+          # + Đây là endpoint tiêu chuẩn của Keycloak cung cấp các public key
+          jwk-set-uri: http://localhost:8080/realms/pre-prod/protocol/openid-connect/certs
   jpa:
     show-sql: true
     open-in-view: false
