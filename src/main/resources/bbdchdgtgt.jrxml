@@ -1,0 +1,130 @@
+<!-- Created with Jaspersoft Studio version 7.0.3.final using JasperReports Library version 7.0.3-41034ca841d452f3305ba55b9042260aaa1ab5dd  -->
+<jasperReport name="employee-rpt" language="java" pageWidth="595" pageHeight="842" columnWidth="555" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20" uuid="db901a88-d50c-41da-80ef-9f87c1df9f6c">
+    <property name="ireport.zoom" value="1.0"/>
+    <property name="ireport.x" value="0"/>
+    <property name="ireport.y" value="0"/>
+    <parameter name="createdBy" class="java.lang.String"/>
+    <field name="id" class="java.lang.Integer"/>
+    <field name="name" class="java.lang.String"/>
+    <field name="oraganization" class="java.lang.String"/>
+    <field name="designation" class="java.lang.String"/>
+    <field name="salary" class="java.lang.Integer"/>
+    <background splitType="Stretch"/>
+    <title height="42" splitType="Stretch">
+        <element kind="staticText" uuid="4b8c88bc-d51d-409e-bbb2-e7c13df0da70" x="64" y="0" width="481" height="42" fontSize="20.0" bold="true" hTextAlign="Center">
+            <text><![CDATA[Employee Details]]></text>
+        </element>
+    </title>
+    <columnHeader height="61" splitType="Stretch">
+        <element kind="staticText" uuid="ddcd69f3-480e-41f3-a7c8-77292c3e84d8" x="0" y="41" width="111" height="20" fontSize="12.0" bold="true" italic="false" hTextAlign="Center">
+            <text><![CDATA[ID]]></text>
+            <box>
+                <pen lineWidth="0.25"/>
+                <topPen lineWidth="0.25"/>
+                <leftPen lineWidth="0.25"/>
+                <bottomPen lineWidth="0.25"/>
+                <rightPen lineWidth="0.25"/>
+            </box>
+        </element>
+        <element kind="staticText" uuid="bfde39b2-5d0b-4a45-af13-fbced124c2b3" x="111" y="41" width="111" height="20" fontSize="12.0" bold="true" italic="false" hTextAlign="Center">
+            <text><![CDATA[Name]]></text>
+            <box>
+                <pen lineWidth="0.25"/>
+                <topPen lineWidth="0.25"/>
+                <leftPen lineWidth="0.25"/>
+                <bottomPen lineWidth="0.25"/>
+                <rightPen lineWidth="0.25"/>
+            </box>
+        </element>
+        <element kind="staticText" uuid="206546b3-7c01-49c5-bd6a-d60c3e1f7081" x="222" y="41" width="111" height="20" fontSize="12.0" bold="true" italic="false" hTextAlign="Center">
+            <text><![CDATA[Oraganization]]></text>
+            <box>
+                <pen lineWidth="0.25"/>
+                <topPen lineWidth="0.25"/>
+                <leftPen lineWidth="0.25"/>
+                <bottomPen lineWidth="0.25"/>
+                <rightPen lineWidth="0.25"/>
+            </box>
+        </element>
+        <element kind="staticText" uuid="a8805dfa-f5f3-4daf-9ad8-6e41b7c3334d" x="333" y="41" width="111" height="20" fontSize="12.0" bold="true" italic="false" hTextAlign="Center">
+            <text><![CDATA[Designation]]></text>
+            <box>
+                <pen lineWidth="0.25"/>
+                <topPen lineWidth="0.25"/>
+                <leftPen lineWidth="0.25"/>
+                <bottomPen lineWidth="0.25"/>
+                <rightPen lineWidth="0.25"/>
+            </box>
+        </element>
+        <element kind="staticText" uuid="ba9a041f-5c23-41d3-93bc-4ffa099c83de" x="444" y="41" width="111" height="20" fontSize="12.0" bold="true" italic="false" hTextAlign="Center">
+            <text><![CDATA[Salary]]></text>
+            <box>
+                <pen lineWidth="0.25"/>
+                <topPen lineWidth="0.25"/>
+                <leftPen lineWidth="0.25"/>
+                <bottomPen lineWidth="0.25"/>
+                <rightPen lineWidth="0.25"/>
+            </box>
+        </element>
+        <element kind="textField" uuid="231a4434-15d9-42fc-9a8e-fee27c8e784a" x="456" y="21" width="99" height="20">
+            <expression><![CDATA[$P{createdBy}]]></expression>
+        </element>
+        <element kind="staticText" uuid="dcb22602-8937-45e6-adae-a05c9aea0826" x="398" y="21" width="58" height="20">
+            <text><![CDATA[Created By:]]></text>
+        </element>
+    </columnHeader>
+    <detail>
+        <band height="20" splitType="Stretch">
+            <element kind="textField" uuid="860e6411-c3ea-49bd-808a-dc803ee50954" x="0" y="0" width="111" height="20" hTextAlign="Center">
+                <expression><![CDATA[$F{id}]]></expression>
+                <box>
+                    <pen lineWidth="0.25"/>
+                    <topPen lineWidth="0.25"/>
+                    <leftPen lineWidth="0.25"/>
+                    <bottomPen lineWidth="0.25"/>
+                    <rightPen lineWidth="0.25"/>
+                </box>
+            </element>
+            <element kind="textField" uuid="db3f4b10-cac7-4b54-8fd1-40df9774a7a6" x="111" y="0" width="111" height="20" hTextAlign="Center">
+                <expression><![CDATA[$F{name}]]></expression>
+                <box>
+                    <pen lineWidth="0.25"/>
+                    <topPen lineWidth="0.25"/>
+                    <leftPen lineWidth="0.25"/>
+                    <bottomPen lineWidth="0.25"/>
+                    <rightPen lineWidth="0.25"/>
+                </box>
+            </element>
+            <element kind="textField" uuid="b4d2d7ac-9344-45c6-8bcc-98a1f751a462" x="222" y="0" width="111" height="20" hTextAlign="Center">
+                <expression><![CDATA[$F{oraganization}]]></expression>
+                <box>
+                    <pen lineWidth="0.25"/>
+                    <topPen lineWidth="0.25"/>
+                    <leftPen lineWidth="0.25"/>
+                    <bottomPen lineWidth="0.25"/>
+                    <rightPen lineWidth="0.25"/>
+                </box>
+            </element>
+            <element kind="textField" uuid="452556bb-c621-4a13-a7fe-1ffae3965005" x="333" y="0" width="111" height="20" hTextAlign="Center">
+                <expression><![CDATA[$F{designation}]]></expression>
+                <box>
+                    <pen lineWidth="0.25"/>
+                    <topPen lineWidth="0.25"/>
+                    <leftPen lineWidth="0.25"/>
+                    <bottomPen lineWidth="0.25"/>
+                    <rightPen lineWidth="0.25"/>
+                </box>
+            </element>
+            <element kind="textField" uuid="cec58ef4-f95e-4279-923b-3fb3e683bf3b" x="444" y="0" width="111" height="20" hTextAlign="Center">
+                <expression><![CDATA[$F{salary}]]></expression>
+                <box>
+                    <pen lineWidth="0.25"/>
+                    <topPen lineWidth="0.25"/>
+                    <leftPen lineWidth="0.25"/>
+                    <bottomPen lineWidth="0.25"/>
+                    <rightPen lineWidth="0.25"/>
+                </box>
+            </element>
+        </band>
+    </detail>
+</jasperReport>

@@ -1,0 +1,253 @@
+<!-- Created with Jaspersoft Studio version 7.0.3.final using JasperReports Library version 7.0.3-41034ca841d452f3305ba55b9042260aaa1ab5dd  -->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xmlns:jr="http://jasperreports.sourceforge.net/jasperreports/components"
+              xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports
+                                  http://jasperreports.sourceforge.net/xsd/jasperreport.xsd
+                                  http://jasperreports.sourceforge.net/jasperreports/components
+                                  http://jasperreports.sourceforge.net/xsd/components.xsd"
+              name="YourReport"
+              language="groovy"
+              pageWidth="595"
+              pageHeight="842"
+              columnWidth="555"
+              leftMargin="20"
+              rightMargin="20"
+              topMargin="20"
+              bottomMargin="20">    <property name="com.jaspersoft.studio.data.defaultdataadapter" value="One Empty Record"/>
+    <style name="Table_TH" mode="Opaque" backcolor="#FFFFFF">
+        <box>
+            <pen lineWidth="0.5" lineColor="#000000"/>
+            <topPen lineWidth="0.5" lineColor="#000000"/>
+            <leftPen lineWidth="0.5" lineColor="#000000"/>
+            <bottomPen lineWidth="0.5" lineColor="#000000"/>
+            <rightPen lineWidth="0.5" lineColor="#000000"/>
+        </box>
+    </style>
+    <style name="Table_CH" mode="Opaque" backcolor="#FFFFFF">
+        <box>
+            <pen lineWidth="0.5" lineColor="#000000"/>
+            <topPen lineWidth="0.5" lineColor="#000000"/>
+            <leftPen lineWidth="0.5" lineColor="#000000"/>
+            <bottomPen lineWidth="0.5" lineColor="#000000"/>
+            <rightPen lineWidth="0.5" lineColor="#000000"/>
+        </box>
+    </style>
+    <style name="Table_TD" mode="Opaque" backcolor="#FFFFFF">
+        <box>
+            <pen lineWidth="0.5" lineColor="#000000"/>
+            <topPen lineWidth="0.5" lineColor="#000000"/>
+            <leftPen lineWidth="0.5" lineColor="#000000"/>
+            <bottomPen lineWidth="0.5" lineColor="#000000"/>
+            <rightPen lineWidth="0.5" lineColor="#000000"/>
+        </box>
+    </style>
+    <dataset name="table1" uuid="68d8f8b2-3f9e-403c-8504-115d95d44281">
+        <query language="sql"><![CDATA[]]></query>
+        <field name="productNameTable1" class="java.lang.String"/>
+        <field name="productCodeTable1" class="java.lang.String"/>
+    </dataset>
+    <parameter name="table1Dataset" class="net.sf.jasperreports.engine.data.JRBeanCollectionDataSource"/>
+    <field name="dateNow" class="java.lang.String"/>
+    <field name="monthNow" class="java.lang.String"/>
+    <field name="yearNow" class="java.lang.String"/>
+    <field name="representativeA" class="java.lang.String"/>
+    <field name="positionA" class="java.lang.String"/>
+    <field name="b" class="java.lang.String"/>
+    <field name="addressB" class="java.lang.String"/>
+    <field name="taxNumberB" class="java.lang.String"/>
+    <field name="representativeB" class="java.lang.String"/>
+    <field name="positionB" class="java.lang.String"/>
+    <field name="invoiceNo" class="java.lang.String"/>
+    <field name="symbol" class="java.lang.String"/>
+    <field name="createTime" class="java.lang.String"/>
+    <field name="updateReason" class="java.lang.String"/>
+    <background/>
+    <title height="105" splitType="Stretch">
+        <element kind="staticText" uuid="ac32d303-14bf-4504-be71-714109a72971" x="69" y="52" width="204" height="30">
+            <text><![CDATA[CÔNG TY TNHH PHÂN PHỐI SYNNEX FPT]]></text>
+            <property name="com.jaspersoft.studio.unit.x" value="px"/>
+            <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            <property name="net.sf.jasperreports.style.isBold" value="true"/>
+        </element>
+        <element kind="staticText" uuid="c8e7201b-b8e7-4db8-a2c5-dff3388cb747" x="331" y="52" width="214" height="19">
+            <text><![CDATA[CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM]]></text>
+            <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            <property name="net.sf.jasperreports.style.isBold" value="true"/>
+        </element>
+        <element kind="staticText" uuid="e595a909-483e-4395-8ebb-ca7f7b08a8f5" x="362" y="67" width="138" height="15">
+            <text><![CDATA[Độc lập - Tự do - Hạnh phúc]]></text>
+            <property name="com.jaspersoft.studio.unit.x" value="px"/>
+            <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            <property name="net.sf.jasperreports.style.isBold" value="true"/>
+        </element>
+    </title>
+    <pageHeader height="45" splitType="Stretch">
+        <element kind="staticText" uuid="7dcbb250-6da8-42e9-ba99-1f84b21330e2" x="160" y="-10" width="261" height="20">
+            <text><![CDATA[BIÊN BẢN ĐIỀU CHỈNH HÓA ĐƠN GIÁ TRỊ GIA TĂNG]]></text>
+            <property name="net.sf.jasperreports.style.isBold" value="true"/>
+        </element>
+        <element kind="staticText" uuid="0fd61d21-12fc-4882-8e68-eec96cacfe3f" x="80" y="15" width="440" height="30">
+            <text><![CDATA[- Căn cứ vào Nghị định 123/2020/NĐ-CP ngày 19 tháng 10 năm 2020 của Chính phủ quy định về hóa đơn điện tử khi bán hàng hóa, cung ứng dịch vụ;]]></text>
+        </element>
+    </pageHeader>
+    <columnHeader height="67" splitType="Stretch">
+        <element kind="staticText" uuid="7b118f2f-4925-41b8-834a-f25f0291b9a2" x="80" y="-2" width="440" height="30">
+            <text><![CDATA[- Căn cứ Nghị định 70/2025/NĐ-CP sửa đổi, bổ sung một số điều Nghị định 123/2020/NĐ-CP quy định về hóa đơn, chứng từ;]]></text>
+            <property name="com.jaspersoft.studio.unit.y" value="px"/>
+        </element>
+        <element kind="staticText" uuid="a461fa12-b641-442e-a6b3-a93f92203eca" x="80" y="26" width="440" height="41">
+            <text><![CDATA[- Căn cứ vào thông tư số 78/2021/TT-BTC ngày 17 tháng 09 năm 2021 của Bộ Tài Chính hướng dẫn thực hiện một số điều của Luật Quản lý thuế, Nghị định 123/2020/NĐ-CP quy định về hóa đơn, chứng từ;]]></text>
+            <property name="com.jaspersoft.studio.unit.y" value="px"/>
+        </element>
+    </columnHeader>
+    <detail>
+        <band height="219" splitType="Stretch">
+            <element kind="textField" uuid="ada79e6c-df13-4bf0-8e5a-c74944169c58" x="80" y="8" width="440" height="15">
+                <expression><![CDATA["Hôm nay, ngày " + $F{dateNow} + " tháng " + $F{monthNow} + " năm " + $F{yearNow}]]></expression>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+                <property name="net.sf.jasperreports.style.isItalic" value="true"/>
+            </element>
+            <element kind="staticText" uuid="6046ec43-920d-4d39-81c7-381e2158a4cd" x="80" y="23" width="440" height="15">
+                <text><![CDATA[Bên xuất hóa đơn (Bên A): CÔNG TY TNHH PHÂN PHỐI SYNNEX FPT]]></text>
+                <property name="net.sf.jasperreports.style.isBold" value="true"/>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            </element>
+            <element kind="staticText" uuid="b6bcbcee-0169-4d48-92c5-9f9099255c58" x="80" y="38" width="440" height="15">
+                <text><![CDATA[Địa chỉ: Tòa nhà FPT Cầu Giấy, số 17 phố Duy Tân, Phường Cầu Giấy, TP Hà Nội, Việt Nam.]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            </element>
+            <element kind="staticText" uuid="8fb5cad5-2bc6-4cc0-94f3-807ebd26318b" x="80" y="53" width="440" height="15">
+                <text><![CDATA[Mã số thuế: 0104264818]]></text>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            </element>
+            <element kind="staticText" uuid="943bb5ab-8cd7-4fdd-be8d-3366490ae83f" x="80" y="68" width="74" height="15">
+                <text><![CDATA[Người đại diện:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.width" value="px"/>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            </element>
+            <element kind="textField" uuid="235812da-2a57-41a7-aff6-454a4bb2caa9" x="154" y="68" width="136" height="15">
+                <expression><![CDATA[$F{representativeA}]]></expression>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            </element>
+            <element kind="staticText" uuid="097aaac4-f547-4521-b284-7e70a514cba6" x="290" y="68" width="47" height="15">
+                <text><![CDATA[Chức vụ:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.width" value="px"/>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            </element>
+            <element kind="textField" uuid="45c65f73-93e5-43c9-9b2b-3709851ed972" x="337" y="68" width="182" height="15">
+                <expression><![CDATA[$F{positionA}]]></expression>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.x" value="px"/>
+            </element>
+            <element kind="staticText" uuid="908c46e1-62bf-4233-bae9-eb7ea63c3132" x="80" y="83" width="130" height="17">
+                <text><![CDATA[Bên nhận hóa đơn (Bên B):]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.width" value="px"/>
+                <property name="net.sf.jasperreports.style.isBold" value="true"/>
+            </element>
+            <element kind="textField" uuid="178ebe5d-6206-479c-a37c-7070b64dda95" x="217" y="83" width="100" height="15">
+                <expression><![CDATA[$F{b}]]></expression>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="staticText" uuid="1ffbbcab-57a1-45b4-a1df-51e044585009" x="80" y="100" width="40" height="15">
+                <text><![CDATA[Địa chỉ:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="textField" uuid="3bdeab53-e327-46c2-9cfa-9e3fc002b5d3" x="120" y="100" width="100" height="15">
+                <expression><![CDATA[$F{addressB}]]></expression>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="staticText" uuid="a187857d-e42d-4be9-be7a-37931e8182e2" x="80" y="115" width="60" height="15">
+                <text><![CDATA[Mã số thuế:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="textField" uuid="e8b90950-af0e-4b43-bb22-3cec654bca08" x="140" y="115" width="100" height="15">
+                <expression><![CDATA[$F{taxNumberB}]]></expression>
+            </element>
+            <element kind="staticText" uuid="5d39a4d0-2b66-4039-a247-9912386d350c" x="80" y="130" width="74" height="15">
+                <text><![CDATA[Người đại diện:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="textField" uuid="c6dbe77c-a344-4e25-a948-f63ef9c664e6" x="154" y="130" width="136" height="15">
+                <expression><![CDATA[$F{representativeB}]]></expression>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="staticText" uuid="c638127e-ff08-415a-becf-e26a6062a54d" x="290" y="130" width="47" height="15">
+                <text><![CDATA[Chức vụ:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="textField" uuid="af133799-0c77-4c38-b25e-6d274f16d767" x="337" y="130" width="182" height="15">
+                <expression><![CDATA[$F{positionB}]]></expression>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+            </element>
+            <element kind="textField" uuid="de59183a-15ea-4580-8334-55ede53bd154" x="80" y="145" width="440" height="15">
+                <expression><![CDATA["Hai bên cùng nhất trí điều chỉnh hóa đơn số " + $F{invoiceNo} + " ký hiệu " + $F{symbol} + " lập ngày " + $F{createTime}]]></expression>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="com.jaspersoft.studio.unit.y" value="px"/>
+            </element>
+            <element kind="staticText" uuid="ae966743-d573-4e14-8a90-92a2a6c69bf9" x="80" y="160" width="91" height="15">
+                <text><![CDATA[Lý do điều chỉnh:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="net.sf.jasperreports.style.isBold" value="true"/>
+                <property name="com.jaspersoft.studio.unit.width" value="px"/>
+            </element>
+            <element kind="staticText" uuid="bcec2163-a92b-4298-b519-d39103cfa934" x="80" y="189" width="180" height="15">
+                <text><![CDATA[1. Nội dung trước khi điều chỉnh:]]></text>
+                <property name="com.jaspersoft.studio.unit.height" value="px"/>
+                <property name="net.sf.jasperreports.style.isBold" value="true"/>
+            </element>
+            <element kind="textField" uuid="447788f7-2a0c-494a-b0fe-a06ec3ca959d" x="171" y="160" width="349" height="29">
+                <expression><![CDATA[$F{updateReason}]]></expression>
+            </element>
+        </band>
+    </detail>
+    <summary height="300" splitType="Stretch">
+        <element kind="component" uuid="b150f9b8-d29c-4533-b4a7-60804df502ad" x="80" y="0" width="439" height="200">
+            <component kind="table">
+                <datasetRun subDataset="table1">
+                    <dataSourceExpression><![CDATA[$P{table1Dataset}]]></dataSourceExpression>
+                </datasetRun>
+
+                <jr:column width="310">
+                    <jr:columnHeader height="25">
+                        <staticText>
+                            <reportElement style="Table_TH"/>
+                            <text><![CDATA[Tên hàng hóa, dịch vụ]]></text>
+                        </staticText>
+                    </jr:columnHeader>
+                    <jr:detailCell height="25">
+                        <textField>
+                            <reportElement style="Table_TD"/>
+                            <textFieldExpression><![CDATA[$F{productNameTable1}]]></textFieldExpression>
+                        </textField>
+                    </jr:detailCell>
+                </jr:column>
+
+                <jr:column width="160">
+                    <jr:columnHeader height="25">
+                        <staticText>
+                            <reportElement style="Table_TH"/>
+                            <text><![CDATA[Mã số]]></text>
+                        </staticText>
+                    </jr:columnHeader>
+                    <jr:detailCell height="25">
+                        <textField>
+                            <reportElement style="Table_TD"/>
+                            <textFieldExpression><![CDATA[$F{productCodeTable1}]]></textFieldExpression>
+                        </textField>
+                    </jr:detailCell>
+                </jr:column>
+
+            </component>
+        </element>
+    </summary>
+    <pageFooter height="54" splitType="Stretch"/>
+    <summary height="42" splitType="Stretch"/>
+</jasperReport>
