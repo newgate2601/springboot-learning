@@ -10,8 +10,30 @@ management:
     web:
       exposure:
         include: '*'
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      access: unrestricted
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: learning
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5,0.95,0.99
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5GB
+      max-request-size: 5GB
   jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
     open-in-view: false
     hibernate:
@@ -37,3 +59,15 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
+
+app:
+  storage:
+    s3:
+      enabled: true
+      region: ${AWS_REGION:ap-southeast-1}
+      bucket: ${AWS_S3_BUCKET:your-bucket-name}
+      endpoint:
+      path-style-access-enabled: false
+      access-key: ${AWS_ACCESS_KEY_ID:}
+      secret-key: ${AWS_SECRET_ACCESS_KEY:}
+      presign-duration-minutes: 15

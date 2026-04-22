@@ -1,26 +1,46 @@
-version: "3.7"
 volumes:
-  postgres_data:
+  prometheus_data:
+  grafana_data:
+
 services:
-  api_service:
+  api-service:
     build: .
     restart: always
     ports:
       - "8085:8086"
-    depends_on:
-      - postgres
-    links:
-      - postgres:postgres
-  postgres:
-    image: "postgres"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/file_performance
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: 101119
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQLDialect
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
     restart: always
     ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: learning
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 101119
+      - "9090:9090"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - api-service
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
 
 
