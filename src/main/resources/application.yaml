@@ -31,7 +31,7 @@ spring:
       hibernate.query.in_clause_parameter_padding: true
       hibernate.format_sql: true
   datasource:
-    url: jdbc:postgresql://localhost:5432/learning
+    url: jdbc:postgresql://localhost:5432/banking
     username: postgres
     password: 101119
     driver-class-name: org.postgresql.Driver
