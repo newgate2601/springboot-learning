@@ -4,16 +4,20 @@ import com.example.learning.catalog.enums.BrandStatus;
 import com.example.learning.catalog.enums.CategoryStatus;
 import com.example.learning.catalog.enums.ProductStatus;
 import com.example.learning.catalog.enums.SkuStatus;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 
 import java.math.BigDecimal;
 
-public record ProductVisibilityCriteria(
-        ProductStatus activeProductStatus,
-        CategoryStatus activeCategoryStatus,
-        BrandStatus activeBrandStatus,
-        SkuStatus activeSkuStatus,
-        BigDecimal minSalePrice
-) {
+@Getter
+@AllArgsConstructor
+public class ProductVisibilityCriteria {
+    private ProductStatus activeProductStatus;
+    private CategoryStatus activeCategoryStatus;
+    private BrandStatus activeBrandStatus;
+    private SkuStatus activeSkuStatus;
+    private BigDecimal minSalePrice;
+
     public static ProductVisibilityCriteria defaultVisible() {
         return new ProductVisibilityCriteria(
                 ProductStatus.ACTIVE,

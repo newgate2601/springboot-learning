@@ -250,6 +250,10 @@ Wireframe:
 +------------------------------------------------------+
 ```
 
+Giao diện minh họa:
+
+![6.1. Màn Home / Product Highlights](assets/catalog-wireframes/home-product-highlights.svg)
+
 Nút bấm và hành vi:
 
 - Bấm logo: quay về Home.
@@ -305,6 +309,10 @@ Wireframe:
 | [ ] Còn hàng         |                               |
 +----------------------+-------------------------------+
 ```
+
+Giao diện minh họa:
+
+![6.2. Màn Product Listing](assets/catalog-wireframes/product-listing.svg)
 
 Thông tin trên product card:
 
@@ -389,6 +397,10 @@ Wireframe:
 +------------------------------------------------------+
 ```
 
+Giao diện minh họa:
+
+![6.3. Màn Product Detail](assets/catalog-wireframes/product-detail.svg)
+
 Nút bấm và hành vi:
 
 - Bấm thumbnail ảnh: đổi ảnh lớn.
@@ -460,6 +472,10 @@ Wireframe:
 +--------------------------------------+
 ```
 
+Giao diện minh họa:
+
+![6.4. Màn Search Suggestion](assets/catalog-wireframes/search-suggestion.svg)
+
 Nút bấm và hành vi:
 
 - Gõ keyword: debounce rồi gọi suggestion.
@@ -505,6 +521,10 @@ Wireframe:
 | < 1 2 3 >                                            |
 +------------------------------------------------------+
 ```
+
+Giao diện minh họa:
+
+![7.1. Màn Admin Product List](assets/catalog-wireframes/admin-product-list.svg)
 
 Nút bấm và hành vi:
 
@@ -554,6 +574,10 @@ Wireframe:
 | [Lưu nháp] [Lưu và tiếp tục thêm SKU]                |
 +------------------------------------------------------+
 ```
+
+Giao diện minh họa:
+
+![7.2. Màn Create Product](assets/catalog-wireframes/create-product.svg)
 
 Nút bấm và hành vi:
 
@@ -613,6 +637,10 @@ Wireframe:
 +------------------------------------------------------+
 ```
 
+Giao diện minh họa:
+
+![7.3. Màn Edit Product - Tab Basic Info](assets/catalog-wireframes/edit-basic-info.svg)
+
 Nút bấm và hành vi:
 
 - `Lưu thay đổi`: update thông tin cơ bản.
@@ -656,6 +684,10 @@ Wireframe:
 | [Lưu thứ tự]                                         |
 +------------------------------------------------------+
 ```
+
+Giao diện minh họa:
+
+![7.4. Màn Edit Product - Tab Images](assets/catalog-wireframes/edit-images.svg)
 
 Nút bấm và hành vi:
 
@@ -717,6 +749,10 @@ Wireframe:
 +------------------------------------------------------+
 ```
 
+Giao diện minh họa:
+
+![7.5. Màn Edit Product - Tab Variants/SKU](assets/catalog-wireframes/variants-sku.svg)
+
 Nút bấm và hành vi:
 
 - `+ Thêm màu`: thêm option màu.
@@ -775,6 +811,10 @@ Wireframe:
 +------------------------------------------------------+
 ```
 
+Giao diện minh họa:
+
+![7.6. Màn Edit SKU Detail](assets/catalog-wireframes/edit-sku-detail.svg)
+
 Nút bấm và hành vi:
 
 - `Lưu`: update thông tin SKU.
@@ -815,6 +855,10 @@ Wireframe:
 | [Apply same price to all] [Lưu giá]                  |
 +------------------------------------------------------+
 ```
+
+Giao diện minh họa:
+
+![7.7. Màn Edit Product - Tab Price](assets/catalog-wireframes/pricing.svg)
 
 Nút bấm và hành vi:
 
@@ -863,6 +907,10 @@ Wireframe:
 +------------------------------------------------------+
 ```
 
+Giao diện minh họa:
+
+![7.8. Màn Product Preview](assets/catalog-wireframes/product-preview.svg)
+
 Nút bấm và hành vi:
 
 - `Quay lại chỉnh sửa`: quay về edit.
@@ -902,6 +950,10 @@ Wireframe:
 | Điện thoại                         [Edit] [Add child]|
 +------------------------------------------------------+
 ```
+
+Giao diện minh họa:
+
+![7.9. Màn Category Management](assets/catalog-wireframes/categories.svg)
 
 Nút bấm và hành vi:
 
@@ -944,6 +996,10 @@ Wireframe:
 | img  | Apple| apple| ACTIVE | Edit Disable           |
 +------------------------------------------------------+
 ```
+
+Giao diện minh họa:
+
+![7.10. Màn Brand Management](assets/catalog-wireframes/brands.svg)
 
 Nút bấm và hành vi:
 

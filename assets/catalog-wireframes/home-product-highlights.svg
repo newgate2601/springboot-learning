@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="607" height="800" viewBox="0 0 607 800" role="img" aria-label="Home Product Highlights with featured, new, and best selling products">
+  <defs>
+    <style>
+      .font { font-family: Inter, Arial, sans-serif; }
+      .title { font-size: 14px; font-weight: 800; fill: #111827; }
+      .label { font-size: 9px; font-weight: 500; fill: #6b7280; }
+      .body { font-size: 10px; font-weight: 700; fill: #111827; }
+      .price { font-size: 10px; font-weight: 800; fill: #dc2626; }
+      .stock { font-size: 10px; font-weight: 800; fill: #047857; }
+    </style>
+  </defs>
+
+  <rect width="607" height="800" fill="#ffffff"/>
+  <rect x="9" y="8" width="589" height="785" rx="17" fill="#f5f8fc" stroke="#d8e2ef"/>
+
+  <rect x="30" y="28" width="549" height="43" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+  <text class="font" x="47" y="68" font-size="16" font-weight="800" fill="#2563eb">LOGO</text>
+  <rect x="165" y="36" width="245" height="28" rx="5" fill="#ffffff" stroke="#bfccdc"/>
+  <text class="font" x="176" y="54" font-size="10" fill="#6b7280">Search keyword...</text>
+  <text class="font" x="468" y="64" font-size="10" font-weight="800" fill="#111827">Cart</text>
+  <text class="font" x="513" y="64" font-size="10" font-weight="800" fill="#111827">Login</text>
+
+  <rect x="30" y="90" width="549" height="71" rx="8" fill="#fff7ed" stroke="#fdba74"/>
+  <text class="font" x="50" y="149" font-size="20" font-weight="900" fill="#9a3412">Banner khuyến mãi / campaign</text>
+
+  <text class="font title" x="30" y="208">Danh mục nổi bật</text>
+  <rect x="30" y="211" width="88" height="24" rx="12" fill="#eff6ff" stroke="#2563eb"/>
+  <text class="font" x="43" y="227" font-size="10" font-weight="800" fill="#2563eb">Thời trang</text>
+  <rect x="128" y="211" width="88" height="24" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="font" x="141" y="227" font-size="10" font-weight="800" fill="#111827">Điện thoại</text>
+  <rect x="226" y="211" width="68" height="24" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="font" x="239" y="227" font-size="10" font-weight="800" fill="#111827">Mỹ phẩm</text>
+  <rect x="304" y="211" width="74" height="24" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="font" x="317" y="227" font-size="10" font-weight="800" fill="#111827">Gia dụng</text>
+
+  <text class="font title" x="30" y="288">Sản phẩm nổi bật</text>
+  <text class="font label" x="148" y="287">featuredProducts</text>
+  <g transform="translate(40 293)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Áo thun hot</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(174 293)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Sneaker trend</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(308 293)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">iPhone nổi bật</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(442 293)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Serum bán tốt</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+
+  <text class="font title" x="30" y="468">Sản phẩm mới</text>
+  <text class="font label" x="124" y="467">newProducts</text>
+  <g transform="translate(40 472)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Áo thun</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(174 472)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Sneaker</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(308 472)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">iPhone</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(442 472)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Serum</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+
+  <text class="font title" x="30" y="648">Bán chạy</text>
+  <text class="font label" x="91" y="647">bestSellingProducts</text>
+  <g transform="translate(40 652)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Áo thun top</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(174 652)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Sneaker top</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(308 652)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">iPhone top</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+  <g transform="translate(442 652)">
+    <rect width="104" height="133" rx="7" fill="#ffffff" stroke="#d7e1ee"/>
+    <rect x="10" y="10" width="84" height="56" rx="5" fill="#e6f2ff" stroke="#b9dcff"/>
+    <text class="font body" x="10" y="96">Serum top</text>
+    <text class="font price" x="10" y="114">199.000đ</text>
+    <text class="font stock" x="10" y="129">Còn hàng</text>
+  </g>
+</svg>

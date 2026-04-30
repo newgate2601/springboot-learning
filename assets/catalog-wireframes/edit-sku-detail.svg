@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Edit SKU Detail">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#172033" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="product" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8f3ff"/>
+      <stop offset="1" stop-color="#f4e9ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="#f5f7fb"/>
+  <rect x="28" y="22" width="1144" height="676" rx="18" fill="#eef3f8" stroke="none" />
+<text x="52" y="62" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#172033" >Edit SKU Detail</text>
+<rect x="160" y="104" width="880" height="520" rx="16" fill="#ffffff" stroke="#d9e0ea" /><text x="196" y="154" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#172033" >Edit SKU: TS-BLK-M</text>
+<text x="196" y="214" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >SKU Code *</text><rect x="390" y="188" width="420" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="404" y="214" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >TS-BLK-M</text>
+<text x="196" y="270" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Barcode</text><rect x="390" y="244" width="420" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="404" y="270" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >893...</text>
+<text x="196" y="326" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Color</text><rect x="390" y="300" width="220" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="404" y="326" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >Đen v</text><text x="196" y="382" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Size</text><rect x="390" y="356" width="220" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="404" y="382" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >M v</text>
+<text x="196" y="438" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Weight</text><rect x="390" y="412" width="420" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="404" y="438" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >200 gram</text>
+<text x="196" y="494" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Package size</text><rect x="390" y="468" width="420" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="404" y="494" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >20 x 15 x 3 cm</text>
+<text x="196" y="550" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Status</text><rect x="390" y="524" width="220" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="404" y="550" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >ACTIVE v</text><rect x="650" y="524" width="120" height="42" rx="8" fill="#344054" stroke="none" /><text x="666" y="550" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Upload</text>
+<rect x="390" y="648" width="88" height="42" rx="8" fill="#2563eb" stroke="none" /><text x="406" y="674" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Lưu</text><rect x="496" y="648" width="150" height="42" rx="8" fill="#dc2626" stroke="none" /><text x="512" y="674" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Ngưng bán SKU</text>
+</svg>

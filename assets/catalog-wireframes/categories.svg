@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-label="Category Management">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#172033" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="product" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8f3ff"/>
+      <stop offset="1" stop-color="#f4e9ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="#f5f7fb"/>
+  <rect x="28" y="22" width="1144" height="596" rx="18" fill="#eef3f8" stroke="none" />
+<text x="52" y="62" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#172033" >Category Management</text>
+<rect x="40" y="32" width="1120" height="72" rx="14" fill="#ffffff" stroke="#dfe6ef" filter="url(#shadow)"/>
+<text x="68" y="76" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" fill="#7c3aed" >Admin &gt; Catalog &gt; Categories</text>
+<rect x="240" y="50" width="520" height="36" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="254" y="73" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >Tìm kiếm sản phẩm...</text>
+<text x="940" y="75" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#344054" >Cart</text>
+<text x="1010" y="75" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#344054" >Login</text>
+<rect x="60" y="136" width="170" height="42" rx="8" fill="#2563eb" stroke="none" /><text x="76" y="162" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Tạo category gốc</text>
+<rect x="60" y="210" width="1080" height="360" rx="16" fill="#ffffff" stroke="#d9e0ea" /><text x="96" y="262" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#172033" >Thời trang</text><rect x="840" y="236" width="80" height="36" rx="8" fill="#344054" stroke="none" /><text x="856" y="259" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Edit</text><rect x="934" y="236" width="116" height="36" rx="8" fill="#2563eb" stroke="none" /><text x="950" y="259" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Add child</text>
+<text x="128" y="316" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#172033" >Áo nam</text><rect x="840" y="290" width="80" height="36" rx="8" fill="#344054" stroke="none" /><text x="856" y="313" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Edit</text><rect x="934" y="290" width="116" height="36" rx="8" fill="#2563eb" stroke="none" /><text x="950" y="313" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Add child</text>
+<text x="160" y="370" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033" >Áo thun</text><rect x="840" y="344" width="80" height="36" rx="8" fill="#344054" stroke="none" /><text x="856" y="367" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Edit</text><rect x="934" y="344" width="116" height="36" rx="8" fill="#dc2626" stroke="none" /><text x="950" y="367" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Disable</text>
+<text x="128" y="424" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#172033" >Quần nam</text><rect x="840" y="398" width="80" height="36" rx="8" fill="#344054" stroke="none" /><text x="856" y="421" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Edit</text><rect x="934" y="398" width="116" height="36" rx="8" fill="#dc2626" stroke="none" /><text x="950" y="421" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Disable</text>
+<text x="96" y="486" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#172033" >Điện thoại</text><rect x="840" y="460" width="80" height="36" rx="8" fill="#344054" stroke="none" /><text x="856" y="483" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Edit</text><rect x="934" y="460" width="116" height="36" rx="8" fill="#2563eb" stroke="none" /><text x="950" y="483" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Add child</text>
+</svg>

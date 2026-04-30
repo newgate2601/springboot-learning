@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Create Product">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#172033" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="product" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8f3ff"/>
+      <stop offset="1" stop-color="#f4e9ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="#f5f7fb"/>
+  <rect x="28" y="22" width="1144" height="676" rx="18" fill="#eef3f8" stroke="none" />
+<text x="52" y="62" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#172033" >Create Product</text>
+<rect x="40" y="32" width="1120" height="72" rx="14" fill="#ffffff" stroke="#dfe6ef" filter="url(#shadow)"/>
+<text x="68" y="76" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" fill="#7c3aed" >Admin &gt; Catalog &gt; Create Product</text>
+<rect x="240" y="50" width="520" height="36" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="254" y="73" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >Tìm kiếm sản phẩm...</text>
+<text x="940" y="75" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#344054" >Cart</text>
+<text x="1010" y="75" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#344054" >Login</text>
+<rect x="120" y="138" width="960" height="470" rx="16" fill="#ffffff" stroke="#d9e0ea" /><text x="156" y="184" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#172033" >Thông tin cơ bản</text>
+<text x="156" y="240" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Tên sản phẩm *</text><rect x="360" y="214" width="560" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="374" y="240" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >Áo thun nam basic</text>
+<text x="156" y="296" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Slug</text><rect x="360" y="270" width="560" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="374" y="296" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >ao-thun-nam-basic</text>
+<text x="156" y="352" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Brand</text><rect x="360" y="326" width="300" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="374" y="352" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >Select brand v</text>
+<text x="156" y="408" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Category *</text><rect x="360" y="382" width="300" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="374" y="408" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >Select category v</text>
+<text x="156" y="464" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Mô tả ngắn</text><rect x="360" y="438" width="560" height="42" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="374" y="464" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >Mô tả ngắn...</text>
+<text x="156" y="520" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800" fill="#172033" >Mô tả chi tiết</text><rect x="360" y="494" width="560" height="74" rx="8" fill="#ffffff" stroke="#c9d4e3" /><text x="380" y="534" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="500" fill="#667085" >textarea...</text>
+<rect x="360" y="632" width="120" height="42" rx="8" fill="#344054" stroke="none" /><text x="376" y="658" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Lưu nháp</text><rect x="496" y="632" width="250" height="42" rx="8" fill="#2563eb" stroke="none" /><text x="512" y="658" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#ffffff" >Lưu và tiếp tục thêm SKU</text>
+</svg>
