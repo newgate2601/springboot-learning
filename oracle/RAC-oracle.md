@@ -136,7 +136,212 @@ Trên Exadata, data được phân bổ và mirror qua nhiều storage cell. N�
 
 Nếu quá nhiều storage cell chết vượt quá khả năng redundancy, database có thể lỗi I/O hoặc dừng.
 
-## 5. Interconnect là gì?
+## 5. Exadata, Storage Cell, Mirror và ASM Disk Group
+
+### 5.1. Exadata là gì?
+
+Exadata là hệ thống phần cứng và phần mềm chuyên dụng của Oracle để chạy Oracle Database. Nó không chỉ là một server database, mà là một kiến trúc gồm nhiều lớp:
+
+```text
+Database Server
+Database Server
+Database Server
+      |
+      v
+Storage Network tốc độ cao
+      |
+      v
+Storage Cell
+Storage Cell
+Storage Cell
+```
+
+Trong mô hình này:
+
+- `Database Server` chạy Oracle Database Instance, RAC Instance, SQL execution, session, transaction.
+- `Storage Cell` là server lưu trữ chuyên dụng, chứa disk, flash, CPU, memory và Exadata Storage Server Software.
+- `Storage Network` là mạng tốc độ cao giữa database server và storage cell.
+
+Exadata tối ưu Oracle Database vì storage cell không chỉ trả block một cách thụ động. Nó có thể xử lý một phần công việc ở tầng storage, ví dụ filter dữ liệu, đọc column cần thiết, bỏ qua vùng dữ liệu không liên quan, hoặc dùng flash cache.
+
+### 5.2. Storage Cell là gì?
+
+Storage cell là một server lưu trữ trong Exadata.
+
+Nó thường có:
+
+- hard disk hoặc flash storage;
+- CPU;
+- memory;
+- flash cache;
+- phần mềm Exadata Storage Server;
+- kết nối mạng tốc độ cao tới database server.
+
+Database server gửi I/O request xuống storage cell. Storage cell đọc dữ liệu từ disk/flash, có thể xử lý một phần dữ liệu, rồi trả kết quả về database server.
+
+Ví dụ:
+
+```text
+DB Server cần đọc dữ liệu bảng ORDERS
+   |
+   v
+Storage Cell đọc block từ disk/flash
+   |
+   v
+Storage Cell có thể filter bớt dữ liệu
+   |
+   v
+DB Server nhận ít dữ liệu hơn để xử lý tiếp
+```
+
+### 5.3. Storage Cell có tự scale không?
+
+Không nên hiểu là storage cell tự scale kiểu app container tự tăng pod.
+
+Trong Exadata on-premise, muốn tăng storage cell hoặc tăng tài nguyên storage thì thường là thao tác hạ tầng có kế hoạch:
+
+- mua thêm storage cell hoặc expansion rack;
+- thêm disk/flash theo cấu hình được hỗ trợ;
+- cấu hình để cluster nhận thêm storage;
+- thêm disk vào ASM disk group;
+- ASM rebalance lại dữ liệu qua các disk/cell mới.
+
+Oracle/Exadata cung cấp cơ chế tự động ở một số phần, ví dụ ASM rebalance dữ liệu sau khi thêm/bớt disk, nhưng việc tăng resource vật lý không phải tự xảy ra.
+
+Trong Exadata Cloud hoặc Exadata Cloud@Customer, mức độ scale phụ thuộc dịch vụ đang dùng. Có thể có thao tác scale OCPU, storage hoặc VM cluster qua console/API, nhưng vẫn là hành động cấu hình/quản trị, không phải database tự ý thêm storage cell khi tải tăng.
+
+Tóm lại:
+
+```text
+Storage Cell không tự sinh thêm.
+Admin/DBA/Cloud operation phải tăng resource.
+ASM/Exadata hỗ trợ phân bổ lại dữ liệu sau khi resource được thêm.
+```
+
+### 5.4. Mirror là gì?
+
+`Mirror` nghĩa là lưu nhiều bản sao của cùng một dữ liệu ở nhiều failure domain khác nhau.
+
+Ví dụ:
+
+```text
+Block A
+  bản mirror 1 nằm ở Storage Cell 1
+  bản mirror 2 nằm ở Storage Cell 2
+```
+
+Nếu Storage Cell 1 chết, Oracle vẫn có thể đọc Block A từ Storage Cell 2.
+
+ASM có các mức redundancy phổ biến:
+
+- `NORMAL REDUNDANCY`: thường lưu 2 bản.
+- `HIGH REDUNDANCY`: thường lưu 3 bản.
+
+Mirror giúp database sống sót khi disk/cell/path lỗi. Nhưng mirror không thay thế backup. Nếu app xóa nhầm dữ liệu, hoặc dữ liệu bị thay đổi sai ở mức logic, bản mirror cũng phản ánh thay đổi đó.
+
+### 5.5. ASM Disk Group là gì?
+
+ASM là Automatic Storage Management. Đây là lớp quản lý storage của Oracle.
+
+ASM gom nhiều disk thành một nhóm logic gọi là `disk group`.
+
+Ví dụ:
+
+```text
+Disk 1
+Disk 2
+Disk 3
+Disk 4
+   |
+   v
+ASM Disk Group: +DATA
+   |
+   v
+Datafile, redo log, control file
+```
+
+Một hệ thống có thể có nhiều disk group:
+
+```text
++DATA  -> chứa datafile chính
++RECO  -> chứa recovery file, archive log, backup liên quan
++FRA   -> Fast Recovery Area, tùy cách đặt tên
+```
+
+ASM chịu trách nhiệm:
+
+- phân bổ dữ liệu qua nhiều disk;
+- mirror dữ liệu;
+- quản lý failure group;
+- rebalance khi thêm/bớt disk;
+- giúp database dùng storage theo dạng logic thay vì tự quản từng file vật lý.
+
+## 6. Exadata Smart Scan trả dữ liệu như thế nào và vì sao tối ưu?
+
+Với storage thông thường, database server thường yêu cầu đọc block/page, storage trả nguyên block/page về database server.
+
+Ví dụ query:
+
+```sql
+SELECT order_id, amount
+FROM orders
+WHERE status = 'PAID';
+```
+
+Nếu bảng `orders` rất lớn, database server có thể phải kéo rất nhiều block từ storage lên:
+
+```text
+Storage thường:
+
+DB Server yêu cầu đọc nhiều block
+Storage trả nguyên block/page
+DB Server tự lọc status = 'PAID'
+DB Server tự lấy order_id, amount
+DB Server bỏ phần dữ liệu không cần
+```
+
+Vấn đề là nhiều dữ liệu đi qua network nhưng cuối cùng bị bỏ đi.
+
+Với Exadata Smart Scan, Oracle có thể đẩy một phần xử lý xuống storage cell:
+
+```text
+Exadata Smart Scan:
+
+DB Server gửi query/offload request xuống Storage Cell
+Storage Cell đọc block từ disk/flash
+Storage Cell lọc status = 'PAID'
+Storage Cell chỉ lấy column cần thiết: order_id, amount
+Storage Cell trả về tập dữ liệu đã được giảm kích thước
+DB Server xử lý tiếp phần còn lại
+```
+
+Storage cell không trả "row object" theo nghĩa app-level. Nó vẫn hiểu và đọc Oracle database block, nhưng với Smart Scan, storage cell có thể trả về kết quả đã được lọc/giảm bớt theo dạng internal result set cho database server, thay vì luôn trả nguyên toàn bộ block chưa xử lý.
+
+Cơ chế này tối ưu vì:
+
+- giảm lượng data truyền qua storage network;
+- giảm CPU trên database server vì một phần filter được làm ở storage cell;
+- tận dụng CPU của nhiều storage cell chạy song song;
+- giảm I/O không cần thiết nhờ Storage Index hoặc offload predicate;
+- hiệu quả cao với full table scan, large scan, analytics query, data warehouse workload.
+
+Ví dụ đơn giản:
+
+```text
+Bảng ORDERS có 1 TB dữ liệu.
+Query chỉ cần các order PAID trong 2 cột.
+
+Storage thường:
+  có thể phải đọc và gửi lượng block rất lớn về DB Server.
+
+Exadata:
+  Storage Cell lọc bớt ngay tại nơi dữ liệu được đọc.
+  DB Server nhận ít dữ liệu hơn nhiều.
+```
+
+Nhưng Smart Scan không phải lúc nào cũng xảy ra. Nó phụ thuộc loại query, execution plan, object type, predicate, storage offload eligibility và nhiều điều kiện khác. OLTP query nhỏ theo primary key thường không hưởng lợi nhiều như analytic scan lớn.
+
+## 7. Interconnect là gì?
 
 Interconnect là mạng riêng giữa các RAC node.
 
@@ -160,7 +365,7 @@ Interconnect phải có latency thấp và bandwidth cao. Nếu interconnect ch�
 
 `Split brain` là tình huống hai nhóm node không nhìn thấy nhau nhưng đều tưởng mình là cluster hợp lệ và cùng ghi vào database. Nếu để xảy ra, có thể gây corruption. Vì vậy Clusterware sẽ giữ một phần cluster và loại bỏ phần còn lại.
 
-## 6. Cache Fusion là gì?
+## 8. Cache Fusion là gì?
 
 Mỗi RAC instance có buffer cache riêng trong RAM.
 
@@ -202,7 +407,7 @@ Cache Fusion đảm bảo:
 - block current version được quản lý đúng;
 - dirty block và redo/undo được recovery đúng khi instance chết.
 
-## 7. GCS và GES
+## 9. GCS và GES
 
 RAC có hai nhóm cơ chế quan trọng:
 
@@ -226,7 +431,7 @@ GCS: quản lý block cache toàn cluster
 GES: quản lý lock/resource toàn cluster
 ```
 
-## 8. Vì sao RAC scale tốt nhất khi workload chia tự nhiên?
+## 10. Vì sao RAC scale tốt nhất khi workload chia tự nhiên?
 
 RAC scale tốt khi mỗi instance xử lý những phần dữ liệu ít đụng nhau.
 
@@ -269,7 +474,7 @@ Block A ở Instance 1
 
 Đây là `block pinging`. Thêm node trong trường hợp này có thể làm chậm hơn vì tăng coordination qua interconnect.
 
-## 9. B-tree index hotspot là gì?
+## 11. B-tree index hotspot là gì?
 
 Với B-tree index trên cột tăng dần, các insert mới có xu hướng tập trung vào phần cuối của index, hay gọi là `right-hand side`.
 
@@ -302,9 +507,9 @@ Một số cách giảm hotspot:
 
 `Hash partitioned index` chia index thành nhiều partition theo hash của key, giúp tránh việc tất cả insert dồn vào cùng một vùng nóng.
 
-## 10. Khi các thành phần RAC bị lỗi
+## 12. Khi các thành phần RAC bị lỗi
 
-### 10.1. Backend app chết
+### 12.1. Backend app chết
 
 RAC không bị ảnh hưởng.
 
@@ -315,7 +520,7 @@ RAC không bị ảnh hưởng.
 - transaction chưa commit thường rollback;
 - load balancer đưa traffic sang backend khác nếu có.
 
-### 10.2. Một listener chết
+### 12.2. Một listener chết
 
 Nếu app connect qua SCAN hoặc address list có nhiều endpoint:
 
@@ -331,13 +536,13 @@ jdbc:oracle:thin:@//rac-node-1.company.com:1521/order_service
 
 thì listener đó chết sẽ làm connection mới lỗi, dù các instance khác vẫn sống.
 
-### 10.3. Toàn bộ listener/SCAN không hoạt động
+### 12.3. Toàn bộ listener/SCAN không hoạt động
 
 Connection đã mở có thể vẫn chạy.
 
 Connection mới thường lỗi vì app không tạo được session mới.
 
-### 10.4. Một RAC instance chết
+### 12.4. Một RAC instance chết
 
 Ví dụ `Instance 2` chết:
 
@@ -358,7 +563,7 @@ Xử lý:
 
 Request đang chạy trên instance chết thường lỗi. App cần retry nếu thao tác an toàn để retry.
 
-### 10.5. Một physical node chết
+### 12.5. Một physical node chết
 
 Nếu node chết, instance trên node đó cũng chết.
 
@@ -369,7 +574,7 @@ RAC tiếp tục chạy nếu:
 - storage và interconnect còn hoạt động;
 - service được cấu hình failover đúng.
 
-### 10.6. Interconnect chậm hoặc đứt
+### 12.6. Interconnect chậm hoặc đứt
 
 Nếu interconnect chậm:
 
@@ -384,13 +589,13 @@ Nếu interconnect đứt:
 - connection tới node bị evict lỗi;
 - node còn lại tiếp tục nếu còn quorum và storage ổn.
 
-### 10.7. ASM trên một node chết
+### 12.7. ASM trên một node chết
 
 ASM quản lý disk group. Nếu ASM instance trên một node chết, database instance trên node đó có thể bị ảnh hưởng và bị dừng.
 
 Nếu ASM trên node khác và disk group vẫn tốt, các instance khác có thể tiếp tục.
 
-### 10.8. Một disk chết
+### 12.8. Một disk chết
 
 Nếu ASM redundancy còn đủ:
 
@@ -401,7 +606,7 @@ Nếu ASM redundancy còn đủ:
 
 Nếu không có redundancy, mất disk chứa data có thể làm database lỗi nghiêm trọng.
 
-### 10.9. Một Exadata storage cell chết
+### 12.9. Một Exadata storage cell chết
 
 Nếu redundancy còn đủ:
 
@@ -416,7 +621,7 @@ Nếu mất quá nhiều cell vượt redundancy:
 - disk group có thể không còn đủ bản data;
 - database có thể lỗi I/O hoặc dừng.
 
-### 10.10. Toàn bộ shared storage chết
+### 12.10. Toàn bộ shared storage chết
 
 RAC không cứu được.
 
@@ -431,7 +636,7 @@ Database cần storage để:
 
 Nếu toàn bộ shared storage không truy cập được, database có thể treo, crash, hoặc bị dừng để bảo vệ dữ liệu.
 
-### 10.11. Cả site chết
+### 12.11. Cả site chết
 
 RAC không phải disaster recovery đầy đủ.
 
@@ -450,7 +655,7 @@ Redo replication:
 
 Oracle Data Guard mới là cơ chế phổ biến để chống mất cả site hoặc cả storage domain.
 
-## 11. Tóm tắt
+## 13. Tóm tắt
 
 RAC giải quyết bài toán nhiều instance cùng phục vụ một database để tăng availability và scalability trong phạm vi cluster.
 
