@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="http://example.com/learning/transfer"
+                  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                  targetNamespace="http://example.com/learning/transfer">
+    <wsdl:types>
+        <xs:schema elementFormDefault="qualified"
+                   targetNamespace="http://example.com/learning/transfer">
+            <xs:element name="TransferRequest">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="requestId" type="xs:string"/>
+                        <xs:element name="fromAccount" type="xs:string"/>
+                        <xs:element name="toAccount" type="xs:string"/>
+                        <xs:element name="amount" type="xs:decimal"/>
+                        <xs:element name="currency" type="xs:string"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+
+            <xs:element name="TransferResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="transactionId" type="xs:string"/>
+                        <xs:element name="requestId" type="xs:string"/>
+                        <xs:element name="status" type="xs:string"/>
+                        <xs:element name="amount" type="xs:decimal"/>
+                        <xs:element name="fee" type="xs:decimal"/>
+                        <xs:element name="currency" type="xs:string"/>
+                        <xs:element name="message" type="xs:string"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:schema>
+    </wsdl:types>
+
+    <wsdl:message name="TransferRequest">
+        <wsdl:part element="tns:TransferRequest" name="TransferRequest"/>
+    </wsdl:message>
+
+    <wsdl:message name="TransferResponse">
+        <wsdl:part element="tns:TransferResponse" name="TransferResponse"/>
+    </wsdl:message>
+
+    <wsdl:portType name="TransferPort">
+        <wsdl:operation name="Transfer">
+            <wsdl:input message="tns:TransferRequest" name="TransferRequest"/>
+            <wsdl:output message="tns:TransferResponse" name="TransferResponse"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <wsdl:binding name="TransferPortSoap11" type="tns:TransferPort">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="Transfer">
+            <soap:operation soapAction=""/>
+            <wsdl:input name="TransferRequest">
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output name="TransferResponse">
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <wsdl:service name="TransferPortService">
+        <wsdl:port binding="tns:TransferPortSoap11" name="TransferPortSoap11">
+            <soap:address location="http://localhost:8086/ws"/>
+        </wsdl:port>
+    </wsdl:service>
+</wsdl:definitions>
