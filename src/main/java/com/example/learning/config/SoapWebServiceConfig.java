@@ -16,6 +16,7 @@ import org.springframework.xml.xsd.XsdSchema;
 @Configuration // Báo Spring đây là class cấu hình.
 public class SoapWebServiceConfig extends WsConfigurerAdapter {
     public static final String TRANSFER_NAMESPACE = "http://example.com/learning/transfer"; // Namespace chính của transfer SOAP service.
+    public static final String SECURE_TRANSFER_NAMESPACE = "http://example.com/learning/secure-transfer"; // Namespace riêng cho flow WS-Security chuẩn.
 
     @Bean // Đăng ký servlet chuyên xử lý SOAP request.
     public ServletRegistrationBean<MessageDispatcherServlet> messageDispatcherServlet(ApplicationContext context) {
@@ -38,5 +39,20 @@ public class SoapWebServiceConfig extends WsConfigurerAdapter {
     @Bean // Load XSD contract từ resources.
     public XsdSchema transferSchema() {
         return new SimpleXsdSchema(new ClassPathResource("ws/transfer.xsd")); // File định nghĩa request/response SOAP.
+    }
+
+    @Bean(name = "secure-transfers") // WSDL runtime: /ws/secure-transfers.wsdl.
+    public DefaultWsdl11Definition secureTransferWsdl(XsdSchema secureTransferSchema) {
+        DefaultWsdl11Definition definition = new DefaultWsdl11Definition(); // Sinh WSDL động từ XSD secure.
+        definition.setPortTypeName("SecureTransferPort"); // Tên portType của SOAP service secure.
+        definition.setLocationUri("/ws"); // Endpoint SOAP vẫn là /ws, phân biệt bằng namespace/localPart.
+        definition.setTargetNamespace(SECURE_TRANSFER_NAMESPACE); // Namespace riêng của flow secure.
+        definition.setSchema(secureTransferSchema); // Gắn XSD secure vào WSDL.
+        return definition;
+    }
+
+    @Bean
+    public XsdSchema secureTransferSchema() {
+        return new SimpleXsdSchema(new ClassPathResource("ws/secure-transfer.xsd")); // Contract cho endpoint dùng WS-Security.
     }
 }

@@ -212,3 +212,78 @@ Server dùng XSD/WSDL để công bố contract.
 Partner dùng WSDL để generate client code.
 Generated code giúp partner gọi method Java thay vì tự viết SOAP XML.
 ```
+
+## 7. Flow mới: WS-Security chuẩn, không tự ký HMAC thủ công
+
+Mình giữ nguyên flow cũ để so sánh:
+
+```text
+Custom SOAP Header:
+PartnerSecurityHeaderOutInterceptor
+PartnerSecurityService.sign(...)
+TransferSoapEndpoint tự đọc header
+```
+
+Flow mới dùng WS-Security chuẩn:
+
+```text
+CXF generated client
+  -> WSS4JOutInterceptor tự thêm wsse:Security
+  -> SOAP request có Timestamp + XML Signature
+  -> Spring-WS Wss4jSecurityInterceptor verify chữ ký
+  -> SecureTransferSoapEndpoint xử lý nghiệp vụ
+```
+
+Các file server expose SOAP secure:
+
+| File | Vai trò |
+|---|---|
+| `src/main/resources/ws/secure-transfer.xsd` | Contract XSD riêng cho endpoint WS-Security. |
+| `src/main/resources/ws/secure-transfers.wsdl` | WSDL tĩnh để CXF generate client code. |
+| `src/main/java/com/example/learning/config/SecureSoapSecurityConfig.java` | Đăng ký WSS4J verify Timestamp + Signature. |
+| `src/main/java/com/example/learning/config/SecureTransferOnlyInterceptor.java` | Chỉ áp dụng WSS4J cho `SecureTransferRequest`, không ảnh hưởng flow cũ. |
+| `src/main/java/com/example/learning/controller/SecureTransferSoapEndpoint.java` | Endpoint SOAP secure, không tự parse signature. |
+| `src/main/java/com/example/learning/soap/secure/SecureSoapTransferRequest.java` | DTO server nhận SOAP Body secure. |
+| `src/main/java/com/example/learning/soap/secure/SecureSoapTransferResponse.java` | DTO server trả SOAP Body secure. |
+
+Các file phía partner tích hợp:
+
+| File | Vai trò |
+|---|---|
+| `src/main/java/com/example/learning/controller/PartnerWsSecurityIntegrationController.java` | REST API giả lập partner để test dễ bằng Postman/curl. |
+| `src/main/java/com/example/learning/integration/wssec/PartnerWsSecuritySoapClient.java` | Dùng generated client từ WSDL và gắn `WSS4JOutInterceptor`. |
+| `src/main/java/com/example/learning/integration/wssec/PartnerKeystorePasswordCallback.java` | Trả password private key cho WSS4J khi ký. |
+| `src/main/resources/security/partner-wss4j.properties` | Cấu hình keystore để client ký message. |
+| `src/main/resources/security/partner-keystore.jks` | Keystore demo chứa private key của partner. |
+| `src/main/resources/security/server-truststore.jks` | Truststore demo server dùng để verify certificate của partner. |
+
+API test flow WS-Security:
+
+```text
+POST http://localhost:8086/api/v1/integrator-wssec/transfer-via-soap
+```
+
+Script test:
+
+```powershell
+.\tools\call-integrator-wssec-transfer.ps1
+```
+
+Điểm khác biệt lớn:
+
+```text
+Flow cũ: dev tự tạo sec:PartnerSecurity và tự verify HMAC.
+Flow mới: framework tự tạo wsse:Security, tự ký XML Signature, server tự verify bằng WSS4J.
+```
+
+Nhưng bên tích hợp vẫn phải cấu hình:
+
+```text
+private key
+certificate
+keystore password
+alias
+WSS4JOutInterceptor
+```
+
+WSDL giúp generate request/response/port/service. Phần security chuẩn có thể được mô tả thêm bằng WS-SecurityPolicy, nhưng thực tế vẫn thường cần tài liệu hướng dẫn keystore/certificate riêng.

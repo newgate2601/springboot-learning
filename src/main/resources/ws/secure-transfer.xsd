@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Contract riêng cho flow WS-Security chuẩn. Tách namespace để không đụng endpoint SOAP custom cũ. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://example.com/learning/secure-transfer"
+           xmlns:tns="http://example.com/learning/secure-transfer"
+           elementFormDefault="qualified">
+
+    <xs:element name="SecureTransferRequest">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="requestId" type="xs:string"/>
+                <xs:element name="fromAccount" type="xs:string"/>
+                <xs:element name="toAccount" type="xs:string"/>
+                <xs:element name="amount" type="xs:decimal"/>
+                <xs:element name="currency" type="xs:string"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="SecureTransferResponse">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="transactionId" type="xs:string"/>
+                <xs:element name="requestId" type="xs:string"/>
+                <xs:element name="status" type="xs:string"/>
+                <xs:element name="amount" type="xs:decimal"/>
+                <xs:element name="fee" type="xs:decimal"/>
+                <xs:element name="currency" type="xs:string"/>
+                <xs:element name="message" type="xs:string"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

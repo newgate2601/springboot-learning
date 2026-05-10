@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="http://example.com/learning/secure-transfer"
+                  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                  targetNamespace="http://example.com/learning/secure-transfer">
+    <wsdl:types>
+        <xs:schema elementFormDefault="qualified"
+                   targetNamespace="http://example.com/learning/secure-transfer">
+            <xs:element name="SecureTransferRequest">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="requestId" type="xs:string"/>
+                        <xs:element name="fromAccount" type="xs:string"/>
+                        <xs:element name="toAccount" type="xs:string"/>
+                        <xs:element name="amount" type="xs:decimal"/>
+                        <xs:element name="currency" type="xs:string"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+
+            <xs:element name="SecureTransferResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="transactionId" type="xs:string"/>
+                        <xs:element name="requestId" type="xs:string"/>
+                        <xs:element name="status" type="xs:string"/>
+                        <xs:element name="amount" type="xs:decimal"/>
+                        <xs:element name="fee" type="xs:decimal"/>
+                        <xs:element name="currency" type="xs:string"/>
+                        <xs:element name="message" type="xs:string"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:schema>
+    </wsdl:types>
+
+    <wsdl:message name="SecureTransferRequest">
+        <wsdl:part element="tns:SecureTransferRequest" name="SecureTransferRequest"/>
+    </wsdl:message>
+
+    <wsdl:message name="SecureTransferResponse">
+        <wsdl:part element="tns:SecureTransferResponse" name="SecureTransferResponse"/>
+    </wsdl:message>
+
+    <wsdl:portType name="SecureTransferPort">
+        <wsdl:operation name="SecureTransfer">
+            <wsdl:input message="tns:SecureTransferRequest" name="SecureTransferRequest"/>
+            <wsdl:output message="tns:SecureTransferResponse" name="SecureTransferResponse"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <wsdl:binding name="SecureTransferPortSoap11" type="tns:SecureTransferPort">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="SecureTransfer">
+            <soap:operation soapAction=""/>
+            <wsdl:input name="SecureTransferRequest">
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output name="SecureTransferResponse">
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <wsdl:service name="SecureTransferPortService">
+        <wsdl:port binding="tns:SecureTransferPortSoap11" name="SecureTransferPortSoap11">
+            <soap:address location="http://localhost:8086/ws"/>
+        </wsdl:port>
+    </wsdl:service>
+</wsdl:definitions>
