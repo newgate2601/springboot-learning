@@ -46,6 +46,34 @@ Ví dụ OLTP:
 
 Trong MariaDB, hai topology OLTP thường gặp là **Primary/Replica** và **Galera Cluster**.
 
+### Lưu ý về chữ "scale" trong OLTP
+
+Khi MariaDB đặt **Primary/Replica** và **Galera Cluster** dưới nhóm **Transactional / OLTP**, không nên hiểu là hai topology này giúp **scale write throughput tuyến tính** cho nhiều transaction ngắn.
+
+Với OLTP, đặc biệt là các transaction ngắn nhưng ghi thường xuyên, bottleneck thường nằm ở:
+
+- lock hoặc row contention
+- commit latency và `fsync`
+- network round-trip
+- replication overhead
+- certification/conflict detection nếu dùng multi-primary
+- retry transaction khi có conflict
+
+Vì vậy, thêm node không tự động làm `INSERT`, `UPDATE`, `DELETE` nhanh hơn. Trong nhiều trường hợp, write tập trung vào một Primary còn nhanh và dễ kiểm soát hơn vì commit path ngắn hơn và không phải trả thêm chi phí đồng bộ/certification giữa nhiều node.
+
+Cách hiểu chính xác hơn:
+
+- **Primary/Replica** scale **read**, tăng availability và hỗ trợ failover; write vẫn tập trung ở Primary.
+- **Galera** tăng availability, giúp failover write nhanh hơn và cho phép nhiều node có thể nhận write; nhưng mỗi write vẫn phải replicate/certify trong cluster.
+- Cả hai phù hợp cho OLTP production chủ yếu vì **HA, failover và read scalability**, không phải vì chúng là lời giải mặc định cho scale write.
+
+Nói ngắn gọn:
+
+```text
+Scale OLTP topology != scale write tuyến tính
+Scale đúng ở đây thường là scale read + availability + failover
+```
+
 ---
 
 ## 1. Primary/Replica Topology
@@ -307,5 +335,7 @@ Không nên dùng Galera khi:
 Với phần lớn hệ thống OLTP thông thường, **Primary/Replica** là lựa chọn mặc định hợp lý hơn vì đơn giản, rẻ hơn, dễ vận hành và dễ debug.
 
 **Galera Cluster** chỉ nên được chọn khi cần high availability và failover write nhanh đến mức xứng đáng với chi phí cluster. Galera phù hợp nhất với workload OLTP transaction ngắn, ít conflict, node gần nhau và application có retry logic tốt.
+
+Điểm quan trọng là không nên đọc chữ **Transactional / OLTP topology** thành **scale write OLTP**. MariaDB recommend hai topology này cho hệ thống OLTP production vì chúng giải quyết bài toán availability, failover, consistency trade-off và scale read qua MaxScale. Nếu workload chính là write-heavy, nhiều hot row/hot table hoặc cần tăng write throughput thật sự, thì chỉ thêm replica hoặc dùng multi-primary thường không giải quyết được bottleneck, thậm chí có thể làm latency và conflict tăng.
 
 Không nên chọn Galera chỉ vì lý do "nhiều node ghi được". Multi-primary là lợi thế về HA và khả năng tiếp tục phục vụ khi node chết, không phải là lời giải mặc định cho scale write.
