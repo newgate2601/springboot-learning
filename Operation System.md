@@ -278,148 +278,75 @@ OS component là các thành phần/chức năng chính bên trong HĐH để qu
 
 ### 6.3. I/O management
 
-- I/O management phụ trách quản lý các thiết bị nhập/xuất như bàn phím, chuột, màn hình, ổ đĩa, máy in, card mạng, USB,...
-
-- Chương trình thường không điều khiển trực tiếp thiết bị, mà gửi yêu cầu I/O cho OS; OS làm việc với driver để điều khiển thiết bị cụ thể
-
-- Driver là phần mềm nằm trên máy tính/HĐH, giúp OS biết cách giao tiếp với thiết bị phần cứng cụ thể
-
-- Buffer là vùng nhớ tạm dùng để chứa dữ liệu trong lúc truyền giữa chương trình, OS và thiết bị, giúp xử lý sự khác biệt tốc độ giữa các bên
-
-- Cache là vùng lưu dữ liệu thường dùng hoặc vừa dùng gần đây để lần truy cập sau nhanh hơn, ví dụ disk cache
-
-- OS cũng xử lý interrupt từ thiết bị, hàng đợi I/O, kiểm soát lỗi I/O và chia sẻ thiết bị giữa nhiều process
-
-#### 6.3.1. I/O workflow và data transfer
-
-- I/O là viết tắt của Input/Output, tức nhập/xuất dữ liệu giữa chương trình/máy tính với thiết bị bên ngoài hoặc tài nguyên bên ngoài CPU/RAM
-
-- Input là dữ liệu đi từ thiết bị vào hệ thống, ví dụ bàn phím gửi phím vừa bấm, chuột gửi tọa độ di chuyển, ổ đĩa gửi dữ liệu file, card mạng nhận packet từ internet
-
-- Output là dữ liệu đi từ hệ thống ra thiết bị, ví dụ màn hình hiển thị frame mới, loa phát âm thanh, ổ đĩa ghi file, card mạng gửi request HTTP, máy in in tài liệu
-
-- Chương trình ứng dụng thường không nói chuyện trực tiếp với thiết bị. Workflow phổ biến là: application -> thư viện/runtime -> OS API/system call -> kernel -> driver -> controller/thiết bị -> dữ liệu/sự kiện quay ngược lại nếu cần
-
-- Thiết bị phần cứng thường có controller riêng, ví dụ disk controller, network card controller, USB controller, GPU controller. Driver là phần mềm phía OS biết cách gửi lệnh cho controller đó
-
-- Khi chương trình cần I/O, nó gửi yêu cầu cho OS, ví dụ "đọc file này", "ghi dữ liệu này ra socket", "in tài liệu này", "vẽ frame này ra màn hình"
-
-- OS kiểm tra quyền truy cập, kiểm tra tài nguyên, đưa request vào hàng đợi I/O nếu cần, rồi gọi driver phù hợp
-
-- Driver chuyển request của OS thành lệnh cụ thể cho thiết bị. Ví dụ driver ổ đĩa biết cách yêu cầu SSD đọc block dữ liệu; driver card mạng biết cách gửi packet ra network interface
-
-- Khi thiết bị hoàn tất hoặc có dữ liệu mới, thiết bị có thể báo cho CPU/OS bằng interrupt. Interrupt là tín hiệu ngắt để OS biết rằng có sự kiện cần xử lý, ví dụ phím vừa được bấm hoặc dữ liệu từ ổ đĩa đã đọc xong
-
-- Sau khi nhận interrupt, OS/driver lấy dữ liệu từ thiết bị hoặc xác nhận thao tác đã hoàn tất, cập nhật trạng thái request, rồi đánh thức process đang chờ nếu process bị block
-
-- Buffer là vùng nhớ tạm để chứa dữ liệu đang được truyền. Buffer giúp cân bằng tốc độ giữa các bên, vì CPU/RAM thường nhanh hơn thiết bị I/O rất nhiều
-
-- Cache là vùng lưu dữ liệu đã dùng hoặc có khả năng dùng lại để tăng tốc. Ví dụ đọc file lần đầu từ SSD có thể chậm hơn, nhưng lần sau OS có thể trả dữ liệu từ file cache trong RAM
-
-- Blocking I/O là khi process gửi yêu cầu I/O rồi chờ tới khi thao tác hoàn tất mới chạy tiếp. Ví dụ chương trình gọi đọc file và đứng chờ dữ liệu đọc xong
-
-- Non-blocking/asynchronous I/O là khi process gửi yêu cầu I/O rồi tiếp tục làm việc khác; khi I/O xong, OS sẽ báo lại bằng event, callback, future/promise, signal hoặc cơ chế tương tự tùy nền tảng
-
-- DMA (Direct Memory Access) là cơ chế cho phép thiết bị truyền dữ liệu trực tiếp tới/từ RAM mà không cần CPU copy từng byte. CPU chỉ thiết lập request, thiết bị tự transfer dữ liệu, xong thì báo interrupt. Cách này giúp giảm tải CPU khi truyền dữ liệu lớn như đọc file, network, âm thanh, video
-
-##### 6.3.1.1. Ví dụ 1: Gõ bàn phím
-
-- Người dùng bấm phím `A`
-
-- Keyboard controller phát hiện phím được bấm và gửi tín hiệu tới máy tính
-
-- OS/keyboard driver nhận interrupt hoặc event từ thiết bị
-
-- Driver chuyển tín hiệu phần cứng thành key event, ví dụ phím nào được bấm, đang nhấn hay thả ra
-
-- OS đưa event này tới ứng dụng đang focus, ví dụ trình soạn thảo
-
-- Ứng dụng xử lý event và hiển thị chữ `A`; phần hiển thị tiếp tục đi qua graphics stack/GPU để vẽ ra màn hình
-
-##### 6.3.1.2. Ví dụ 2: Di chuyển/click chuột trong game
-
-- Chuột gửi dữ liệu di chuyển hoặc click về máy tính qua USB/Bluetooth
-
-- OS/driver nhận dữ liệu input và chuyển thành mouse event, ví dụ tọa độ mới, click trái, click phải
-
-- Game nhận event từ OS
-
-- Game tự tính toán logic, ví dụ nhân vật cần di chuyển tới vị trí nào
-
-- Game gửi lệnh render frame mới qua graphics API; OS/driver GPU hỗ trợ đưa lệnh tới GPU để hiển thị kết quả trên màn hình
-
-##### 6.3.1.3. Ví dụ 3: Đọc file từ SSD
-
-- Ứng dụng gọi API đọc file, ví dụ đọc `data.txt`
-
-- Lời gọi đi qua thư viện/runtime rồi xuống system call như `read`
-
-- Kernel kiểm tra quyền đọc file, tìm metadata của file trong file system, xác định file nằm ở block nào trên SSD
-
-- Nếu dữ liệu đã có trong file cache của OS thì OS có thể trả về từ RAM rất nhanh
-
-- Nếu chưa có cache, OS gửi request đọc block cho driver ổ đĩa
-
-- Driver giao tiếp với SSD/controller để đọc dữ liệu; dữ liệu thường được transfer vào RAM bằng DMA
-
-- Khi đọc xong, thiết bị báo interrupt; OS cập nhật cache/buffer và copy hoặc map dữ liệu về vùng nhớ mà ứng dụng có thể đọc
-
-- Ứng dụng nhận dữ liệu và tiếp tục xử lý
-
-##### 6.3.1.4. Ví dụ 4: Ghi file xuống SSD
-
-- Ứng dụng gọi API ghi file, ví dụ lưu nội dung vào `note.txt`
-
-- Kernel kiểm tra quyền ghi, cập nhật metadata/file system nếu cần
-
-- Dữ liệu có thể được ghi vào page cache/buffer trong RAM trước, rồi OS trả kết quả cho ứng dụng khá nhanh
-
-- Sau đó OS flush dữ liệu từ cache xuống SSD vào thời điểm phù hợp, hoặc flush ngay nếu ứng dụng yêu cầu đồng bộ dữ liệu bằng cơ chế như `fsync`
-
-- Driver ổ đĩa gửi lệnh ghi xuống SSD/controller; khi ghi xong thiết bị báo lại cho OS
-
-- Vì có cache nên đôi khi ứng dụng tưởng là đã ghi xong, nhưng dữ liệu vẫn đang chờ flush xuống thiết bị. Đây là lý do mất điện đột ngột có thể làm mất dữ liệu chưa kịp ghi thật xuống ổ
-
-##### 6.3.1.5. Ví dụ 5: Gửi request qua mạng
-
-- Ứng dụng muốn gửi dữ liệu qua mạng, ví dụ browser gửi HTTP request
-
-- Browser/thư viện network tạo dữ liệu HTTP, sau đó gọi socket API của OS
-
-- OS network stack chia dữ liệu thành các packet TCP/IP phù hợp
-
-- OS gửi packet cho driver card mạng
-
-- Network card truyền packet ra Wi-Fi/Ethernet
-
-- Khi có packet phản hồi từ server, card mạng nhận packet và báo interrupt cho OS
-
-- OS network stack xử lý packet, ghép dữ liệu lại đúng stream/socket, rồi đánh thức browser nhận response
-
-##### 6.3.1.6. Ví dụ 6: In tài liệu
-
-- Ứng dụng gửi yêu cầu in tài liệu cho OS/print service
-
-- Print service đưa job vào hàng đợi in, vì máy in thường xử lý chậm hơn CPU rất nhiều
-
-- Driver máy in chuyển tài liệu thành định dạng/lệnh mà đúng model máy in hiểu được
-
-- OS gửi dữ liệu tới máy in qua USB/Wi-Fi/network
-
-- Máy in nhận dữ liệu, in từng trang và báo trạng thái như đang in, hết giấy, kẹt giấy hoặc hoàn tất
-
-##### 6.3.1.7. Ví dụ 7: Phát nhạc
-
-- Ứng dụng nghe nhạc đọc dữ liệu audio từ file hoặc network
-
-- Dữ liệu audio được decode thành stream âm thanh
-
-- Ứng dụng gửi buffer âm thanh cho OS/audio API
-
-- OS/audio driver chuyển dữ liệu tới sound card hoặc chip âm thanh
-
-- Thiết bị âm thanh phát tín hiệu ra loa/tai nghe. Vì âm thanh cần liên tục, OS phải cấp buffer đều đặn; nếu buffer bị thiếu có thể nghe bị giật/khựng
-
+I/O là viết tắt của **Input/Output**, tức quá trình chương trình trao đổi dữ liệu với thiết bị, hệ điều hành hoặc process khác.
+
+Ví dụ:
+
+- Đọc và ghi file trên SSD
+- Nhận dữ liệu từ bàn phím
+- Hiển thị dữ liệu lên màn hình
+- Gửi dữ liệu từ service A sang service B
+
+Application không điều khiển trực tiếp phần cứng. Nó gọi OS API/system call; kernel sau đó phối hợp buffer, protocol, driver và thiết bị để thực hiện I/O.
+
+#### 6.3.1. Các thành phần chính
+
+| Thành phần | Vai trò tổng quát |
+|---|---|
+| Application | Tạo hoặc sử dụng dữ liệu |
+| System call | Cho application yêu cầu kernel thực hiện I/O |
+| Socket/file descriptor | Giúp kernel xác định đúng resource hoặc connection |
+| Buffer trong RAM | Giữ dữ liệu tạm trong lúc truyền |
+| TCP/IP | Quản lý connection và đưa dữ liệu tới đúng host |
+| Driver | Chuyển yêu cầu chung của OS thành lệnh cho thiết bị cụ thể |
+| Controller | Điều khiển hoạt động phần cứng của thiết bị |
+| DMA | Chuyển dữ liệu giữa RAM và thiết bị mà CPU không copy từng byte |
+| Interrupt/completion | Báo cho CPU/kernel rằng thiết bị có sự kiện hoặc đã hoàn thành |
+| NIC | Gửi và nhận tín hiệu mạng vật lý |
+
+CPU vẫn tham gia chạy application, system call, kernel, protocol và driver. Tuy nhiên khi thiết bị hoặc mạng đang truyền dữ liệu, CPU có thể chạy công việc khác thay vì liên tục chờ.
+
+#### 6.3.2. Gửi dữ liệu sang host khác
+
+Flow tổng quát:
+
+```text
+Application A
+-> serialize dữ liệu thành byte
+-> socket/system call
+-> socket send buffer
+-> TCP/IP
+-> driver
+-> DMA
+-> NIC A
+-> network
+-> NIC B
+-> DMA
+-> TCP/IP của host B
+-> socket receive buffer B
+```
+
+Trong trường hợp này, dữ liệu phải đi qua NIC vật lý, switch/router và môi trường mạng.
+
+#### 6.3.3. Gửi dữ liệu giữa hai process cùng host
+
+Flow tổng quát khi dùng TCP localhost:
+
+```text
+Application A
+-> serialize dữ liệu thành byte
+-> socket/system call
+-> socket send buffer
+-> TCP/IP
+-> loopback interface trong kernel
+-> socket receive buffer B
+```
+
+Dữ liệu vẫn đi qua socket, kernel và buffer vì hai process có vùng nhớ riêng. Tuy nhiên dữ liệu không đi qua NIC vật lý, DMA của NIC, dây mạng, switch hoặc router.
+
+#### 6.3.4. Tài liệu chi tiết
+
+Phần giải thích lần lượt input, output và công dụng của socket, file descriptor, system call, TCP/IP, driver, controller, DMA, NIC, interrupt và hai workflow đầy đủ đã được tách sang [I-O.md](./I-O.md).
 ### 6.4. File-system management
 
 - File là đơn vị lưu trữ logic gồm các dữ liệu có liên quan với nhau; file thường được lưu trên bộ nhớ ngoài như SSD/HDD/USB
