@@ -1,500 +1,1169 @@
-# Operation System
+# Operating System — Tổng quan hệ điều hành
+
+> Tài liệu này trình bày các khái niệm cốt lõi của hệ điều hành theo hướng thực tế:
+> từ lúc bật máy, chạy một chương trình, cấp CPU/RAM, đọc file, gọi API qua mạng,
+> cho đến process, thread và Java Virtual Thread.
+
+## Mục lục
+
+- [1. Bức tranh tổng thể](#1-bức-tranh-tổng-thể)
+- [2. Hệ điều hành là gì?](#2-hệ-điều-hành-là-gì)
+- [3. User mode, kernel mode và system call](#3-user-mode-kernel-mode-và-system-call)
+- [4. Các dịch vụ chính của hệ điều hành](#4-các-dịch-vụ-chính-của-hệ-điều-hành)
+- [5. Quá trình khởi động máy tính](#5-quá-trình-khởi-động-máy-tính)
+- [6. Program, process và không gian bộ nhớ](#6-program-process-và-không-gian-bộ-nhớ)
+- [7. Vòng đời của process và PCB](#7-vòng-đời-của-process-và-pcb)
+- [8. CPU scheduling và context switch](#8-cpu-scheduling-và-context-switch)
+- [9. Thread và multithreading](#9-thread-và-multithreading)
+- [10. Java Platform Thread và Virtual Thread](#10-java-platform-thread-và-virtual-thread)
+- [11. Quản lý bộ nhớ](#11-quản-lý-bộ-nhớ)
+- [12. I/O, driver, interrupt và DMA](#12-io-driver-interrupt-và-dma)
+- [13. File system](#13-file-system)
+- [14. Giao tiếp giữa các process và networking](#14-giao-tiếp-giữa-các-process-và-networking)
+- [15. Protection và security](#15-protection-và-security)
+- [16. Ví dụ xuyên suốt: một HTTP request trong Spring Boot](#16-ví-dụ-xuyên-suốt-một-http-request-trong-spring-boot)
+- [17. Các hiểu lầm thường gặp](#17-các-hiểu-lầm-thường-gặp)
+- [18. Câu hỏi tự kiểm tra](#18-câu-hỏi-tự-kiểm-tra)
+
+---
 
-## 1. Computer component
+## 1. Bức tranh tổng thể
 
-- Phần cứng sử dụng để cung cấp tài nguyên cần thiết cho việc tính toán, xử lý, lưu trữ dữ liệu
+Một hệ thống máy tính có thể nhìn theo bốn lớp:
 
-- Phần mềm là các chương trình cài đặt trên máy tính
+```text
+Người dùng
+    ↓
+Ứng dụng: Chrome, IntelliJ, Postman, Spring Boot...
+    ↓
+Hệ điều hành: Windows, Linux, macOS...
+    ↓
+Phần cứng: CPU, RAM, SSD, GPU, card mạng...
+```
 
-- Phần mềm hệ thống là hệ điều hành, dùng để điều hành, quản trị, điều khiển phần cứng của máy tính, tạo ra nền tảng cho các phần mềm ứng dụng hoạt động (như quản lý CPU, RAM, disk, cung cấp giao diện người dùng để tương tác với hệ thống, thực hiện các tác vụ quản lý file, bảo mật hệ thống,...)
+![Quan hệ giữa user, application, OS và hardware](Operation System.assets/image1.png)
 
-- Phần mềm hệ thống như là hệ điều hành (window, linux, mac OS,...), phần mềm quản lý mạng (network management software), các thiết bị điều khiển thiết bị (device drivers),...
+| Lớp | Vai trò | Ví dụ |
+|---|---|---|
+| Hardware | Cung cấp tài nguyên vật lý | CPU, RAM, SSD, NIC, GPU |
+| Operating system | Quản lý và trừu tượng hóa phần cứng | Windows, Linux, macOS |
+| System software | Hỗ trợ hệ thống hoạt động | OS, driver, runtime, system service |
+| Application software | Giải quyết nhu cầu của người dùng | Word, Chrome, Postman, game |
 
-- Phần mềm ứng dụng các ứng dụng ta tải, sử dụng để xử lý thông tin cụ thể cho người dùng (word, postman,...)
+Ứng dụng hầu như không tự điều khiển phần cứng. Nó yêu cầu hệ điều hành thực hiện
+công việc thông qua API, thư viện và system call.
 
-![Ảnh 1](Operation System.assets/image1.png)
+Ví dụ, khi Java đọc một file:
 
-- Người dùng sẽ tương tác với Phần mềm ứng dụng
+```text
+Java application
+→ Java I/O API
+→ JVM/native runtime
+→ system call của OS
+→ file system
+→ storage driver
+→ SSD
+```
 
-- Các phần mềm chạy trên Hệ điều hành (phần mềm hệ thống)
+Sự phân lớp này mang lại ba lợi ích quan trọng:
 
-- Phần mềm ứng dụng hoạt động gián tiếp với Phần cứng thông qua Hệ điều hành
+1. Ứng dụng không cần biết chi tiết từng model SSD, card mạng hoặc bàn phím.
+2. Hệ điều hành có thể kiểm tra quyền trước khi cho ứng dụng dùng tài nguyên.
+3. Nhiều chương trình có thể chia sẻ phần cứng mà không tùy ý phá dữ liệu của nhau.
 
-## 2. Operation System Overview
+---
 
-- Hệ điều hành là hệ thống phần mềm đóng vai trò trung gian giữa người dùng/chương trình ứng dụng và phần cứng, nhằm tạo ra môi trường để chạy chương trình một cách thuận tiện, an toàn và hiệu quả
+## 2. Hệ điều hành là gì?
 
-- Có thể nhìn OS theo 2 vai trò chính: resource allocator (bộ phân phối tài nguyên) và control program (chương trình điều khiển, kiểm soát việc sử dụng tài nguyên)
+**Operating System (OS) — hệ điều hành** là phần mềm hệ thống quản lý tài nguyên
+máy tính và cung cấp môi trường để chương trình chạy an toàn, thuận tiện, hiệu quả.
 
-- Resource management tức OS giúp quản lý, đảm bảo phân phối việc sử dụng tài nguyên phần cứng của máy một cách hiệu quả, gồm CPU, main memory/RAM, secondary storage, I/O device, network device,... tới các chương trình
+Có thể nhìn OS qua ba vai trò chính.
 
-- Khi mở 1 chương trình, OS tạo process cho chương trình đó, cấp không gian địa chỉ bộ nhớ, nạp các phần cần thiết của chương trình vào RAM và chuẩn bị tài nguyên để CPU có thể thực thi
+### 2.1. Resource manager — bộ quản lý tài nguyên
 
-- Không nhất thiết toàn bộ chương trình phải được load hết vào RAM ngay từ đầu; các OS hiện đại thường dùng virtual memory/demand paging, tức là phần nào cần dùng mới được nạp vào RAM
+OS quyết định:
 
-- Tùy vào chương trình thì lượng tài nguyên yêu cầu sẽ khác nhau; OS phụ trách phân phối tài nguyên sao cho hợp lý, kiểm soát tài nguyên còn lại, kiểm tra quyền truy cập và cô lập vùng nhớ để tránh ghi đè, sai sót dữ liệu hoặc truy cập trái phép
+- Process/thread nào được dùng CPU và trong bao lâu.
+- Vùng RAM nào được cấp cho process nào.
+- Ai được đọc hoặc ghi một file.
+- Dữ liệu nào cần gửi tới ổ đĩa, màn hình hoặc card mạng.
+- Khi nào tài nguyên được thu hồi.
 
-- OS quyết định thứ tự, thời điểm và khoảng thời gian tài nguyên được cấp cho chương trình/process tùy theo thuật toán lập lịch, độ ưu tiên và trạng thái hiện tại, nhằm tối ưu hiệu năng, độ phản hồi và giảm thời gian chờ
+Ví dụ: Chrome, IntelliJ và Docker cùng cần CPU và RAM. OS phải phân phối tài
+nguyên để cả ba có thể tiến triển, đồng thời ngăn một process đọc tùy ý bộ nhớ của
+process khác.
 
-- Program execution tức OS hỗ trợ nạp, chạy và kết thúc chương trình, đồng thời cung cấp các dịch vụ như I/O, file system, memory management, process management, protection/security và error handling
+### 2.2. Control program — chương trình kiểm soát
 
-- Chương trình (program) là tập lệnh ở trạng thái tĩnh nằm trên bộ nhớ ngoài; một chương trình đang trong quá trình thực thi được gọi là tiến trình (process)
+OS kiểm soát việc thực thi chương trình và xử lý các tình huống bất thường:
 
-- Một chương trình có thể tạo ra nhiều process khác nhau, và một process có thể gồm nhiều thread cùng chia sẻ tài nguyên của process đó
+- Truy cập vùng nhớ không hợp lệ.
+- Chia cho 0 hoặc instruction không hợp lệ.
+- Thiết bị I/O báo lỗi.
+- Process treo hoặc bị buộc kết thúc.
+- User không có quyền truy cập tài nguyên.
 
-## 3. OS Service
+### 2.3. Abstraction provider — lớp trừu tượng
 
-- OS service là các dịch vụ mà HĐH cung cấp để người dùng và chương trình ứng dụng có thể sử dụng phần cứng một cách thuận tiện, an toàn và nhất quán
+OS che giấu chi tiết phần cứng bằng các abstraction dễ sử dụng:
 
-- Thay vì chương trình phải tự thao tác trực tiếp với phần cứng, chương trình thường gọi API/system call do HĐH cung cấp; HĐH sẽ kiểm tra quyền, quản lý tài nguyên và thực hiện thao tác tương ứng
+| Chi tiết vật lý | Abstraction do OS cung cấp |
+|---|---|
+| Các core CPU | Process, thread |
+| Ô nhớ vật lý | Virtual address space |
+| Block trên SSD | File, directory |
+| Card mạng | Socket |
+| Thiết bị I/O | File descriptor/handle, stream |
 
-### 3.1. Program execution
+Nhờ đó, developer làm việc với `file`, `socket`, `process` thay vì phải điều khiển
+trực tiếp sector ổ đĩa, thanh ghi thiết bị hoặc tín hiệu điện.
 
-- Program execution tức OS cho phép nạp, chạy, tạm dừng, tiếp tục và kết thúc chương trình
+### 2.4. Kernel và hệ điều hành
 
-- Basic flow là khi ta click chuột/dùng command line để mở ứng dụng, HĐH nhận yêu cầu, tạo process, cấp không gian địa chỉ bộ nhớ, nạp các phần cần thiết của chương trình từ ổ cứng/SSD vào RAM, rồi lập lịch để CPU thực thi chương trình
+**Kernel** là lõi đặc quyền của hệ điều hành. Nó quản lý CPU, process/thread,
+virtual memory, file system, network và thiết bị; application yêu cầu các dịch vụ
+này thông qua system call.
 
-- Trong quá trình chạy, OS quản lý tài nguyên mà chương trình cần như CPU, RAM, file, I/O device, network,... và cung cấp cơ chế để chương trình yêu cầu thêm/giải phóng tài nguyên
+Kernel không phải toàn bộ OS. Một hệ điều hành hoàn chỉnh còn có system library,
+service nền, command-line tool, giao diện người dùng và các tiện ích khác.
 
-- HĐH cũng cung cấp nền tảng để chương trình hiển thị giao diện và làm việc với GPU thông qua driver/API đồ họa như DirectX trên Windows hoặc OpenGL/Vulkan tùy nền tảng
+Ví dụ, Linux là kernel; Ubuntu là một hệ điều hành/distribution gồm Linux kernel
+cùng nhiều công cụ và phần mềm user space.
 
-- Sau khi chương trình kết thúc, OS thu hồi tài nguyên mà process đang nắm giữ, ví dụ bộ nhớ, file descriptor/handle, socket,...
+Phần giải thích chuyên sâu, flow Spring Boot và ví dụ quan sát thực tế được tách
+tại [kernel.md](./kernel.md).
 
-- Nếu không có OS, developer sẽ phải tự xử lý rất nhiều chi tiết thấp tầng như nạp chương trình, cấp phát bộ nhớ, điều khiển thiết bị, xử lý lỗi và bảo vệ tài nguyên
+## 3. User mode, kernel mode và system call
 
-![Ảnh 2](Operation System.assets/image2.png)
+### 3.1. Vì sao cần hai chế độ thực thi?
 
-- Ví dụ: khi bật Firefox.exe, OS tạo process Firefox, nạp các phần cần thiết của file thực thi và thư viện vào RAM theo nhu cầu, cấp tài nguyên cần thiết rồi CPU thực thi các instruction của process; khi Firefox đóng, OS thu hồi tài nguyên của process đó
+Nếu mọi ứng dụng đều có toàn quyền điều khiển phần cứng thì một bug nhỏ cũng có
+thể ghi đè bộ nhớ kernel, đọc dữ liệu của process khác hoặc làm sập toàn hệ thống.
 
-### 3.2. User Interface
+CPU và OS vì vậy phân tách ít nhất hai mức đặc quyền:
 
-- User Interface tức OS cung cấp cách để người dùng tương tác với HĐH và chương trình
+| Chế độ | Đặc điểm |
+|---|---|
+| User mode | Chạy application; bị giới hạn quyền truy cập |
+| Kernel mode | Chạy kernel; có thể thực hiện instruction đặc quyền và quản lý hardware |
 
-- Command line là dạng giao diện giúp người dùng đưa ra chỉ thị bằng cách gõ các câu lệnh
+Application chạy trong user mode. Khi cần thao tác đặc quyền, nó phải đi qua cổng
+kiểm soát của kernel: **system call**.
 
-- Graphic User Interface - GUI - Giao diện đồ họa thì sử dụng hệ thống cửa sổ, sử dụng thiết bị trỏ chuột, bàn phím,...
+### 3.2. System call là gì?
 
-- Một số hệ thống còn có giao diện cảm ứng, voice UI hoặc remote shell/remote desktop, nhưng bản chất vẫn là lớp giao tiếp giữa người dùng và hệ thống
+System call là cơ chế cho phép chương trình ở user mode yêu cầu kernel thực hiện
+một công việc.
 
-### 3.3. I/O operations
+Một số nhóm system call phổ biến trên Unix-like OS:
 
-- I/O operations tức OS hỗ trợ chương trình đọc/ghi dữ liệu và tương tác với thiết bị ngoại vi như bàn phím, chuột, màn hình, ổ đĩa, máy in, card mạng,...
+| Nhóm | Ví dụ |
+|---|---|
+| Process | `fork`, `execve`, `exit`, `wait` |
+| File | `open`, `read`, `write`, `close` |
+| Memory | `mmap`, `munmap` |
+| Network | `socket`, `bind`, `connect`, `send`, `recv` |
+| Information | `getpid`, `clock_gettime` |
 
-- Thông thường, chương trình không điều khiển trực tiếp phần cứng mà làm việc thông qua driver, buffer/cache, interrupt và system call do OS cung cấp
+Flow khái quát:
 
-- Basic flow là thiết bị I/O phát sinh sự kiện hoặc hoàn tất thao tác -> OS/driver nhận tín hiệu -> OS chuyển thành event/dữ liệu phù hợp -> chương trình nhận event/dữ liệu và xử lý
+```text
+Application ở user mode
+→ gọi library/API
+→ đặt syscall number và arguments
+→ CPU chuyển sang kernel mode
+→ kernel kiểm tra quyền và thực hiện yêu cầu
+→ trả result/error
+→ CPU quay lại user mode
+```
 
-- Ví dụ khi click chuột trong game, OS/driver nhận input từ chuột và chuyển event tới game; game tự tính toán nhân vật sẽ di chuyển thế nào, sau đó yêu cầu hệ thống đồ họa hiển thị frame mới
+### 3.3. API, library và system call khác nhau thế nào?
 
-- Khi ta ấn vào giỏ hàng Shopee chẳng hạn, trình duyệt/app nhận input event, xử lý logic ứng dụng, sau đó OS và graphics stack hỗ trợ hiển thị giao diện mới ra màn hình
+Ba khái niệm này liên quan nhưng không đồng nhất:
 
-#### 3.3.1. Driver
+| Khái niệm | Ý nghĩa |
+|---|---|
+| API | Giao diện mà code phía trên có thể gọi |
+| Library function | Hàm được thư viện cài đặt |
+| System call | Điểm vào kernel để yêu cầu dịch vụ đặc quyền |
 
-- Driver là phần mềm trung gian giúp hệ điều hành biết cách giao tiếp và điều khiển một thiết bị phần cứng cụ thể
+Một library function có thể:
 
-- Có thể hiểu driver như "người phiên dịch" giữa OS và phần cứng: OS đưa ra yêu cầu ở dạng chung hơn, driver chuyển yêu cầu đó thành lệnh mà thiết bị cụ thể hiểu được; ngược lại, driver cũng chuyển tín hiệu từ thiết bị thành dữ liệu/event mà OS và ứng dụng có thể xử lý
+- Không gọi system call, ví dụ tính `strlen`.
+- Gọi một system call.
+- Gọi nhiều system call.
+- Buffer dữ liệu và chỉ gọi system call khi cần.
 
-- Driver chủ yếu nằm trên máy tính, được cài trong hệ điều hành hoặc được OS tự động tải/cài khi phát hiện thiết bị mới
+Ví dụ `System.out.println("Hello")`:
 
-- Khi cắm thiết bị vào máy tính, thiết bị thường gửi thông tin nhận dạng cho OS, ví dụ loại thiết bị, hãng, model, vendor ID/product ID; sau đó OS tìm driver phù hợp đã có sẵn hoặc yêu cầu cài thêm driver
+```text
+Java source code
+→ PrintStream/JVM
+→ native OS API
+→ write-like system call
+→ terminal
+```
 
-- Thiết bị cũng có thể có firmware nằm bên trong chính thiết bị. Firmware là phần mềm nhỏ chạy trực tiếp trên thiết bị để giúp thiết bị tự vận hành, còn driver là phần mềm nằm phía máy tính/OS để OS điều khiển thiết bị đó
+### 3.4. Compile-time không phải system call
 
-- Ví dụ với chuột USB: firmware trong chuột đọc cảm biến và nút bấm; driver trên máy tính nhận dữ liệu từ chuột, chuyển nó thành hành động như di chuyển con trỏ, click trái, click phải hoặc cuộn trang
+Compile-time trả lời: **code được chuyển thành dạng gì để chạy?**
 
-- Ví dụ với máy in: ứng dụng chỉ yêu cầu in tài liệu, OS chuyển yêu cầu đó cho driver máy in, driver biến nội dung cần in thành lệnh phù hợp với đúng model máy in
+System call trả lời: **chương trình đang chạy nhờ OS làm việc gì?**
 
-- Ví dụ với GPU/card màn hình: driver GPU giúp OS và ứng dụng đồ họa/game gửi lệnh render tới card màn hình; nếu thiếu driver phù hợp thì máy vẫn có thể hiển thị ở mức cơ bản, nhưng hiệu năng thấp và không dùng được đầy đủ tính năng tăng tốc đồ họa
+```text
+Java source (.java)
+→ javac
+→ Java bytecode (.class)
+→ JVM interpret/JIT compile
+→ machine code
+→ CPU thực thi
+```
 
-- Không phải thiết bị nào cũng cần người dùng tự cài driver thủ công. Nhiều thiết bị phổ biến như chuột, bàn phím, USB storage dùng driver chuẩn có sẵn trong OS; các thiết bị phức tạp hơn như GPU, máy in, card âm thanh chuyên dụng thường cần driver riêng từ nhà sản xuất để hoạt động đầy đủ
+Machine code hoặc bytecode là cách biểu diễn chương trình. Chúng không phải OS API
+hay system call. Chỉ khi chương trình đang chạy và cần dịch vụ của OS, nó mới phát
+sinh system call.
 
-- Tóm lại: firmware nằm trong thiết bị để thiết bị tự hoạt động; driver nằm trên máy tính/HĐH để OS có thể nhận biết, điều khiển và trao đổi dữ liệu với thiết bị
+---
 
-### 3.4. File-system manipulation
+## 4. Các dịch vụ chính của hệ điều hành
 
-- File-system manipulation tức OS hỗ trợ tạo, đọc, ghi, xóa, đổi tên, di chuyển, phân quyền và quản lý file/thư mục
+![Các dịch vụ của hệ điều hành](Operation System.assets/image2.png)
 
-- File thường là đơn vị lưu trữ logic trên bộ nhớ ngoài như HDD, SSD, USB, CD/DVD,...; OS ánh xạ file/thư mục thành dữ liệu thật trên thiết bị lưu trữ
+### 4.1. Program execution
 
-- Các thao tác: đọc, ghi, xóa, chép, di chuyển, truy cập, sao lưu,... được OS hỗ trợ thông qua file system và system call/API
+OS hỗ trợ:
 
-- OS kiểm soát quyền truy cập file, lock file khi cần, cache dữ liệu để tăng hiệu năng và bảo vệ dữ liệu tránh ghi sai/ghi đè trái phép
+- Nạp executable và library cần thiết.
+- Tạo process và virtual address space.
+- Tạo thread ban đầu.
+- Đưa thread vào hàng đợi sẵn sàng.
+- Thu hồi tài nguyên khi process kết thúc.
 
-### 3.5. Communication
+Khi mở Firefox, OS không nhất thiết đọc toàn bộ chương trình vào RAM. Với demand
+paging, page cần thiết thường chỉ được nạp khi được truy cập.
 
-- Communication tức OS cho phép các process trao đổi thông tin với nhau trên cùng máy hoặc qua mạng
+### 4.2. I/O operations
 
-- Trên cùng máy, các cơ chế thường gặp gồm pipe, message queue, shared memory, signal, socket,...
+OS cung cấp interface thống nhất để ứng dụng đọc/ghi:
 
-- Qua mạng, OS cung cấp network stack và socket API để chương trình gửi/nhận dữ liệu qua TCP/UDP/IP; còn các giao thức tầng ứng dụng như HTTP thường do ứng dụng hoặc thư viện xử lý
+- File và ổ đĩa.
+- Bàn phím, chuột, màn hình.
+- Socket mạng.
+- Máy in, camera, microphone.
 
-### 3.6. Error detection
+Ứng dụng thường không nói chuyện trực tiếp với controller của thiết bị mà đi qua
+kernel và driver.
 
-- OS phát hiện và xử lý lỗi trong quá trình vận hành, ví dụ lỗi phần cứng, lỗi I/O, lỗi truy cập bộ nhớ, lỗi chia cho 0, lỗi chương trình bị treo hoặc kết thúc bất thường
+### 4.3. File-system manipulation
 
-- Khi có lỗi, OS có thể ghi log, gửi signal/exception, dừng process gây lỗi hoặc thông báo cho người dùng/chương trình
+OS hỗ trợ tạo, mở, đọc, ghi, đóng, đổi tên, di chuyển, xóa và phân quyền file.
+Nó cũng quản lý metadata, cache và ánh xạ file logic xuống block của thiết bị lưu
+trữ.
 
-### 3.7. Resource allocation
+### 4.4. Communication
 
-- Khi nhiều process cùng chạy, OS phải phân phối CPU, RAM, thiết bị I/O, file, network,... sao cho hợp lý
+Các process có thể giao tiếp bằng:
 
-- OS sử dụng các cơ chế như CPU scheduling, memory allocation, I/O scheduling và priority để tránh một chương trình chiếm hết tài nguyên của hệ thống
+- Pipe.
+- Signal.
+- Message queue.
+- Shared memory.
+- Socket.
 
-### 3.8. Accounting
+Giao tiếp có thể diễn ra trong cùng máy hoặc giữa các máy qua mạng.
 
-- Accounting tức OS ghi nhận việc sử dụng tài nguyên của từng user/process, ví dụ thời gian CPU, lượng bộ nhớ, dung lượng lưu trữ, số thao tác I/O hoặc network
+### 4.5. Error detection
 
-- Thông tin này có thể dùng để thống kê, tối ưu hiệu năng, giới hạn tài nguyên, tính phí hoặc điều tra lỗi
+OS phát hiện và phản ứng với:
 
-### 3.9. Protection and security
+- Page fault.
+- Invalid instruction.
+- I/O error.
+- Network timeout.
+- File system corruption.
+- Hardware fault.
 
-- Protection tức OS đảm bảo process này không tự ý truy cập tài nguyên của process khác hoặc tài nguyên hệ thống nếu không có quyền
+Tùy trường hợp, OS có thể retry, ghi log, trả error code, gửi signal, kill process
+hoặc dừng hệ thống để bảo vệ dữ liệu.
 
-- Security tức OS kiểm soát xác thực người dùng, phân quyền, cô lập process, bảo vệ bộ nhớ, file, thiết bị và network khỏi truy cập trái phép
+### 4.6. Resource allocation và accounting
 
-## 4. Down and Run OS
+OS phân phối tài nguyên và ghi nhận mức sử dụng:
 
-- HĐH bản thân vẫn là phần mềm hệ thống, được lưu trên bộ nhớ ngoài như SSD/HDD; để chạy được, các thành phần cần thiết của HĐH phải được nạp vào RAM
+- CPU time.
+- Memory.
+- Disk I/O.
+- Network traffic.
+- Số file/socket đang mở.
 
-- Quá trình khởi động HĐH gọi là booting hoặc bootstrapping. Đây là quá trình đưa máy tính từ trạng thái vừa bật nguồn đến trạng thái HĐH đã sẵn sàng cho người dùng/chương trình sử dụng
+Thông tin này được dùng cho monitoring, quota, billing, tuning và troubleshooting.
 
-- Khi bật máy, CPU không tự biết HĐH nằm ở đâu, nên nó bắt đầu chạy firmware có sẵn trên mainboard, thường là BIOS hoặc UEFI
+Ví dụ thực tế:
 
-- Firmware sẽ kiểm tra phần cứng cơ bản, ví dụ CPU, RAM, bàn phím, ổ đĩa,... Quá trình kiểm tra ban đầu này thường gọi là POST (Power-On Self-Test)
+```bash
+# Linux: xem process và mức dùng CPU/RAM
+top
 
-- Sau đó firmware tìm thiết bị có thể boot được theo boot order, ví dụ SSD, HDD, USB, network boot,...
+# Linux: xem process cụ thể
+ps -o pid,ppid,stat,%cpu,%mem,cmd -p <PID>
 
-- Trên hệ thống cũ dùng BIOS/MBR, bootloader giai đoạn đầu thường nằm ở sector đầu tiên của ổ đĩa, gọi là MBR (Master Boot Record)
+# Windows PowerShell
+Get-Process | Sort-Object CPU -Descending | Select-Object -First 10
+```
 
-- Trên hệ thống hiện đại dùng UEFI/GPT, bootloader thường nằm trong EFI System Partition (ESP), không nhất thiết nằm ở sector đầu tiên của ổ đĩa
+### 4.7. Protection và security
 
-- Bootloader là chương trình mồi có nhiệm vụ nạp kernel của HĐH vào RAM, truyền các tham số cần thiết cho kernel, rồi chuyển quyền điều khiển cho kernel
+OS xác thực user, kiểm tra quyền, cô lập process và bảo vệ file, memory, device,
+network khỏi truy cập trái phép.
 
-- Ví dụ bootloader phổ biến: Windows Boot Manager trên Windows, GRUB trên nhiều hệ thống Linux
+---
 
-- Sau khi kernel được nạp và bắt đầu chạy, kernel khởi tạo các thành phần cốt lõi như memory management, process management, scheduler, driver, file system, I/O subsystem,...
+## 5. Quá trình khởi động máy tính
 
-- Kernel không nhất thiết nạp toàn bộ HĐH vào RAM ngay từ đầu; các module, driver hoặc service có thể được nạp theo nhu cầu trong quá trình hệ thống chạy
+Tên đúng của quá trình này là **booting** hoặc **bootstrapping**.
 
-- Sau khi kernel sẵn sàng, HĐH khởi chạy process đầu tiên của user space, ví dụ `systemd` trên nhiều bản Linux hoặc các system service tương ứng trên Windows
+```text
+Power on
+→ CPU chạy firmware
+→ BIOS/UEFI thực hiện kiểm tra ban đầu
+→ chọn boot device
+→ chạy bootloader
+→ nạp kernel vào RAM
+→ kernel khởi tạo memory, scheduler, driver...
+→ khởi chạy process/service hệ thống
+→ login/desktop
+```
 
-- Các service nền tiếp tục được khởi động, ví dụ network service, login service, graphical interface, security service,... rồi người dùng mới thấy màn hình đăng nhập hoặc desktop
+### 5.1. Firmware: BIOS và UEFI
 
-- Tóm lại flow cơ bản là: bật nguồn -> BIOS/UEFI -> chọn boot device -> bootloader -> nạp kernel -> kernel khởi tạo hệ thống -> chạy service/user interface -> HĐH sẵn sàng sử dụng
+Khi vừa bật nguồn, RAM chưa chứa OS. CPU bắt đầu thực thi firmware được lưu trên
+mainboard.
 
-## 5. OS API
+Firmware:
 
-- Thông thường, chương trình ứng dụng không tương tác trực tiếp với hardware. Thay vào đó, chương trình gọi API/thư viện hoặc system call để yêu cầu HĐH thực hiện công việc liên quan tới tài nguyên hệ thống
+- Khởi tạo phần cứng cơ bản.
+- Thực hiện POST (Power-On Self-Test).
+- Đọc boot order.
+- Tìm bootloader trên thiết bị có thể boot.
 
-- System call - lời gọi hệ thống là cơ chế để chương trình chuyển yêu cầu từ user mode sang kernel mode, nhờ kernel thực hiện các thao tác đặc quyền như đọc/ghi file, tạo process, cấp phát bộ nhớ, giao tiếp mạng, thao tác với thiết bị I/O,...
+Hệ thống cũ thường dùng BIOS cùng MBR. Hệ thống hiện đại thường dùng UEFI cùng
+GPT và lưu bootloader trong EFI System Partition (ESP).
 
-- Vì system call là interface thấp tầng và phụ thuộc vào từng HĐH, developer thường không gọi system call trực tiếp mà dùng OS API hoặc thư viện runtime ở mức cao hơn
+### 5.2. Bootloader
 
-- OS API là tập API mà HĐH cung cấp để chương trình yêu cầu dịch vụ từ OS. Ví dụ Windows có Win32 API, Linux/POSIX có các API như `fork`, `exec`, `open`, `read`, `write`, `socket`,...
-
-- Một OS API có thể gọi trực tiếp một system call, gọi nhiều system call, hoặc chỉ xử lý ở tầng thư viện rồi mới gọi system call khi thật sự cần. Vì vậy không nên hiểu OS API luôn luôn là "một loạt system call gói gọn vào một hàm"
-
-- Các ngôn ngữ bậc cao như C, C++, Java,... thường cung cấp thư viện chuẩn/runtime. Developer gọi các hàm quen thuộc ở tầng ngôn ngữ, còn thư viện/runtime sẽ gọi OS API/system call phù hợp bên dưới
-
-- Ví dụ trong Java, khi gọi `System.out.println(...)`, code Java không tự ghi trực tiếp ra màn hình/phần cứng; JVM và thư viện Java xử lý output stream, sau đó có thể gọi API/system call của OS để ghi dữ liệu ra console/terminal
-
-- OS API giúp chương trình dễ viết hơn, ít phụ thuộc hơn vào chi tiết kernel/system call cụ thể. Tuy nhiên chương trình vẫn có thể phụ thuộc vào HĐH nếu dùng API riêng của HĐH đó, ví dụ Win32 API chỉ có trên Windows
-
-- Khi đổi version HĐH, chương trình dùng API ổn định thường ít phải sửa hơn so với việc gọi trực tiếp interface thấp tầng, vì HĐH/thư viện cố gắng giữ tương thích ngược cho API
-
-![Ảnh 3](Operation System.assets/image3.png)
-
-### 5.1. Compile-time
-
-- Compile-time là giai đoạn trước khi chương trình chạy, khi compiler kiểm tra và chuyển đổi mã nguồn sang dạng mà máy/runtime có thể thực thi, ví dụ machine code, bytecode hoặc intermediate representation
-
-- Quá trình biên dịch thông qua 1 compiler
-
-- Compile - biên dịch là quá trình chuyển đổi code của ngôn ngữ bậc cao sang dạng thấp hơn. Với C/C++ thường là mã máy trong executable file; với Java thường là bytecode `.class`; với một số ngôn ngữ khác có thể là intermediate representation
-
-- Compile không có nghĩa là chuyển code thành system call. System call chỉ xuất hiện khi chương trình đang chạy và cần nhờ OS thực hiện thao tác đặc quyền
-
-- Với ngôn ngữ compiled như C/C++, sau khi biên dịch xong thì executable có thể chạy mà không cần biên dịch lại, trừ khi mã nguồn thay đổi hoặc cần build lại cho nền tảng khác
-
-- Với Java, compiler `javac` biên dịch source code thành bytecode; khi chạy, JVM có thể interpret bytecode hoặc JIT compile một phần bytecode thành machine code để tối ưu hiệu năng
-
-- Nhược điểm của compile-time là mất thời gian build trước khi run; ưu điểm là phát hiện được nhiều lỗi sớm và thường cho hiệu năng tốt hơn khi chạy
-
-#### 5.1.1. Machine code, bytecode khác gì với OS API, system call?
-
-- Machine code và bytecode là dạng biểu diễn của chương trình sau khi code được biên dịch
-
-- OS API và system call là cách chương trình đang chạy yêu cầu HĐH thực hiện một công việc nào đó
-
-- Source code là code do developer viết, ví dụ file `.java`, `.c`, `.cpp`
-
-- Machine code là mã máy mà CPU có thể hiểu và thực thi trực tiếp
-
-- Bytecode là mã trung gian cho runtime/virtual machine hiểu, ví dụ Java bytecode trong file `.class`; CPU không chạy trực tiếp Java bytecode mà JVM sẽ interpret hoặc JIT compile bytecode thành machine code khi cần
-
-- OS API là các hàm/interface mà OS hoặc thư viện hệ thống cung cấp để chương trình gọi, ví dụ Win32 API trên Windows hoặc POSIX API trên Linux/Unix-like
-
-- System call là lời gọi xuống kernel để HĐH thực hiện thao tác đặc quyền, ví dụ đọc/ghi file, tạo process, mở socket, cấp phát/ánh xạ bộ nhớ hoặc thao tác với thiết bị I/O
-
-- Điểm khác nhau cốt lõi: machine code/bytecode trả lời câu hỏi "chương trình được biểu diễn dưới dạng gì để máy/runtime chạy?", còn OS API/system call trả lời câu hỏi "khi chương trình đang chạy, nó nhờ HĐH làm việc gì bằng cách nào?"
-
-- Một chương trình sau khi compile thành machine code hoặc bytecode không biến thành system call. Nó vẫn là chương trình; bên trong chương trình đó có thể có những đoạn khi chạy sẽ gọi OS API/system call
-
-- Ví dụ với C: `printf("Hello")` nằm trong source code -> compiler biên dịch thành machine code trong executable file -> khi chương trình chạy tới `printf`, thư viện C có thể gọi OS API/system call để ghi dữ liệu ra terminal
-
-- Ví dụ với Java: `System.out.println("Hello")` nằm trong source code `.java` -> `javac` compile thành bytecode `.class` -> JVM load bytecode vào runtime -> JVM verify bytecode để kiểm tra tính hợp lệ/an toàn -> JVM interpret bytecode hoặc JIT compile những đoạn chạy nhiều thành machine code -> CPU thực thi machine code -> khi tới đoạn in ra màn hình, JVM/thư viện Java có thể gọi OS API/system call để ghi dữ liệu ra console/terminal
-
-- Java cần thêm bước JVM vì `javac` không compile thẳng `.java` thành machine code native như C/C++ thường làm. `javac` tạo ra bytecode trung gian, còn CPU không hiểu trực tiếp Java bytecode, nên cần JVM xử lý bytecode khi chạy
-
-- JVM cung cấp các runtime services như class loading, bytecode verification, interpretation, JIT compilation, garbage collection, exception handling và thread management
-
-- Nhờ bytecode chạy trên JVM, cùng một chương trình Java có thể chạy trên nhiều HĐH/CPU khác nhau nếu có JVM phù hợp cho nền tảng đó. Đây là ý tưởng "write once, run anywhere"
-
-## 6. OS Component
-
-OS component là các thành phần/chức năng chính bên trong HĐH để quản lý tài nguyên và cung cấp dịch vụ cho chương trình.
-
-### 6.1. Process management
-
-- Process - tiến trình là một chương trình đang chạy, được OS cấp tài nguyên như CPU time, RAM, file descriptor/handle, I/O resource,...
-
-- Program là file/chương trình ở trạng thái tĩnh nằm trên bộ nhớ ngoài; process là trạng thái động của program khi đang được thực thi
-
-- Process management phụ trách tạo process, kết thúc process, tạm dừng/khôi phục process, lập lịch CPU, chuyển ngữ cảnh (context switching), đồng bộ hóa và giao tiếp giữa các process
-
-- OS lưu thông tin quản lý process trong cấu trúc như PCB (Process Control Block), gồm PID, trạng thái process, program counter, register, thông tin bộ nhớ, tài nguyên đang giữ,...
-
-### 6.2. Memory management
-
-- Memory management phụ trách quản lý bộ nhớ chính/RAM và không gian địa chỉ của process
-
-- RAM là bộ nhớ chính, nơi chứa các phần cần thiết của process và dữ liệu đang được sử dụng để CPU có thể truy cập nhanh
-
-- RAM được chia thành các ô nhớ/byte có địa chỉ; OS quản lý việc vùng nhớ nào đang được dùng, vùng nào còn trống, vùng nào thuộc process nào
-
-- OS cấp phát và thu hồi bộ nhớ cho process, ánh xạ địa chỉ ảo sang địa chỉ vật lý, hỗ trợ virtual memory, paging/swapping, memory protection và ngăn process truy cập vùng nhớ không hợp lệ
-
-- Nhờ virtual memory, mỗi process có cảm giác như sở hữu một không gian địa chỉ riêng, giúp cô lập process và tăng độ an toàn
-
-### 6.3. I/O management
-
-I/O là viết tắt của **Input/Output**, tức quá trình chương trình trao đổi dữ liệu với thiết bị, hệ điều hành hoặc process khác.
+Bootloader có nhiệm vụ tìm và nạp kernel vào RAM, truyền boot parameters rồi
+chuyển quyền điều khiển cho kernel.
 
 Ví dụ:
 
-- Đọc và ghi file trên SSD
-- Nhận dữ liệu từ bàn phím
-- Hiển thị dữ liệu lên màn hình
-- Gửi dữ liệu từ service A sang service B
+- Windows Boot Manager.
+- GRUB trên nhiều hệ thống Linux.
 
-Application không điều khiển trực tiếp phần cứng. Nó gọi OS API/system call; kernel sau đó phối hợp buffer, protocol, driver và thiết bị để thực hiện I/O.
+### 5.3. Kernel initialization
 
-#### 6.3.1. Các thành phần chính
+Kernel khởi tạo:
 
-| Thành phần | Vai trò tổng quát |
+- Memory management.
+- Interrupt handling.
+- Scheduler.
+- Driver và I/O subsystem.
+- File system gốc.
+- Process đầu tiên ở user space.
+
+Trên nhiều Linux distribution, process user-space đầu tiên là `systemd` với
+PID 1. Nó tiếp tục khởi chạy network, logging, security, login và application
+services.
+
+### 5.4. Shutdown đúng cách quan trọng vì sao?
+
+OS có thể đang cache dữ liệu ghi trong RAM. Nếu mất điện hoặc tắt cưỡng bức trước
+khi dữ liệu được flush xuống storage, dữ liệu có thể mất hoặc file system cần
+recovery. Shutdown đúng cách cho phép OS:
+
+- Yêu cầu application kết thúc.
+- Dừng service theo thứ tự.
+- Flush buffer/cache.
+- Unmount file system.
+- Tắt thiết bị an toàn.
+
+---
+
+## 6. Program, process và không gian bộ nhớ
+
+### 6.1. Program và process
+
+| Program | Process |
 |---|---|
-| Application | Tạo hoặc sử dụng dữ liệu |
-| System call | Cho application yêu cầu kernel thực hiện I/O |
-| Socket/file descriptor | Giúp kernel xác định đúng resource hoặc connection |
-| Buffer trong RAM | Giữ dữ liệu tạm trong lúc truyền |
-| TCP/IP | Quản lý connection và đưa dữ liệu tới đúng host |
-| Driver | Chuyển yêu cầu chung của OS thành lệnh cho thiết bị cụ thể |
-| Controller | Điều khiển hoạt động phần cứng của thiết bị |
-| DMA | Chuyển dữ liệu giữa RAM và thiết bị mà CPU không copy từng byte |
-| Interrupt/completion | Báo cho CPU/kernel rằng thiết bị có sự kiện hoặc đã hoàn thành |
-| NIC | Gửi và nhận tín hiệu mạng vật lý |
+| Tập lệnh ở trạng thái tĩnh | Một instance đang chạy của program |
+| Thường nằm trên SSD/HDD | Có trạng thái thực thi trong RAM/kernel |
+| Không có PID | Có PID |
+| Không được scheduler lập lịch | Các thread của process được lập lịch |
+| Một program có thể tạo nhiều process | Mỗi process có tài nguyên và address space riêng |
 
-CPU vẫn tham gia chạy application, system call, kernel, protocol và driver. Tuy nhiên khi thiết bị hoặc mạng đang truyền dữ liệu, CPU có thể chạy công việc khác thay vì liên tục chờ.
+Ví dụ: file `chrome.exe` là program. Mở Chrome có thể tạo nhiều process cho
+browser, tab, renderer, GPU và extension.
 
-#### 6.3.2. Gửi dữ liệu sang host khác
+### 6.2. Virtual address space
 
-Flow tổng quát:
+Mỗi process thường nhìn thấy một không gian địa chỉ ảo riêng:
+
+```text
+Địa chỉ cao
+┌──────────────────────────┐
+│ Kernel mapping           │
+├──────────────────────────┤
+│ Stack (thường tăng xuống)│
+│            ↓             │
+│                          │
+│            ↑             │
+│ Heap (thường tăng lên)   │
+├──────────────────────────┤
+│ BSS: biến chưa khởi tạo   │
+├──────────────────────────┤
+│ Data: biến toàn cục       │
+├──────────────────────────┤
+│ Text/code: machine code  │
+└──────────────────────────┘
+Địa chỉ thấp
+```
+
+Đây là mô hình khái quát; layout thực tế phụ thuộc OS, kiến trúc CPU, runtime và
+cơ chế bảo mật như ASLR.
+
+### 6.3. Code, data, heap và stack
+
+| Vùng | Thường chứa |
+|---|---|
+| Text/code | Machine code, thường chỉ đọc |
+| Data/BSS | Biến global/static |
+| Heap | Bộ nhớ cấp phát động |
+| Stack | Call frame, local variable, return address |
+
+Các điểm cần nhớ:
+
+- Stack frame thường được tạo khi gọi hàm và thu hồi khi hàm return.
+- Mỗi thread thường có stack riêng.
+- Các thread trong cùng process chia sẻ heap và phần lớn tài nguyên process.
+- OS cấp vùng nhớ cho process, nhưng compiler/runtime quản lý cách dùng stack/heap.
+- Garbage Collector là cơ chế của runtime như JVM, không phải đặc tính bắt buộc
+  của mọi heap. C/C++ có heap nhưng thường phải giải phóng thủ công hoặc dùng RAII.
+
+### 6.4. Out of Memory không đơn giản là “dùng hơn RAM được cấp”
+
+OOM có thể xảy ra vì:
+
+- Process chạm memory limit của container/cgroup.
+- JVM heap đạt `-Xmx`.
+- Không còn đủ virtual memory hoặc commit.
+- Native memory cạn.
+- Không thể cấp một vùng liên tục phù hợp.
+- Kernel chọn kill process để cứu hệ thống.
+
+Trong Java, `java.lang.OutOfMemoryError: Java heap space` nói về JVM heap, không
+đồng nghĩa toàn bộ RAM vật lý của máy đã hết.
+
+---
+
+## 7. Vòng đời của process và PCB
+
+![Mô hình process](Operation System.assets/image5.png)
+
+### 7.1. Các trạng thái cơ bản
+
+```text
+             được scheduler chọn
+New → Ready ─────────────────────→ Running → Terminated
+        ↑                            │
+        │      I/O hoàn tất          │ chờ I/O/event
+        └──────── Waiting/Blocked ←──┘
+              ↑
+              └── hết time slice: Running → Ready
+```
+
+| Trạng thái | Ý nghĩa |
+|---|---|
+| New | Process đang được tạo |
+| Ready | Có thể chạy, đang chờ CPU |
+| Running | Một thread của process đang chạy trên CPU |
+| Waiting/Blocked | Đang chờ I/O, lock, timer hoặc event |
+| Terminated | Đã kết thúc; OS đang/đã thu hồi tài nguyên |
+
+Không nên hiểu process ở trạng thái waiting là CPU “không cần làm gì”. CPU sẽ
+chạy thread khác nếu có công việc sẵn sàng.
+
+### 7.2. PCB — Process Control Block
+
+Kernel cần lưu trạng thái quản lý của mỗi process trong một cấu trúc thường được
+gọi khái quát là PCB.
+
+PCB có thể chứa:
+
+- PID và parent PID.
+- Trạng thái process.
+- Thông tin scheduling và priority.
+- CPU register/context.
+- Memory mappings/page tables.
+- Credentials và permission.
+- File descriptor/handle đang mở.
+- Accounting information.
+
+Tên và cấu trúc cụ thể khác nhau giữa các OS. Ví dụ Linux dùng `task_struct` cho
+thực thể được scheduler quản lý.
+
+### 7.3. Process kết thúc
+
+Process có thể kết thúc vì:
+
+- Chạy xong và gọi `exit`.
+- Bị signal hoặc user kill.
+- Lỗi nghiêm trọng như invalid memory access.
+- Bị OOM killer hoặc policy của container chấm dứt.
+- Parent/service manager yêu cầu dừng.
+
+Trên Unix-like OS, process đã kết thúc nhưng parent chưa thu thập exit status có
+thể tồn tại tạm thời dưới dạng **zombie**. Zombie không còn chạy và không giữ toàn
+bộ memory cũ; nó chủ yếu giữ thông tin tối thiểu để parent gọi `wait`.
+
+---
+
+## 8. CPU scheduling và context switch
+
+### 8.1. OS thực sự lập lịch cái gì?
+
+Trong các OS hiện đại, scheduler thường lập lịch **thread** hoặc scheduling entity,
+không đơn giản là “cấp CPU cho cả process”.
+
+- Một CPU core tại một thời điểm chạy một hardware thread/instruction stream.
+- Máy nhiều core có thể chạy nhiều thread thật sự song song.
+- Số runnable thread thường lớn hơn số core nên OS phải time-share CPU.
+
+### 8.2. Scheduling nhằm tối ưu điều gì?
+
+Tùy loại hệ thống, scheduler cân bằng:
+
+- Throughput.
+- Response time.
+- Fairness.
+- Priority.
+- Deadline.
+- CPU utilization.
+
+Một số thuật toán thường dùng để học nguyên lý:
+
+| Thuật toán | Ý tưởng | Hạn chế điển hình |
+|---|---|---|
+| FCFS | Đến trước chạy trước | Convoy effect |
+| SJF | Job ngắn chạy trước | Khó biết trước burst time |
+| Priority | Ưu tiên cao chạy trước | Starvation |
+| Round Robin | Mỗi task nhận một time quantum | Quantum quá nhỏ gây nhiều switch |
+| Multilevel feedback queue | Điều chỉnh queue/priority theo hành vi | Phức tạp hơn |
+
+OS thực tế thường dùng thiết kế tinh vi hơn các mô hình nhập môn này.
+
+### 8.3. Context switch
+
+Context switch xảy ra khi CPU chuyển từ thread đang chạy sang thread khác.
+
+Kernel cần:
+
+1. Lưu program counter, stack pointer và register cần thiết.
+2. Cập nhật trạng thái scheduling.
+3. Chọn thread tiếp theo.
+4. Khôi phục context của thread đó.
+5. Chuyển quyền thực thi.
+
+Context switch có chi phí vì CPU không trực tiếp làm business logic trong khoảng
+thời gian chuyển đổi, đồng thời cache/TLB locality có thể bị ảnh hưởng.
+
+### 8.4. Concurrency và parallelism
+
+- **Concurrency**: nhiều công việc cùng tiến triển trong một khoảng thời gian.
+- **Parallelism**: nhiều công việc thực sự chạy cùng lúc trên nhiều core.
+
+Một máy một core vẫn có concurrency nhờ chuyển đổi nhanh giữa các thread, nhưng
+không chạy CPU instruction của hai thread song song tại cùng một thời điểm.
+
+---
+
+## 9. Thread và multithreading
+
+### 9.1. Thread là gì?
+
+Thread là đơn vị thực thi được scheduler quản lý. Mỗi thread thường có:
+
+- Program counter.
+- CPU registers.
+- Stack riêng.
+- Scheduling state.
+
+Các thread cùng process thường chia sẻ:
+
+- Code.
+- Heap.
+- Global/static data.
+- File descriptor/handle.
+- Socket và nhiều tài nguyên khác.
+
+![Kernel và các thành phần hệ thống](Operation System.assets/image4.png)
+
+### 9.2. Vì sao dùng nhiều thread?
+
+- Giữ UI responsive trong khi làm I/O nền.
+- Xử lý nhiều connection đồng thời.
+- Tận dụng nhiều CPU core cho công việc có thể chia nhỏ.
+- Tách các luồng công việc độc lập.
+
+Ví dụ trình duyệt có thể đồng thời:
+
+- Nhận input từ người dùng.
+- Tải tài nguyên qua mạng.
+- Parse HTML/CSS.
+- Render giao diện.
+- Ghi cache xuống disk.
+
+### 9.3. Thread rẻ hơn process nhưng không miễn phí
+
+Tạo thread thường nhẹ hơn tạo process vì thread chia sẻ address space và resource
+của process. Tuy nhiên platform thread vẫn tiêu tốn:
+
+- Native stack.
+- Kernel bookkeeping.
+- Scheduling overhead.
+- Context-switch cost.
+
+Tạo quá nhiều runnable thread có thể làm throughput giảm dù máy vẫn còn RAM.
+
+### 9.4. Race condition
+
+Vì các thread chia sẻ memory, kết quả có thể phụ thuộc thứ tự thực thi.
+
+```java
+class Counter {
+    private int value = 0;
+
+    void increment() {
+        value++; // read → add → write, không phải một thao tác atomic hoàn chỉnh
+    }
+}
+```
+
+Nếu hai thread cùng gọi `increment`, một lần tăng có thể bị mất.
+
+Cách xử lý tùy bài toán:
+
+- `synchronized`/mutex/lock.
+- Atomic variable.
+- Immutable data.
+- Thread confinement.
+- Message passing.
+- Concurrent collection.
+
+Lock cũng có rủi ro: deadlock, contention, priority inversion và giảm throughput.
+
+---
+
+## 10. Java Platform Thread và Virtual Thread
+
+### 10.1. Platform Thread
+
+Java platform thread truyền thống thường được JVM ánh xạ gần theo mô hình 1:1 với
+OS thread.
+
+```text
+Java Platform Thread
+↕
+OS Thread
+↕
+OS Scheduler
+↕
+CPU core
+```
+
+Ưu điểm:
+
+- Phù hợp CPU-bound work.
+- Tích hợp trực tiếp với OS scheduler.
+- Mô hình quen thuộc, tooling trưởng thành.
+
+Hạn chế:
+
+- Mỗi thread có chi phí native resource đáng kể.
+- Mô hình thread-per-request khó scale đến số lượng connection chờ I/O rất lớn.
+
+### 10.2. Virtual Thread
+
+Virtual Thread là thread nhẹ do JVM quản lý. Nhiều virtual thread được multiplex
+trên một số platform thread gọi là **carrier thread**.
+
+```text
+Nhiều Virtual Thread
+        ↓ mount/unmount
+Một nhóm Platform/Carrier Thread
+        ↓
+OS Scheduler
+        ↓
+CPU
+```
+
+Khi virtual thread gặp blocking operation được JVM hỗ trợ, JVM thường có thể
+unmount nó khỏi carrier để carrier chạy virtual thread khác. Vì vậy ứng dụng có
+thể giữ style code tuần tự, dễ đọc, mà vẫn hỗ trợ concurrency rất lớn cho workload
+chờ I/O.
+
+Virtual Thread:
+
+- Được giới thiệu dạng preview trong Java 19 và Java 20.
+- Trở thành tính năng chính thức trong Java 21.
+- Không tự động thay thế mọi `Thread` bằng virtual thread.
+- Không làm CPU-bound task chạy nhanh hơn số CPU core.
+- Vẫn phụ thuộc platform thread và OS scheduler ở tầng dưới.
+- Không biến OS không hỗ trợ multithreading thành hệ thống multithread.
+
+### 10.3. Ví dụ Java
+
+```java
+try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+    var future = executor.submit(() -> {
+        Thread.sleep(100);
+        return "done";
+    });
+
+    System.out.println(future.get());
+}
+```
+
+Hoặc tạo trực tiếp:
+
+```java
+Thread thread = Thread.ofVirtual()
+        .name("order-worker")
+        .start(() -> processOrder());
+
+thread.join();
+```
+
+### 10.4. Khi nào Virtual Thread phù hợp?
+
+Phù hợp:
+
+- Nhiều request độc lập.
+- Phần lớn thời gian chờ database, HTTP, file hoặc network I/O.
+- Muốn giữ mô hình blocking code dễ đọc.
+
+Không phải lựa chọn thần kỳ cho:
+
+- Tính toán CPU nặng.
+- Task giữ lock lâu.
+- Code native/blocking chưa tương thích tốt với cơ chế unmount.
+- Bài toán cần giới hạn tài nguyên downstream.
+
+Ngay cả khi virtual thread rất rẻ, database connection không rẻ. Nếu database chỉ
+chịu được 100 query đồng thời, tạo 100.000 virtual thread không làm giới hạn đó
+biến mất. Vẫn cần connection pool, semaphore, rate limit và backpressure phù hợp.
+
+---
+
+## 11. Quản lý bộ nhớ
+
+### 11.1. Virtual memory
+
+Virtual memory cho mỗi process một không gian địa chỉ ảo. Memory Management Unit
+(MMU) cùng page table ánh xạ virtual address sang physical frame trong RAM.
+
+Lợi ích:
+
+- Cô lập process.
+- Cho phép mapping file/library.
+- Chia sẻ page có kiểm soát.
+- Hỗ trợ demand paging.
+- Đơn giản hóa việc cấp phát memory cho application.
+
+### 11.2. Paging và page fault
+
+Memory được chia thành các page có kích thước cố định ở mức logic quản lý.
+
+Khi process truy cập một page chưa có trong RAM:
+
+1. CPU phát hiện mapping chưa present.
+2. Chuyển quyền cho kernel bằng page-fault exception.
+3. Kernel kiểm tra truy cập có hợp lệ không.
+4. Nếu hợp lệ, kernel nạp hoặc tạo page cần thiết.
+5. Cập nhật page table.
+6. Instruction được thử lại.
+
+Page fault không luôn là lỗi ứng dụng. Nó có thể là hoạt động bình thường của
+demand paging. Truy cập địa chỉ hoàn toàn không hợp lệ mới dẫn tới lỗi như
+segmentation fault/access violation.
+
+### 11.3. Swap
+
+Khi áp lực RAM cao, OS có thể chuyển một số memory page ít dùng sang swap area trên
+storage. Swap chậm hơn RAM rất nhiều. Nếu hệ thống liên tục chuyển page qua lại,
+nó có thể rơi vào **thrashing** và phản hồi cực chậm.
+
+### 11.4. Cache không đồng nghĩa memory leak
+
+OS chủ động dùng RAM trống làm page cache để tăng tốc I/O. “RAM đang được dùng”
+không tự động có nghĩa là thiếu memory. Cache thường có thể được thu hồi khi
+application cần.
+
+Memory leak là tài nguyên không còn hữu ích nhưng vẫn bị giữ tham chiếu hoặc không
+được giải phóng, khiến mức dùng memory tăng không kiểm soát theo thời gian.
+
+---
+
+## 12. I/O, driver, interrupt và DMA
+
+### 12.1. Driver và firmware
+
+| Firmware | Driver |
+|---|---|
+| Chạy trong/bên cạnh thiết bị | Chạy phía OS |
+| Điều khiển logic nội bộ thiết bị | Giúp OS giao tiếp với thiết bị |
+| Ví dụ firmware SSD, router | Ví dụ GPU driver, printer driver |
+
+Driver dịch yêu cầu chung của OS thành thao tác phù hợp với thiết bị cụ thể.
+
+Ví dụ in tài liệu:
+
+```text
+Application
+→ print API
+→ OS printing service
+→ printer driver
+→ dữ liệu/lệnh phù hợp model máy in
+→ printer
+```
+
+### 12.2. Interrupt
+
+Nếu CPU liên tục hỏi thiết bị “xong chưa?” thì tốn tài nguyên. Với interrupt,
+thiết bị/controller có thể thông báo khi có event hoặc khi operation hoàn tất.
+
+Flow đơn giản:
+
+```text
+Application yêu cầu I/O
+→ kernel/driver cấu hình thiết bị
+→ thread có thể block, CPU chạy việc khác
+→ thiết bị hoàn tất và phát interrupt
+→ kernel xử lý completion
+→ thread được đánh thức
+```
+
+Hệ thống hiệu năng cao có thể kết hợp interrupt, batching và polling tùy workload.
+
+### 12.3. DMA
+
+Direct Memory Access cho phép controller chuyển block dữ liệu giữa thiết bị và RAM
+mà CPU không phải copy từng byte bằng instruction thông thường.
+
+CPU vẫn tham gia thiết lập operation và xử lý completion, nhưng được giải phóng
+khỏi phần lớn công việc truyền dữ liệu lặp lại.
+
+### 12.4. Buffer và cache
+
+- **Buffer** giúp hấp thụ chênh lệch tốc độ hoặc gom dữ liệu khi truyền.
+- **Cache** giữ bản sao dữ liệu có khả năng dùng lại để truy cập nhanh hơn.
+
+Một vùng memory có thể đóng vai trò khác nhau tùy ngữ cảnh; không nên áp dụng định
+nghĩa quá cứng chỉ dựa vào tên.
+
+Phần I/O chuyên sâu hơn nằm tại [I-O.md](./I-O.md).
+
+---
+
+## 13. File system
+
+File system tổ chức dữ liệu trên storage thành file, directory và metadata.
+
+Nó chịu trách nhiệm:
+
+- Đặt tên và tổ chức đường dẫn.
+- Ánh xạ file sang data block.
+- Lưu kích thước, timestamp, owner và permission.
+- Theo dõi block trống/đã dùng.
+- Cache dữ liệu.
+- Hỗ trợ consistency và recovery.
+
+### 13.1. File descriptor và handle
+
+Trên Unix-like OS, khi process mở file/socket, kernel thường trả về một số nguyên
+gọi là file descriptor.
+
+```c
+int fd = open("orders.log", O_RDONLY);
+read(fd, buffer, size);
+close(fd);
+```
+
+`fd` không phải nội dung file. Nó là định danh để kernel tìm open-file state phù
+hợp của process.
+
+Windows thường sử dụng khái niệm handle rộng hơn cho nhiều loại kernel object.
+
+### 13.2. Quyền truy cập
+
+Ví dụ permission trên Linux:
+
+```text
+-rw-r----- 1 app orders 4096 Jun 19 orders.log
+```
+
+Có thể đọc khái quát:
+
+- Owner `app`: đọc và ghi.
+- Group `orders`: đọc.
+- User khác: không có quyền.
+
+Ngay cả khi biết đúng path, process vẫn cần credentials phù hợp.
+
+### 13.3. Ghi file có chắc đã nằm trên SSD chưa?
+
+Không phải lúc nào `write` trả về cũng có nghĩa dữ liệu đã bền vững trên thiết bị.
+Dữ liệu có thể còn trong page cache hoặc cache của storage. Ứng dụng cần durability
+cao có thể phải dùng cơ chế như `fsync` và thiết kế transaction/journal phù hợp.
+
+Đây là lý do database không chỉ “ghi vài byte vào file” mà còn phải xử lý WAL,
+ordering, flush và crash recovery.
+
+---
+
+## 14. Giao tiếp giữa các process và networking
+
+### 14.1. IPC trên cùng máy
+
+| Cơ chế | Điểm mạnh | Ví dụ sử dụng |
+|---|---|---|
+| Pipe | Đơn giản, stream một chiều/hai chiều tùy loại | Shell pipeline |
+| Signal | Thông báo sự kiện nhỏ | Yêu cầu process dừng/reload |
+| Message queue | Truyền message có cấu trúc | Producer/consumer cục bộ |
+| Shared memory | Nhanh, giảm copy | Trao đổi dữ liệu lớn |
+| Unix domain socket | Socket API trong cùng host | Docker daemon, local service |
+| TCP loopback | Dễ dùng chung network protocol | Service gọi `localhost` |
+
+Shared memory nhanh nhưng cần synchronization để tránh race condition.
+
+### 14.2. Socket qua mạng
 
 ```text
 Application A
--> serialize dữ liệu thành byte
--> socket/system call
--> socket send buffer
--> TCP/IP
--> driver
--> DMA
--> NIC A
--> network
--> NIC B
--> DMA
--> TCP/IP của host B
--> socket receive buffer B
+→ socket API/system call
+→ socket send buffer
+→ TCP/UDP + IP
+→ network driver
+→ NIC
+→ network
+→ NIC máy B
+→ kernel network stack
+→ socket receive buffer
+→ Application B
 ```
 
-Trong trường hợp này, dữ liệu phải đi qua NIC vật lý, switch/router và môi trường mạng.
+HTTP là giao thức tầng ứng dụng, thường do application/library triển khai. Kernel
+cung cấp TCP/IP stack và socket primitives ở tầng thấp hơn.
 
-#### 6.3.3. Gửi dữ liệu giữa hai process cùng host
+### 14.3. Localhost có đi qua card mạng không?
 
-Flow tổng quát khi dùng TCP localhost:
+Thông thường, traffic tới loopback như `127.0.0.1` được xử lý bên trong kernel:
 
 ```text
-Application A
--> serialize dữ liệu thành byte
--> socket/system call
--> socket send buffer
--> TCP/IP
--> loopback interface trong kernel
--> socket receive buffer B
+Process A
+→ socket
+→ TCP/IP stack
+→ loopback interface
+→ socket
+→ Process B
 ```
 
-Dữ liệu vẫn đi qua socket, kernel và buffer vì hai process có vùng nhớ riêng. Tuy nhiên dữ liệu không đi qua NIC vật lý, DMA của NIC, dây mạng, switch hoặc router.
+Nó vẫn có overhead của socket, protocol và copy/buffer nhất định, nhưng không cần
+đi qua NIC vật lý, dây mạng hoặc switch.
 
-#### 6.3.4. Tài liệu chi tiết
+---
 
-Phần giải thích lần lượt input, output và công dụng của socket, file descriptor, system call, TCP/IP, driver, controller, DMA, NIC, interrupt và hai workflow đầy đủ đã được tách sang [I-O.md](./I-O.md).
-### 6.4. File-system management
+## 15. Protection và security
 
-- File là đơn vị lưu trữ logic gồm các dữ liệu có liên quan với nhau; file thường được lưu trên bộ nhớ ngoài như SSD/HDD/USB
+### 15.1. Authentication và authorization
 
-- File-system management phụ trách tổ chức file/thư mục, lưu metadata, quản lý đường dẫn, quyền truy cập, dung lượng, block dữ liệu và ánh xạ file logic xuống thiết bị lưu trữ vật lý
+- **Authentication**: bạn là ai?
+- **Authorization**: bạn được phép làm gì?
 
-- OS hỗ trợ các thao tác như tạo, mở, đọc, ghi, đóng, xóa, đổi tên, di chuyển, copy, lock file, backup và kiểm tra quyền truy cập
+OS dùng user identity, group, token/capability, ACL và policy để quyết định quyền
+truy cập.
 
-- OS cũng cache dữ liệu file để tăng hiệu năng, đồng thời cần đảm bảo dữ liệu không bị ghi sai hoặc hỏng khi mất điện/lỗi hệ thống tùy file system
+### 15.2. Process isolation
 
-### 6.5. Networking
+Process isolation dựa trên:
 
-- Networking component phụ trách quản lý thiết bị mạng và cung cấp network stack để chương trình giao tiếp qua mạng
+- Virtual address space riêng.
+- User/kernel mode.
+- Page permission: read/write/execute.
+- File/device permission.
+- Security policy và sandbox.
 
-- OS quản lý card mạng LAN, Wi-Fi, Bluetooth,... thông qua driver tương ứng
+Một process thông thường không thể đọc tùy ý heap của process khác.
 
-- OS thường hỗ trợ các giao thức tầng thấp/trung như Ethernet, IP, TCP, UDP và cung cấp socket API để chương trình gửi/nhận dữ liệu
+### 15.3. Container có phải virtual machine không?
 
-- Các giao thức tầng ứng dụng như HTTP, HTTPS, FTP,... thường do ứng dụng hoặc thư viện xử lý, không phải phần cốt lõi mà OS trực tiếp thực hiện thay ứng dụng
+Không.
 
-### 6.6. Protection and security
+- Container thường cô lập process bằng namespace, cgroup và security mechanism,
+  nhưng chia sẻ kernel của host.
+- Virtual machine chạy guest OS/kernel riêng trên virtual hardware do hypervisor
+  cung cấp.
 
-- Protection giúp đảm bảo process này không truy cập trái phép vào vùng nhớ, file, thiết bị hoặc tài nguyên của process khác
+Vì chia sẻ kernel, container thường nhẹ hơn VM nhưng ranh giới và mô hình bảo mật
+khác VM.
 
-- Security liên quan tới xác thực người dùng, phân quyền, kiểm soát truy cập, cô lập process, audit/logging và bảo vệ hệ thống khỏi hành vi không hợp lệ
+### 15.4. Principle of least privilege
 
-- Ví dụ: user thường không được ghi vào file hệ thống nếu không có quyền admin/root; process không được đọc vùng nhớ kernel hoặc vùng nhớ riêng của process khác
+Process chỉ nên có quyền tối thiểu cần thiết.
 
-### 6.7. System call interface
+Ví dụ Spring Boot service:
 
-- System call interface là lớp giao tiếp giữa chương trình ở user mode và kernel ở kernel mode
+- Không nên chạy bằng `root` nếu không cần.
+- Chỉ nên đọc secret cần thiết.
+- Chỉ mở port cần dùng.
+- Chỉ có quyền ghi vào thư mục log/data liên quan.
+- Nên có CPU/memory limit trong container.
 
-- Khi chương trình cần thao tác đặc quyền như đọc file, tạo process, cấp phát bộ nhớ, mở socket hoặc giao tiếp thiết bị, chương trình sẽ đi qua API/thư viện rồi xuống system call
+---
 
-- Thành phần này giúp OS kiểm soát yêu cầu từ chương trình, kiểm tra quyền, chuyển sang kernel mode và trả kết quả/lỗi về lại chương trình
+## 16. Ví dụ xuyên suốt: một HTTP request trong Spring Boot
 
-## 7. Kernel
+Giả sử client gọi:
 
-- Nhân - kernel là thành phần quan trọng nhất của HĐH, là thành phần thực thi các chức năng cơ bản nhất của HĐH, thường xuyên được giữ trong bộ nhớ
+```http
+GET /api/orders/123
+```
 
-![Ảnh 4](Operation System.assets/image4.png)
+Một flow rút gọn có thể là:
 
-- Kernel cơ bản là tập hợp các tập tin, câu lệnh, dòng lệnh, hàm luôn lưu giữ trong RAM để khi cần sử dụng thì thực hiện
+```text
+1. NIC nhận network frame
+2. Driver/kernel network stack xử lý Ethernet/IP/TCP
+3. Byte được đưa vào socket receive buffer
+4. Thread của server được đánh thức hoặc task được báo sẵn sàng
+5. JVM/framework đọc request từ socket
+6. Spring MVC route request tới controller
+7. Controller gọi service
+8. Service gọi repository
+9. JDBC chờ một connection từ pool
+10. Query được gửi qua socket tới database
+11. Thread chờ I/O, CPU có thể chạy thread khác
+12. Database trả kết quả
+13. Java object được tạo trên heap
+14. Framework serialize object thành JSON
+15. Byte được ghi vào socket
+16. Kernel TCP/IP và NIC gửi response về client
+```
 
-- Thay vì load toàn bộ HĐH vào RAM (chiếm rất nhiều RAM) thì người ta chỉ chọn các thành phần quan trọng nhất, không thể thiếu để load vào RAM (chỉ load Kernel)
+Trong flow này, OS tham gia ở nhiều điểm:
 
-- Vi nhân thì chỉ load những phần thực sự cần sử dụng vào RAM (giờ tôi cần tương tác với file, tôi mới load nó vào RAM -> sử dụng RAM ít hơn tuy nhiên đánh đổi thời gian load vào RAM)
+| Công việc | Thành phần liên quan |
+|---|---|
+| Nhận/gửi packet | NIC, driver, interrupt/DMA, network stack |
+| Chờ socket | I/O subsystem, scheduler |
+| Chạy Java code | CPU scheduling, thread |
+| Cấp memory | JVM allocator, virtual memory, OS |
+| Đọc config/log | File system, page cache |
+| Cô lập service | Process, permission, container/cgroup |
 
-## 8. Process
+Nếu dùng platform thread theo mô hình thread-per-request, thread có thể bị block
+trong lúc chờ database. Nếu dùng virtual thread, JVM có thể unmount virtual thread
+trong nhiều blocking operation phù hợp để carrier phục vụ công việc khác.
 
-- Program - chương trình là thể tĩnh, không thay đổi theo thời gian, không sở hữu tài nguyên
+Tuy nhiên cả hai mô hình vẫn bị giới hạn bởi tài nguyên thật:
 
-- Process - tiến trình là thể động, là trạng thái của chương trình khi đang thực thi, được phân bổ 1 lượng tài nguyên nhất định như CPU, RAM để thực thi tiến trình
+- Số CPU core.
+- Database connection pool.
+- Database throughput.
+- Memory.
+- Network bandwidth.
+- Downstream rate limit.
 
-- Process bao gồm các lệnh, chỉ thị cho CPU thực thi (tại thời điểm call api, CPU sẽ tính toán gì, làm gì, trả dữ liệu thế nào, điều khiển thiết bị thế nào,...)
+---
 
-- Thông tin hoạt động hiện tại của process gồm các nội dung con trỏ lệnh, nội dung các thanh ghi của CPU
+## 17. Các hiểu lầm thường gặp
 
-- Stack của process chứa dữ liệu tạm thời, các biến cục bộ của hàm, phương thức, mỗi khi 1 hàm được gọi, stack frame được tạo ra để lưu trữ các biến cục bộ + khi hàm kết thúc, stack frame sẽ được giải phóng + stack được quản lý tự động bởi OS
+### 17.1. “Toàn bộ OS luôn nằm trong RAM”
 
-- Heap là vùng tập hợp tất cả các thành phần của 1 process, lưu trữ dữ liệu mà tồn tại trong thời gian chạy của process + giả sử 1 process chỉ được cấp 200mb RAM, nhưng nó lại dùng tới 210mb RAM -> báo lỗi Out Of Memory + Heap thường sử dụng để cấp phát bộ nhớ động + mem không tự động giải phóng mà sử dụng Garbage collector để thu hồi + 1 process sẽ có 1 Heap duy nhất
+Sai. Kernel và các thành phần đang hoạt động cần memory, nhưng nhiều binary,
+service, driver/module và dữ liệu chỉ được nạp khi cần.
 
-- Process gồm 2 loại: process người dùng được sinh ra khi người dùng chạy chương trình ứng dụng (google, word,...) + process hệ thống được sinh ra từ các thành phần của HĐH (window driver, service host,...)
+### 17.2. “Kernel là một tập file luôn nằm nguyên trong RAM”
 
-![Ảnh 5](Operation System.assets/image5.png)
+Chưa chính xác. Kernel là chương trình lõi đang thực thi với đặc quyền cao. Kernel
+image được nạp khi boot, nhưng memory của kernel còn gồm code, data structure,
+cache và module được quản lý động.
 
-### 8.1. Trạng thái của process
+### 17.3. “Microkernel chỉ load module khi cần để tiết kiệm RAM”
 
-- Bất kỳ process nào cũng sẽ nằm ở 1 trạng thái nhất định
+Đây không phải điểm định nghĩa chính. Microkernel giữ tối thiểu cơ chế trong kernel
+mode và chuyển nhiều service sang user space. Mục tiêu quan trọng là modularity,
+isolation và reliability; trade-off thường liên quan IPC/context-switch overhead.
 
-- Các process có thể được chuyển đổi qua lại để CPU thực thi khi (thường xảy ra khi có ngắt/ hoạt động khiến process này đợi và CPU không cần làm gì)
+### 17.4. “Stack do OS hoàn toàn tự quản lý”
 
-- Mới khởi tạo: tức process đang được tạo ra, thông thường ở trạng thái này thì program chưa được tải vào trong RAM, chỉ như vừa khởi tạo thôi
+OS cấp và bảo vệ vùng memory; compiler, ABI, CPU instruction và runtime phối hợp
+quản lý stack frame. Không nên quy toàn bộ trách nhiệm cho OS.
 
-- Lúc này HĐH sẽ gán id cho process -> tạo không gian nhớ cho process + PCB
+### 17.5. “Heap luôn có Garbage Collector”
 
-- Kích thước không gian nhớ được tính toán dựa tr
+Sai. GC phụ thuộc runtime/ngôn ngữ. C và C++ vẫn có dynamic heap nhưng không bắt
+buộc có GC.
 
-- Sẵn sàng: sau khi program được tải vào trong RAM, nó sẽ sẵn sàng thực thi, chờ CPU thực thi các câu lệnh của nó
+### 17.6. “Một process chỉ có một stack”
 
-- Chạy: CPU thực thi các câu lệnh mà process cung cấp (tất cả các chương trình đều là những câu lệnh, hàm được sắp xếp từ trên xuống dưới)
+Sai với process đa luồng. Mỗi thread thường có stack riêng; các thread chia sẻ
+heap và nhiều tài nguyên process.
 
-- Chờ đợi: đôi khi process đang chạy thì nó lại chờ đợi các sự kiện như: đợi thao tác nhập xuất dữ liệu rồi thực thi tiếp chẳng hạn
+### 17.7. “OS cấp nhiều CPU cho một OS thread”
 
-- Kết thúc: process không còn nằm trong sự quản lý nhưng chưa bị xóa đi bằng cách gọi system call exit()
+Một thread tại một thời điểm chạy trên một logical CPU. Process nhiều thread có
+thể tận dụng nhiều core song song.
 
-- Thường kết thúc do: sau khi thực thi xong/ bị parent process kết thúc/ do lỗi/ process yêu cầu nhiều memory hơn so với bộ nhớ hiện có của máy/ process thực thi lâu hơn giới hạn
+### 17.8. “Virtual Thread không phụ thuộc OS scheduling”
 
-### 8.2. PCB - Process Control Block
+Sai. JVM lập lịch virtual thread lên carrier thread, còn carrier thread vẫn được
+OS scheduler lập lịch lên CPU.
 
-- PCB - Process Control Block chứa thông tin về process, tên gọi của khối này có thể thay đổi dựa trên từng loại HĐH
+### 17.9. “Java 19 mặc định dùng Virtual Thread”
 
-- PCB chứa id của process (PID - Process Identifier) để phân biệt giữa các process
+Sai. Virtual Thread preview ở Java 19/20 và chính thức ở Java 21, nhưng developer
+phải chủ động tạo/dùng executor hoặc framework configuration phù hợp.
 
-- Trạng thái của process
+### 17.10. “Nhiều thread luôn làm chương trình nhanh hơn”
 
-- Chứa nd của 1 số thanh ghi trên CPU thực thi process này
+Sai. Quá nhiều thread có thể tăng contention, context switch, memory footprint và
+làm giảm cache locality. Mức concurrency phải phù hợp workload và bottleneck thật.
 
-- Chứa thông tin bộ nhớ, tài nguyên, thống kê của 1 process
+---
 
-## 9. Scheduling
+## 18. Câu hỏi tự kiểm tra
 
-- HĐH support scheduling (lập lịch) để quyết định thứ tự process nào được sử dụng tài nguyên phần cứng khi nào, trong bao lâu (CPU, RAM, I/O device)
+1. Vì sao application không nên được phép truy cập trực tiếp mọi vùng RAM?
+2. API, library function và system call khác nhau ở điểm nào?
+3. Khi một thread chờ đọc database, OS có để CPU đứng yên không?
+4. Program khác process như thế nào?
+5. Các thread trong cùng process chia sẻ gì và có gì riêng?
+6. Page fault có luôn là lỗi không?
+7. Context switch có những loại chi phí nào?
+8. Vì sao Virtual Thread phù hợp I/O-bound hơn CPU-bound?
+9. Vì sao 100.000 Virtual Thread không có nghĩa database xử lý được 100.000 query
+   đồng thời?
+10. Container và virtual machine khác nhau ở kernel như thế nào?
 
-- Tại 1 thời điểm thì chỉ có 1 process được cấp CPU để thực thi (máy 1 CPU) vì CPU chỉ đảm nhiệm 1 công việc tại 1 thời điểm
+### Checklist ghi nhớ nhanh
 
-## 10. Thread
-
-- Thread - luồng thực hiện = 1 đơn vị thực thi của 1 process = 1 chuỗi các lệnh được cấp phát CPU để thực thi độc lập
-
-- Bản chất process chỉ là 1 chuỗi các câu lệnh nối tiếp nhau + CPU sẽ đọc các câu lệnh này và thực thi + nếu như 1 process mà có nhiều chuỗi lệnh và mỗi chuỗi lệnh có thể thực thi độc lập với nhau trong cùng 1 thời điểm thì ta có thể gọi nó là những thread
-
-### 10.1. Example
-
-- 2 api có thể call đồng thời tại 1 thời điểm + nó là 1 phần của chương trình của bạn -> có thể gọi mỗi lần call này là 1 thread
-
-- ta vừa có thể 1 thread hiển thị giao diện lướt web, trong khi 1 thread vẫn đang tải tệp tin
-
-- 1 server có thể access bởi nhiều người dùng trên toàn cầu, server tạo mỗi thread cho từng client mỗi lần client truy cập để có thể phục vụ đồng thời, song song
-
-- Các HĐH hỗ trợ multi-thread, cho phép thực thi đồng thời 1 lúc nhiều thread
-
-- Quá trình tạo thread nhanh hơn nhiều lần so với tạo mới process (tạo process thì cần load vào ram, gán id,... còn thread là lấy 1 đoạn code trong RAM, chạy song song với đoạn code khác thì tất nhiên sẽ nhanh hơn)
-
-- Các Thread chia sẻ không gian nhớ, tài nguyên của Process mà nó nằm trong -> có thể gây race-condition
-
-### 10.2. OS Thread - Platform Thread
-
-- OS Thread - Platform Thread - là các thread do HĐH quản lý và tạo ra + HĐH cung cấp các API cho application có thể yêu cầu tới HĐH để yêu cầu tạo, xóa, thay đổi, scheduling tới thread do OS quản lý
-
-- Cái gì nằm trong nhân cũng sẽ mạnh hơn tầng application -> khả năng xử lý đồng thời sẽ mạnh hơn so với thread ở tầng application tự quản
-
-- OS Thread được cấp nhiều CPU để thực hiện song song
-
-- Nhược điểm là cần system-call để application có thể yêu cầu HĐH quản lý thread
-
-- Trước Java 19, Java có sử dụng OS Thread để xử lý các thread: 1 thread java truyền thống sẽ ánh xạ trực tiếp vào 1 thread + vì vậy khi handle 1 lượng lớn các request thì sẽ gặp khó khăn trong việc quản lý, tiêu tốn tài nguyên vì 1 phần cũng là do HĐH thường có giới hạn số lượng quản lý thread để trở nên hiệu quả
-
-### 10.3. Virtual Thread
-
-- Virtual Thread - là các thread do chính application tự tạo ra và quản lý, HĐH không biết tới sự tồn tại của các thread này
-
-- Virtual Thread ra đời để giải quyết vấn đề giới hạn số lượng của OS Thread bị phụ thuộc quá nhiều vào các tài nguyên máy tính (CPU, kết nối mạng,...)
-
-- Mọi thông tin nằm trong chương trình -> việc thread switching không đòi hỏi phải chuyển xuống chế độ nhân, tiết kiệm thời gian hơn (do không cần sử dụng system-call nên nó sẽ tiết kiệm thời gian hơn)
-
-- Application tự quản, không phụ thuộc vào sự scheduling của HĐH
-
-- Có thể sử dụng trên các HĐH không support multi-thread do nằm ở tầng application
-
-- Từ Java 19+, default về Thread là sử dụng Virtual Thread, trước kia là sử dụng OS Thread với mỗi Thread được tạo ra: thay vì sử dụng OS Thread cho mỗi thread, mà cung cấp 1 thread dạng nhẹ, không gán với OS Thread như trước nữa + được quản lý bởi tầng application, được chính JVM quản lý => giúp scale hệ thống dễ dàng hơn, dễ tạo, dễ hủy thread mà không tốn nhiều chi phí như trước + có thể tạo và sử dụng hàng ngàn, hàng triệu thread trong application mà không làm quá tải HĐH, giúp ích trong các microservice application yêu cầu tính đồng thời cao
+- OS quản lý và trừu tượng hóa hardware.
+- Kernel là lõi đặc quyền, không phải toàn bộ OS.
+- Application dùng system call để yêu cầu kernel làm việc đặc quyền.
+- Process có address space và tài nguyên; thread là đơn vị thực thi.
+- Mỗi thread thường có stack riêng; các thread cùng process chia sẻ heap.
+- Scheduler phân phối logical CPU cho runnable thread.
+- Virtual memory giúp ánh xạ, cô lập và demand paging.
+- Driver kết nối OS với thiết bị; interrupt/DMA giúp I/O hiệu quả.
+- File và socket là abstraction, không phải bản thân hardware.
+- Virtual Thread giúp scale workload chờ I/O, không tạo thêm CPU capacity.

@@ -21,8 +21,8 @@ Khi gửi dữ liệu sang host khác, các thành phần tham gia theo thứ t�
 Application A
 -> Serializer/HTTP library
 -> Application buffer
--> Socket API
--> System call
+-> Socket API / system call
+-> Kernel tra fd để tìm socket object
 -> Socket send buffer
 -> TCP
 -> IP
@@ -47,8 +47,8 @@ Khi gửi cùng host qua localhost, phần cứng mạng ở giữa được tha
 Application A
 -> Serializer/HTTP library
 -> Application buffer
--> Socket API
--> System call
+-> Socket API / system call
+-> Kernel tra fd để tìm socket object
 -> Socket send buffer
 -> TCP/IP
 -> Loopback interface
@@ -190,28 +190,76 @@ Output logic vẫn là HTTP byte, nhưng giờ chúng có một vị trí cụ t
 
 **Chuyển tới**
 
-Application truyền socket, địa chỉ buffer và độ dài vào `send()`/`write()`.
+Application gọi `send()`/`write()` một lần, truyền file descriptor của socket, địa chỉ buffer và độ dài dữ liệu.
 
 **Mục đích**
 
 OS cần biết dữ liệu nằm ở đâu và có bao nhiêu byte. Application không thể chỉ nói chung chung rằng “hãy gửi object này”.
 
-### 2.4. Socket - điểm đầu cuối do kernel quản lý
+### 2.4. Socket API và system call - application yêu cầu gửi dữ liệu
 
-Socket là một kernel object đại diện cho một đầu giao tiếp. Application không sở hữu trực tiếp cấu trúc bên trong socket; nó giữ một file descriptor hoặc handle để tham chiếu tới socket đó.
+Application chạy ở user mode và không được tự chỉnh sửa kernel memory hoặc điều khiển NIC. Nó phải yêu cầu OS qua system call.
 
-Ví dụ:
+Application chỉ truyền thông tin gửi **một lần** khi gọi Socket API như `send()` hoặc `write()`:
 
 ```text
-fd 7 -> TCP socket
+Application
+    |
+    | send(fd, buffer, length)
+    v
+Socket API / system call
+    |
+    v
+Kernel
 ```
 
-Ở đây có hai thứ khác nhau:
+**Input**
 
-- **Socket object:** cấu trúc dữ liệu thật nằm trong kernel
-- **File descriptor - fd:** một số nguyên nhỏ mà application dùng để tham chiếu tới kernel object
+Ví dụ lời gọi logic:
 
-Application không được nhận địa chỉ thật của socket object vì kernel memory phải được bảo vệ. Thay vào đó, kernel lưu socket trong bảng descriptor của process rồi trả về một số như `7`.
+```text
+send(fd = 7, buffer = 0x1000, length = 180)
+```
+
+- `fd = 7`: gửi qua socket nào
+- `buffer = 0x1000`: dữ liệu bắt đầu tại địa chỉ nào trong application memory
+- `length = 180`: cần gửi bao nhiêu byte
+
+Tùy hệ điều hành và thư viện, hàm API có thể là một wrapper mỏng trước system call thật. Về mặt luồng dữ liệu, đây vẫn là một yêu cầu gửi duy nhất từ application sang kernel.
+
+**Xử lý**
+
+CPU chuyển execution context:
+
+```text
+user mode -> kernel mode
+```
+
+Kernel:
+
+- Nhận `fd`, `buffer` và `length`
+- Kiểm tra các tham số và quyền truy cập
+- Kiểm tra vùng nhớ bắt đầu tại `buffer = 0x1000`
+- Xác định cần đọc `length = 180` byte
+- Bắt đầu xử lý yêu cầu trên socket được tham chiếu bởi `fd = 7`
+
+**Output**
+
+Output là một yêu cầu gửi hợp lệ bên trong kernel.
+
+**Chuyển tới**
+
+Kernel dùng `fd` để tìm socket object tương ứng.
+
+**Mục đích**
+
+System call tạo ranh giới an toàn. Application được dùng dịch vụ của OS nhưng không được tùy ý truy cập kernel hoặc phần cứng.
+
+### 2.5. Kernel tra fd để tìm socket object
+
+Socket là một kernel object đại diện cho một đầu giao tiếp. Application không giữ địa chỉ thật của object này; nó chỉ giữ file descriptor hoặc handle để tham chiếu tới socket.
+
+Ví dụ:
 
 ```text
 Process A - user space                Kernel
@@ -221,6 +269,27 @@ Biến fd = 7                           File descriptor table của process A
                                       │ fd 7 │ -> TCP socket object    │
                                       └──────┴─────────────────────────┘
 ```
+
+Trước đó, `socket()` đã tạo socket object và descriptor; `connect()` đã gắn connection context vào socket object đó.
+
+**Input**
+
+```text
+fd = 7
+```
+
+`buffer` và `length` vẫn thuộc cùng yêu cầu `send()` ở mục 2.4. Chúng không được application truyền thêm một lần nữa và không được lưu lâu dài trong socket object.
+
+**Xử lý**
+
+Kernel:
+
+- Lấy descriptor table của process đang gọi
+- Dùng `fd = 7` để tìm đúng socket object
+- Kiểm tra descriptor có hợp lệ và có trỏ tới socket không
+- Kiểm tra trạng thái connection
+- Lấy protocol, IP/port nguồn và đích
+- Xác định socket send buffer tương ứng
 
 Một TCP connection được phân biệt bằng:
 
@@ -234,79 +303,17 @@ Ví dụ:
 10.0.0.10:52144 -> 10.0.0.20:8080
 ```
 
-**Input**
-
-Application cung cấp:
-
-- File descriptor/handle của socket
-- Địa chỉ application buffer
-- Số byte cần gửi
-
-**Xử lý**
-
-Socket giúp kernel xác định:
-
-- Dữ liệu thuộc connection nào
-- Protocol nào được sử dụng, ví dụ TCP
-- IP và port nguồn/đích là gì
-- Send buffer và trạng thái connection nằm ở đâu
-
 **Output**
 
-Socket cung cấp context để kernel đưa byte vào đúng socket send buffer và xử lý bằng đúng TCP connection.
+Kernel đã xác định được đúng socket object và send buffer cần nhận dữ liệu.
 
 **Chuyển tới**
 
-Yêu cầu được chuyển vào kernel thông qua system call.
+Kernel copy các byte từ application buffer vào socket send buffer.
 
 **Mục đích**
 
-Một host có thể chạy hàng nghìn connection. Socket là cách OS tách chúng ra và biết dữ liệu của process nào phải đi tới IP/port nào.
-
-### 2.5. System call - cổng đi từ application vào kernel
-
-Application chạy ở user mode và không được tự chỉnh sửa kernel memory hoặc điều khiển NIC. Nó phải yêu cầu OS qua system call.
-
-**Input**
-
-Ví dụ lời gọi logic:
-
-```text
-send(fd = 7, buffer = 0x1000, length = 180)
-```
-
-`fd = 7` xuất hiện ở đây vì system call cần biết kernel object nào sẽ được thao tác. Trước đó `socket()` đã tạo descriptor, còn `connect()` đã gắn connection context vào socket object tương ứng.
-
-**Xử lý**
-
-CPU chuyển execution context:
-
-```text
-user mode -> kernel mode
-```
-
-Kernel:
-
-- Lấy descriptor table của process đang gọi
-- Dùng `fd = 7` để tìm đúng socket object
-- Kiểm tra descriptor có hợp lệ và có trỏ tới socket không
-- Kiểm tra socket có connected không
-- Kiểm tra quyền và tham số
-- Kiểm tra vùng nhớ bắt đầu tại `buffer = 0x1000`
-- Xác định cần đọc `length = 180` byte
-- Bắt đầu xử lý yêu cầu gửi
-
-**Output**
-
-Output là một I/O request hợp lệ bên trong kernel và các byte được chấp nhận để gửi.
-
-**Chuyển tới**
-
-Kernel đưa byte vào socket send buffer.
-
-**Mục đích**
-
-System call tạo ranh giới an toàn. Application được dùng dịch vụ của OS nhưng không được tùy ý truy cập kernel hoặc phần cứng.
+Một process có thể mở nhiều socket. `fd` giúp kernel biết yêu cầu `send()` hiện tại dành cho connection nào.
 
 ### 2.6. Socket send buffer - hàng chờ byte phía gửi
 
@@ -1175,393 +1182,133 @@ fd không phải connection object
 
 fd là số dùng để kernel tìm đúng object trong descriptor table của process
 ```
-## 4. Trường hợp 1: gửi sang service ở host khác
+## 4. So sánh gửi khác host và cùng host
 
-Ví dụ:
-
-```text
-order-service A:   10.0.0.10:52144
-payment-service B: 10.0.0.20:8080
-```
-
-Service A gửi một HTTP request tới service B. Flow chỉ đi một chiều và dừng tại socket receive buffer B.
-
-### 4.1. Sơ đồ ghép các thành phần
-
-```text
-Service A
-  |
-  | PaymentRequest object
-  v
-Serializer + HTTP library
-  |
-  | HTTP byte
-  v
-Application buffer A
-  |
-  | send(socket, buffer, length)
-  v
-System call + socket A
-  |
-  | byte được kernel chấp nhận
-  v
-Socket send buffer A
-  |
-  | byte stream
-  v
-TCP A
-  |
-  | TCP segment
-  v
-IP A
-  |
-  | IP packet
-  v
-Ethernet/Wi-Fi A
-  |
-  | frame trong RAM
-  v
-NIC driver A
-  |
-  | transmit descriptor
-  v
-Transmit ring
-  |
-  | địa chỉ buffer + độ dài
-  v
-NIC controller + DMA
-  |
-  | frame được lấy từ RAM
-  v
-NIC A
-  |
-  | tín hiệu vật lý
-  v
-Switch/router/network
-  |
-  | tín hiệu tới host B
-  v
-NIC B + DMA
-  |
-  | frame trong RAM B
-  v
-Receive ring + interrupt
-  |
-  | thông báo frame sẵn sàng
-  v
-NIC driver + Ethernet/IP/TCP B
-  |
-  | HTTP byte stream
-  v
-Socket receive buffer B
-```
-
-### 4.2. Input và output của toàn bộ flow
-
-**Input ban đầu**
-
-```text
-PaymentRequest object trong heap của service A
-```
-
-**Output cuối cùng**
-
-```text
-HTTP byte trong socket receive buffer của service B
-```
-
-**Các dạng trung gian**
-
-```text
-Object
--> HTTP byte
--> TCP segment
--> IP packet
--> Ethernet/Wi-Fi frame
--> tín hiệu vật lý
--> Ethernet/Wi-Fi frame
--> IP packet
--> TCP segment
--> HTTP byte
-```
-
-### 4.3. Bảng theo dõi từng bước
-
-| Bước | Thành phần | Input | Output | Chuyển cho |
-|---|---|---|---|---|
-| 1 | Application A | Dữ liệu nghiệp vụ | `PaymentRequest` object | Serializer |
-| 2 | Serializer/HTTP library | Object, method, path | HTTP byte | Application buffer |
-| 3 | Application buffer | HTTP byte | Địa chỉ buffer và độ dài | Socket API |
-| 4 | Socket/system call | Socket, buffer, length | I/O request trong kernel | Socket send buffer |
-| 5 | Socket send buffer | HTTP byte | Byte stream chờ gửi | TCP |
-| 6 | TCP A | Byte stream | TCP segment | IP |
-| 7 | IP A | TCP segment | IP packet và route | Ethernet/Wi-Fi |
-| 8 | Ethernet/Wi-Fi A | IP packet | Frame | NIC driver |
-| 9 | NIC driver A | Frame | Transmit descriptor | Transmit ring |
-| 10 | NIC controller | Descriptor | Yêu cầu DMA | DMA engine |
-| 11 | DMA phía A | Frame trong RAM | Frame trong NIC | NIC A |
-| 12 | NIC A | Frame | Tín hiệu mạng | Switch/router |
-| 13 | Switch/router | Frame/IP packet | Dữ liệu được chuyển tiếp | NIC B |
-| 14 | NIC B | Tín hiệu | Frame | DMA phía B |
-| 15 | DMA phía B | Frame trong NIC | Frame trong RAM B | Receive ring |
-| 16 | Interrupt/completion | Descriptor hoàn tất | Thông báo có dữ liệu | Driver B |
-| 17 | Driver/network stack B | Frame | HTTP byte stream đúng connection | Socket B |
-| 18 | Socket receive buffer B | HTTP byte | Byte được giữ trong kernel B | Dừng flow |
-
-### 4.4. Vai trò CPU, RAM và phần cứng
-
-**CPU A**
-
-- Chạy application và serializer
-- Thực hiện system call
-- Chạy TCP/IP và driver
-- Cấu hình descriptor và DMA
-
-**RAM A**
-
-- Chứa object và HTTP byte
-- Chứa socket send buffer
-- Chứa packet/frame và transmit ring
-
-**Phần cứng mạng**
-
-- DMA chuyển frame giữa RAM và NIC
-- NIC phát tín hiệu
-- Switch/router chuyển tiếp dữ liệu
-
-**CPU và RAM B**
-
-- DMA đặt frame vào RAM B
-- CPU xử lý interrupt, driver và TCP/IP
-- RAM B chứa receive ring và socket receive buffer
-
-CPU vẫn tham gia I/O, nhưng không tự copy từng byte qua NIC hoặc đẩy tín hiệu qua mạng.
-
-### 4.5. Điểm kết thúc
-
-Flow kết thúc khi:
-
-```text
-HTTP byte đã nằm trong socket receive buffer B
-```
-
-Chưa xét:
-
-- Service B gọi `read()`
-- Service B parse HTTP
-- Service B xử lý nghiệp vụ
-- Service B gửi response
-## 5. Trường hợp 2: gửi sang service cùng host
-
-Ví dụ:
-
-```text
-order-service A:   127.0.0.1:52144
-payment-service B: 127.0.0.1:8080
-```
-
-A và B là hai process trên cùng máy. Mỗi process có address space riêng, vì vậy A không thể ghi trực tiếp vào heap của B.
-
-### 5.1. Sơ đồ ghép các thành phần
-
-```text
-Service A
-  |
-  | PaymentRequest object
-  v
-Serializer + HTTP library
-  |
-  | HTTP byte
-  v
-Application buffer A
-  |
-  | send(socket, buffer, length)
-  v
-System call + socket A
-  |
-  | byte được kernel chấp nhận
-  v
-Socket send buffer A
-  |
-  | TCP segment/IP packet logic
-  v
-TCP/IP trong kernel
-  |
-  | route tới 127.0.0.1
-  v
-Loopback interface
-  |
-  | kernel chuyển nội bộ trong RAM
-  v
-TCP B tìm connection socket
-  |
-  | HTTP byte stream
-  v
-Socket receive buffer B
-```
-
-### 5.2. Input và output của toàn bộ flow
-
-**Input ban đầu**
-
-```text
-PaymentRequest object trong heap của process A
-```
-
-**Output cuối cùng**
-
-```text
-HTTP byte trong socket receive buffer của process B
-```
-
-Không có giai đoạn biến frame thành tín hiệu vật lý. Dữ liệu không rời host.
-
-### 5.3. Bảng theo dõi từng bước
-
-| Bước | Thành phần | Input | Output | Chuyển cho |
-|---|---|---|---|---|
-| 1 | Application A | Dữ liệu nghiệp vụ | Object | Serializer |
-| 2 | Serializer/HTTP library | Object | HTTP byte | Application buffer |
-| 3 | Application buffer | HTTP byte | Địa chỉ buffer và độ dài | Socket API |
-| 4 | Socket/system call | Socket, buffer, length | I/O request trong kernel | Socket send buffer |
-| 5 | Socket send buffer A | HTTP byte | Byte stream | TCP |
-| 6 | TCP/IP | Byte stream và địa chỉ `127.0.0.1` | Dữ liệu được route nội bộ | Loopback |
-| 7 | Loopback interface | Dữ liệu từ TCP/IP A | Dữ liệu chuyển trong kernel/RAM | TCP B |
-| 8 | TCP B | Byte stream và bộ bốn IP/port | HTTP byte đúng connection | Socket B |
-| 9 | Socket receive buffer B | HTTP byte | Byte được giữ trong kernel | Dừng flow |
-
-### 5.4. Loopback nhận gì và tạo ra gì?
-
-**Input**
-
-```text
-Dữ liệu đã được TCP/IP xử lý
-Destination = 127.0.0.1
-```
-
-**Xử lý**
-
-Routing table nhận ra destination là chính host hiện tại. Kernel chuyển dữ liệu qua network interface ảo `loopback`.
-
-```text
-TCP/IP phía A
--> loopback
--> TCP/IP phía B
-```
-
-Tùy OS, kernel có thể copy dữ liệu hoặc tối ưu bằng cách chuyển tham chiếu giữa các buffer.
-
-**Output**
-
-```text
-Byte stream được chuyển tới TCP connection của B
-```
-
-**Mục đích**
-
-Loopback giữ nguyên mô hình socket/TCP/IP quen thuộc nhưng bỏ phần truyền vật lý. Hai process vẫn được OS cô lập và chỉ giao tiếp qua interface được kiểm soát.
-
-### 5.5. Thành phần nào không tham gia?
-
-Khi gửi qua localhost, request này không sử dụng:
-
-- NIC vật lý
-- NIC driver để truyền frame ra mạng
-- NIC controller
-- DMA giữa RAM và NIC
-- Transmit/receive ring của NIC
-- Tín hiệu điện/quang/Wi-Fi
-- Switch hoặc router
-
-Vẫn sử dụng:
-
-- Application và serializer
-- CPU và RAM
-- Socket và system call
-- Socket send/receive buffer
-- TCP/IP
-- Kernel
-- Loopback interface
-
-### 5.6. Điểm kết thúc
-
-Flow kết thúc khi:
-
-```text
-HTTP byte đã nằm trong socket receive buffer B
-```
-
-Chưa xét B đọc, parse, xử lý hoặc gửi response.
-## 6. So sánh hai flow
-
-| Nội dung | Khác host | Cùng host qua localhost |
-|---|---|---|
-| Application serialize | Có | Có |
-| Socket/system call | Có | Có |
-| TCP/IP | Có | Có |
-| Socket buffer | Có | Có |
-| CPU và RAM | Có | Có |
-| Loopback interface | Không | Có |
-| NIC driver | Có | Không dùng để truyền request này |
-| DMA giữa RAM và NIC | Có | Không |
-| NIC vật lý | Có | Không |
-| Switch/router | Có thể có | Không |
-| Tín hiệu mạng vật lý | Có | Không |
-| Điểm kết thúc | Receive buffer B | Receive buffer B |
-
-Hai flow có phần đầu và phần cuối giống nhau:
-
-```text
-object A
--> HTTP byte
--> socket A
--> kernel
-...
--> kernel
--> socket receive buffer B
-```
-
-Điểm khác biệt nằm ở đoạn giữa:
-
-```text
-Khác host:
-kernel A -> driver/DMA/NIC -> network -> NIC/DMA/driver -> kernel B
-
-Cùng host:
-kernel -> loopback trong RAM -> kernel
-```
-
-## 7. Tóm tắt ngắn
-
-**Gửi khác host**
+Phần đầu của hai trường hợp giống nhau:
 
 ```text
 Object A
 -> HTTP byte
--> socket send buffer A
--> TCP
--> IP
--> frame
--> driver
--> DMA
--> NIC A
--> network
--> NIC B
--> DMA
--> driver/kernel B
--> socket receive buffer B
-```
-
-**Gửi cùng host**
-
-```text
-Object A
--> HTTP byte
--> socket send buffer A
+-> Application buffer
+-> send(fd, buffer, length)
+-> Kernel tra fd
+-> Socket send buffer A
 -> TCP/IP
--> loopback trong kernel/RAM
+```
+
+Sau khi xử lý routing, đường đi bắt đầu khác nhau.
+
+### 4.1. Đường đi chi tiết
+
+**Khác host**
+
+```text
+TCP/IP kernel A
+-> chọn route qua network interface vật lý
+-> tạo packet và frame
+-> qdisc/hàng đợi gửi
+-> NIC driver A
+-> transmit ring
+-> NIC A dùng DMA đọc frame từ RAM
+-> NIC A phát tín hiệu điện/quang/vô tuyến
+-> switch/router chuyển tiếp
+-> NIC B nhận tín hiệu
+-> NIC B dùng DMA ghi frame vào RAM B
+-> receive ring
+-> interrupt/polling
+-> NIC driver B
+-> Ethernet/IP/TCP kernel B
 -> socket receive buffer B
 ```
 
-Trong cả hai trường hợp, application không điều khiển phần cứng trực tiếp. Application chỉ tạo byte và gửi qua socket; kernel chịu trách nhiệm chọn con đường phù hợp.
+**Cùng host qua loopback**
+
+```text
+TCP/IP kernel
+-> routing nhận ra địa chỉ đích thuộc chính host
+-> chọn loopback interface
+-> kernel chuyển packet nội bộ
+-> TCP phía nhận tìm socket của process B
+-> Socket receive buffer B
+```
+
+Loopback không phải một vùng RAM riêng. Nó là network interface ảo và đường xử lý nội bộ trong kernel. Packet không được đưa ra NIC; dữ liệu và metadata của packet chỉ được xử lý trong CPU/RAM của cùng host.
+
+Tùy hệ điều hành và cơ chế tối ưu, kernel có thể copy dữ liệu giữa các buffer hoặc chuyển/reuse các cấu trúc buffer nội bộ. Vì vậy không nên hiểu loopback là một thao tác đơn giản kiểu “copy thẳng từ heap A sang heap B”.
+
+### 4.2. So sánh chi tiết từng giai đoạn
+
+| Giai đoạn | Khác host | Cùng host qua loopback |
+|---|---|---|
+| Routing | Chọn network interface dẫn tới host B và next hop | Nhận ra destination thuộc local host và chọn loopback |
+| Network namespace/kernel | Đi từ network stack của host A sang network stack của host B | Thường ở trong cùng kernel/network namespace, trừ cấu hình container hoặc namespace riêng |
+| Link layer | Tạo Ethernet/Wi-Fi frame | Không cần frame vật lý để phát ra mạng |
+| Neighbor resolution | Có thể cần ARP cho IPv4 hoặc NDP cho IPv6 để tìm địa chỉ MAC của next hop | Không cần tìm MAC của máy đích |
+| Hàng đợi gửi | Có qdisc, transmit queue và transmit ring | Có hàng đợi/buffer phần mềm nội bộ nhưng không có transmit ring của NIC vật lý |
+| NIC driver | Driver A chuẩn bị descriptor; driver B xử lý dữ liệu nhận | Không dùng driver NIC vật lý cho request này |
+| DMA | NIC A đọc dữ liệu từ RAM A; NIC B ghi dữ liệu vào RAM B | Không có DMA giữa RAM và NIC |
+| NIC | Serialize frame thành tín hiệu và nhận lại tín hiệu ở host B | Không sử dụng NIC vật lý |
+| Môi trường truyền | Cáp đồng, cáp quang hoặc sóng vô tuyến | CPU cache và RAM của cùng máy |
+| Thiết bị trung gian | Có thể qua switch, router, firewall, load balancer | Không qua thiết bị mạng vật lý; vẫn có thể qua firewall/filter trong kernel |
+| Khoảng cách vật lý | Tín hiệu phải di chuyển giữa các host | Không có propagation giữa hai máy |
+| Xử lý phía nhận | NIC B, DMA, receive ring, interrupt/NAPI, driver B rồi network stack B | Kernel chuyển trực tiếp sang đường nhận của TCP trên cùng host |
+| Tải CPU | Chia cho CPU của hai host; có thêm xử lý driver và interrupt | Cả hai process và network stack cạnh tranh CPU trên cùng host |
+| Memory bandwidth | Dùng RAM của hai host và bus PCIe/NIC | Dùng memory bandwidth/cache của một host |
+| Packet loss | Có thể mất do đường truyền, congestion hoặc thiết bị mạng | Không có lỗi đường truyền vật lý; vẫn có thể drop do giới hạn buffer/tài nguyên |
+| TCP retransmission | Có thể xảy ra do mất gói hoặc reordering trên mạng | Hiếm hơn nhiều; không có mất gói vật lý nhưng vẫn chịu logic TCP |
+| Jitter | Bị ảnh hưởng bởi queueing và tải của nhiều thiết bị/đường truyền | Chủ yếu do CPU scheduling, contention, garbage collection và tải kernel |
+| Giới hạn throughput | NIC speed, PCIe, link, switch/router và network congestion | CPU, memory bandwidth, copy cost và socket buffer |
+| Dữ liệu rời host | Có | Không |
+
+### 4.3. Những phần trực tiếp tạo chênh lệch latency
+
+Có thể biểu diễn gần đúng:
+
+```text
+Latency khác host
+= phần chung của application/socket/TCP
++ xếp hàng tại qdisc và NIC A
++ xử lý driver, descriptor và DMA phía gửi
++ thời gian NIC phát frame
++ propagation trên môi trường truyền
++ xử lý và xếp hàng tại switch/router
++ thời gian NIC B nhận frame
++ DMA, interrupt/polling và driver phía nhận
++ nguy cơ chờ TCP retransmission
+
+Latency loopback
+= phần chung của application/socket/TCP
++ xử lý route loopback trong kernel
++ memory copy hoặc quản lý buffer nội bộ
++ CPU scheduling giữa process A và process B
+```
+
+Chênh lệch lớn nhất thường đến từ:
+
+1. **Khoảng cách vật lý:** tín hiệu cần thời gian đi từ host A tới host B.
+2. **Queueing:** packet có thể phải chờ ở NIC, switch, router hoặc đường truyền đang nghẽn.
+3. **Xử lý phần cứng và driver:** DMA, descriptor, interrupt/polling và hai NIC đều thêm công việc.
+4. **Thiết bị trung gian:** mỗi switch, router, firewall hoặc load balancer cần nhận, kiểm tra và chuyển tiếp dữ liệu.
+5. **Mất gói và retransmission:** nếu packet mất, TCP phải phát lại; đây có thể là nguồn tăng latency rất lớn.
+
+Loopback bỏ được toàn bộ đoạn phần cứng và network ở giữa, nhưng không có nghĩa latency bằng không. Nó vẫn chịu:
+
+- System call và TCP/IP processing
+- Copy/quản lý buffer trong kernel
+- Context switch và process scheduling
+- CPU contention
+- Garbage collection hoặc pause của application
+- Giới hạn socket buffer và memory bandwidth
+
+### 4.4. Điểm dễ hiểu nhầm
+
+Hai process trên cùng host vẫn có address space riêng:
+
+```text
+Heap process A != Heap process B
+```
+
+Service A không ghi thẳng application buffer vào heap của service B. Với TCP loopback, dữ liệu vẫn đi qua API socket, kernel network stack và socket receive buffer của B.
+
+Trong cả hai trường hợp, application không điều khiển phần cứng trực tiếp. Application chỉ tạo byte và gửi qua socket; kernel chọn đường đi phù hợp.
 
