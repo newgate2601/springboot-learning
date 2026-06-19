@@ -132,7 +132,7 @@ Ví dụ, Linux là kernel; Ubuntu là một hệ điều hành/distribution g�
 cùng nhiều công cụ và phần mềm user space.
 
 Phần giải thích chuyên sâu, flow Spring Boot và ví dụ quan sát thực tế được tách
-tại [kernel.md](./kernel.md).
+tại [kernel.md](kernel.md).
 
 ## 3. User mode, kernel mode và system call
 
@@ -870,7 +870,7 @@ khỏi phần lớn công việc truyền dữ liệu lặp lại.
 Một vùng memory có thể đóng vai trò khác nhau tùy ngữ cảnh; không nên áp dụng định
 nghĩa quá cứng chỉ dựa vào tên.
 
-Phần I/O chuyên sâu hơn nằm tại [I-O.md](./I-O.md).
+Phần I/O chuyên sâu hơn nằm tại [I-O.md](I-O.md).
 
 ---
 
