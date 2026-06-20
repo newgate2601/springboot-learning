@@ -1,6 +1,6 @@
 # I/O Model: Blocking, Non-blocking và I/O Multiplexing
 
-Tài liệu này tập trung vào cách application chờ và xử lý I/O. Đường đi của byte qua socket, TCP/IP, driver và NIC được trình bày riêng trong [I-O.md](I-O.md).
+Tài liệu này tập trung vào cách application chờ và xử lý I/O. Đường đi của byte qua socket, TCP/IP, driver và NIC được trình bày riêng trong [08-io-chuyen-sau.md](08-io-chuyen-sau.md).
 
 ---
 

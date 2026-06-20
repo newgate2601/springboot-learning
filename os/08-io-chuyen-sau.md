@@ -5,7 +5,7 @@ Tài liệu này giải thích chi tiết quá trình một service gửi dữ l
 1. Hai service nằm trên hai host khác nhau
 2. Hai service là hai process nằm trên cùng host
 
-Phạm vi chỉ theo chiều gửi và kết thúc khi dữ liệu đã nằm trong socket receive buffer của service đích. Tài liệu gốc: [Operation System.md](./Operation%20System.md).
+Phạm vi chỉ theo chiều gửi và kết thúc khi dữ liệu đã nằm trong socket receive buffer của service đích. Tài liệu gốc: [01-operation-system-tong-quan.md](01-operation-system-tong-quan.md).
 I/O là quá trình chương trình trao đổi dữ liệu với một thành phần bên ngoài vùng xử lý hiện tại của nó. Phần này chỉ tập trung vào hai trường hợp:
 
 1. Service A gửi dữ liệu sang service B ở **host khác**
