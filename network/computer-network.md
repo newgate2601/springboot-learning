@@ -3,11 +3,11 @@ Nguồn: Google Docs
 Nội dung câu chữ và hình ảnh được giữ nguyên; chỉ bổ sung Markdown để dễ đọc.
 -->
 
-- **Config devops:** https://chat.deepseek.com/a/chat/s/121532f4-df5d-4dfc-9714-3d4fb1139016
+- **DevOps (Development and Operations: phương pháp kết hợp phát triển phần mềm với vận hành):** https://chat.deepseek.com/a/chat/s/121532f4-df5d-4dfc-9714-3d4fb1139016
 
-- Subnet, Network Address, Broadcast Address
+- **Subnet (mạng con), network address (địa chỉ đại diện cho subnet), broadcast address (địa chỉ IPv4 gửi tới mọi host trong subnet).**
 
-- CCNA sisco
+- **CCNA (Cisco Certified Network Associate: chứng chỉ kiến thức mạng nền tảng của Cisco).**
 
 - https://www.geeksforgeeks.org/computer-networks/computer-network-tutorials/
 
@@ -15,22 +15,22 @@ Nội dung câu chữ và hình ảnh được giữ nguyên; chỉ bổ sung Ma
 
 # Computer Network
 
-- Computer network là 1 hệ thống gồm các node được kết nối với nhau để communicate và resource sharing dữ liệu, dịch vụ,... thông qua communication links
+- **Computer network:** hệ thống kết nối nhiều thiết bị để chúng trao đổi dữ liệu và dùng chung tài nguyên. Mục đích là giúp thiết bị không phải hoạt động cô lập; ví dụ laptop có thể dùng Internet, truy cập file trên server và in qua máy in mạng.
 
-- Node chính là các thiết bị như computer, printer, phone, switch, bridge, router, ô tô kết nối mạng... có khả năng gửi nhận dữ liệu
+- **Node:** một điểm tham gia mạng, có thể tạo, nhận hoặc chuyển tiếp dữ liệu. Máy tính và điện thoại là node đầu cuối; switch và router là node trung gian.
 
-- Communication link (media) giúp các node có thể kết nối với nhau + chỉ support truyền tải thông tin giữa các node.
+- **Communication link/media:** phương tiện thực sự mang tín hiệu giữa hai điểm, ví dụ cáp đồng, cáp quang hoặc sóng Wi-Fi. Nó giải quyết bài toán “dữ liệu đi bằng gì”; còn protocol giải quyết “hai bên phải gửi và hiểu dữ liệu theo quy tắc nào”.
 
-- Resource sharing tức chia sẻ tài nguyên giữa các thiết bị.
+- **Resource sharing:** cho phép nhiều thiết bị dùng chung tài nguyên thay vì mỗi máy phải có một bản riêng; ví dụ cả văn phòng dùng chung máy in, đường Internet, file server hoặc database.
 
-- Số lượng Port đề cập tới nó có thể connect với bao nhiêu device (mỗi port thì có thể có 1 connection)
+- **Port vật lý:** cổng trên thiết bị để gắn một đường kết nối, ví dụ port Ethernet trên switch. **Port logic TCP/UDP** lại là con số giúp hệ điều hành chuyển dữ liệu tới đúng ứng dụng; ví dụ cùng một server nhưng port `443` dành cho HTTPS và port `22` dành cho SSH.
 
 ### Node được chia làm 2 loại:
 
 | Loại node | Nội dung nguyên bản |
 |---|---|
-| End nodes | End nodes (End system/ Hosts/ Internet Edge): là các thiết bị đầu cuối, sử dụng để khởi tạo và gửi request và là nơi cuối cùng để nhận dữ liệu (máy tính, điện thoại, máy in, VoIP phone, credit card, barcode scanner, web server, ô tô kết nối mạng, ...). Điểm chung là chúng đều chạy các ứng dụng mạng, nằm ở phần rìa của mạng. |
-| Intermediary nodes | Intermediary nodes (Internet Core) là các node trung gian trong mạng mà dữ liệu sẽ đi qua khi truyền dữ liệu giữa các end nodes, chỉ đóng vai trò chuyển tiếp, định tuyến, chuyển mạch dữ liệu giữa các end nodes (router, wireless router, bridges, switch, hub, repeater, access endpoint, cell tower, modern, firewall,...) để điều hướng, đảm bảo dữ liệu đến đúng đích. |
+| End nodes | **End node/end system/host:** nơi ứng dụng tạo ra hoặc sử dụng dữ liệu. Ví dụ trình duyệt trên laptop tạo HTTP request, còn web server là nơi xử lý request đó. |
+| Intermediary nodes | **Intermediary node:** thiết bị giúp dữ liệu đi từ nguồn tới đích nhưng thường không phải nơi sử dụng nội dung cuối cùng. Switch chuyển frame trong LAN, router đưa packet sang mạng khác, firewall kiểm soát packet có được đi qua hay không. |
 
 ### Phân loại network (mỗi một vùng xanh xanh bên dưới sẽ đại diện cho 1 network)
 
@@ -44,12 +44,12 @@ Nội dung câu chữ và hình ảnh được giữ nguyên; chỉ bổ sung Ma
 
 | Loại network | Nội dung nguyên bản |
 |---|---|
-| Home network | Home network: hệ thống mạng trong nhà (như máy tính, điện thoại,…) |
-| Enterprise network | Enterprise network: hệ thống mạng doanh nghiệp sẽ có nhiều thiết bị hơn, nên cần các switch tốt hơn, cần nhiều bộ router hơn. |
-| Mobile network | Mobile network: hệ thống mạng có tính di động cao, di chuyển theo thời gian (thường kết nối với các điểm phát sóng) |
-| Content provider network | Content provider network: hệ thống mạng phục vụ các công ty lớn (như youtube, netflix chẳng hạn) nên lượng dữ liệu của họ cực kỳ lớn, họ tự xây dựng hệ thống mạng riêng của mình rồi kết nối tới các nhà cung cấp dịch vụ. |
+| Home network | **Home network (mạng gia đình):** mạng kết nối các thiết bị trong nhà như máy tính, điện thoại, TV và thiết bị IoT. |
+| Enterprise network | Mạng phục vụ một tổ chức, cần phân chia phòng ban, quản lý tập trung, dự phòng và kiểm soát truy cập. VLAN thường được dùng để tạo nhiều mạng logic trên cùng hệ thống switch. |
+| Mobile network | **Mobile network (mạng di động):** mạng vô tuyến cho phép thiết bị di chuyển giữa các vùng phủ sóng, ví dụ mạng 4G/5G. |
+| Content provider network | **Content provider network (mạng của nhà cung cấp nội dung):** hạ tầng riêng của công ty như YouTube hoặc Netflix để lưu trữ, xử lý và đưa lượng nội dung lớn tới người dùng. |
 
-- ⇒ nên có thể nói Internet = Network of networks do chúng được tạo thành từ nhiều network lại.
+- Vì vậy, Internet thường được gọi là **network of networks (mạng của các mạng)**: rất nhiều mạng độc lập kết nối và trao đổi dữ liệu với nhau.
 
 ## Phân loại quy mô
 
@@ -57,39 +57,44 @@ Mạng có thể được phân loại theo phạm vi địa lý mà nó kết n
 
 | Loại mạng | Phạm vi điển hình | Mục đích và ví dụ | Công nghệ/thiết bị thường gặp | Chủ thể quản lý |
 |---|---|---|---|---|
-| **PAN (Personal Area Network)** | Xung quanh một người, thường trong vài mét | Điện thoại kết nối tai nghe, đồng hồ thông minh hoặc chia sẻ dữ liệu với laptop | Bluetooth, NFC, USB, Wi-Fi Direct | Một cá nhân |
-| **LAN (Local Area Network)** | Nhà ở, phòng làm việc, một tầng hoặc một tòa nhà | Kết nối máy tính, máy in, server và các thiết bị trong gia đình/văn phòng | Ethernet, switch, router, access point | Cá nhân hoặc một tổ chức |
-| **WLAN (Wireless LAN)** | Phạm vi tương tự LAN nhưng thiết bị truy cập không dây | Wi-Fi tại nhà, văn phòng, quán cà phê | Wi-Fi và access point | Cá nhân hoặc một tổ chức |
-| **CAN (Campus Area Network)** | Nhiều tòa nhà trong cùng khuôn viên | Kết nối các LAN của trường đại học, bệnh viện, nhà máy hoặc khu công nghiệp | Ethernet tốc độ cao, cáp quang, switch Layer 3, router | Một tổ chức |
-| **MAN (Metropolitan Area Network)** | Một đô thị hoặc khu vực liên đô thị | Kết nối nhiều cơ sở trong một thành phố; mạng Metro Ethernet của nhà cung cấp dịch vụ | Metro Ethernet, cáp quang, microwave | ISP, chính quyền hoặc tổ chức lớn |
-| **WAN (Wide Area Network)** | Nhiều tỉnh, quốc gia hoặc châu lục | Kết nối các văn phòng ở xa nhau, mạng đường trục của nhà mạng | MPLS, leased line, SD-WAN, cáp quang đường dài/cáp biển, microwave, vệ tinh | Một hoặc nhiều nhà mạng/tổ chức |
-| **GAN (Global Area Network)** | Toàn cầu | Thuật ngữ mô tả mạng hoạt động trên phạm vi toàn thế giới | Kết hợp nhiều công nghệ WAN | Nhiều tổ chức và nhà mạng |
+| **PAN (Personal Area Network)** | Xung quanh một người, thường trong vài mét | Kết nối các thiết bị cá nhân ở khoảng cách ngắn, ví dụ điện thoại với tai nghe Bluetooth hoặc đồng hồ thông minh | Bluetooth, NFC, USB, Wi-Fi Direct | Một cá nhân |
+| **LAN (Local Area Network)** | Nhà ở, phòng làm việc, một tầng hoặc một tòa nhà | Tạo một miền mạng nội bộ tốc độ cao để máy tính, máy in và server giao tiếp trực tiếp | Ethernet, switch, router, access point | Cá nhân hoặc một tổ chức |
+| **WLAN** | Phạm vi tương tự LAN nhưng thiết bị kết nối bằng sóng vô tuyến | Giúp thiết bị di động vào LAN mà không cần cáp; ví dụ Wi-Fi tại nhà hoặc văn phòng | Wi-Fi và access point | Cá nhân hoặc một tổ chức |
+| **CAN (Campus Area Network)** | Nhiều tòa nhà trong cùng khuôn viên | Gom các LAN của trường, bệnh viện hoặc nhà máy thành một mạng do cùng tổ chức quản lý | Ethernet tốc độ cao, cáp quang, switch Layer 3, router | Một tổ chức |
+| **MAN (Metropolitan Area Network)** | Một đô thị hoặc khu vực liên đô thị | Nối nhiều cơ sở trong cùng thành phố, thường qua hạ tầng Metro Ethernet của nhà cung cấp | Metro Ethernet, cáp quang, microwave link | ISP, chính quyền hoặc tổ chức lớn |
+| **WAN (Wide Area Network)** | Nhiều tỉnh, quốc gia hoặc châu lục | Kết nối các LAN ở xa nhau qua hạ tầng của nhà mạng; ví dụ nối trụ sở Hà Nội với chi nhánh TP.HCM | MPLS, leased line, SD-WAN, cáp quang đường dài/cáp biển, microwave, vệ tinh | Một hoặc nhiều nhà mạng/tổ chức |
+| **GAN (Global Area Network)** | Toàn cầu | Mô tả hệ thống hoạt động toàn thế giới bằng cách ghép nhiều WAN | Kết hợp nhiều công nghệ WAN | Nhiều tổ chức và nhà mạng |
 
 ### Những điểm cần phân biệt
 
-- **Phạm vi, không phải tốc độ, là tiêu chí chính:** LAN thường có độ trễ thấp và băng thông cao hơn WAN, nhưng một WAN hiện đại vẫn có thể nhanh hơn một LAN cũ. Vì vậy không thể phân loại chỉ dựa vào Mbps/Gbps.
-- **Internet không phải một WAN đơn lẻ:** Internet là một *network of networks* kết nối rất nhiều mạng LAN, MAN, WAN và mạng của các nhà cung cấp dịch vụ bằng bộ giao thức TCP/IP. Có thể xem Internet là ví dụ lớn nhất của một mạng liên kết toàn cầu.
+- **Phạm vi, không phải tốc độ, là tiêu chí chính:** LAN thường có **latency/độ trễ (thời gian dữ liệu đi từ nguồn tới đích)** thấp và **bandwidth/băng thông (dung lượng truyền tối đa lý thuyết của đường truyền)** cao hơn WAN, nhưng một WAN hiện đại vẫn có thể nhanh hơn một LAN cũ. Vì vậy không thể phân loại chỉ dựa vào **Mbps/Gbps (megabit/gigabit mỗi giây)**.
+- **Internet không phải một WAN đơn lẻ:** Internet dùng TCP/IP làm ngôn ngữ chung để rất nhiều mạng độc lập có thể kết nối và chuyển dữ liệu qua nhau.
 - **CAN và GAN không phổ quát bằng LAN/MAN/WAN:** các tài liệu có thể bỏ qua hai thuật ngữ này. `CAN` trong phần này là **Campus Area Network**, không phải giao thức **Controller Area Network** dùng trong ô tô và hệ thống nhúng.
 - **LAN hiện đại:** thiết bị có dây thường kết nối qua switch; thiết bị không dây kết nối qua access point. Hub và bridge rời chủ yếu có ý nghĩa lịch sử hoặc phục vụ học nguyên lý.
-- **Kết nối nhiều mạng:** router hoặc switch Layer 3 được dùng để chuyển packet giữa các mạng IP khác nhau; switch Layer 2 chủ yếu chuyển frame giữa các thiết bị trong cùng LAN/VLAN.
+- **Kết nối nhiều mạng:** router hoặc switch Layer 3 đọc IP để chuyển packet sang mạng khác. Switch Layer 2 đọc MAC để chuyển frame trong cùng LAN/VLAN. Nói ngắn gọn: Layer 2 xử lý một chặng cục bộ, Layer 3 đưa dữ liệu đi qua nhiều mạng.
 - **Quyền sở hữu không quyết định tuyệt đối loại mạng:** LAN thường do một cá nhân/tổ chức quản lý, còn MAN/WAN thường phải thuê hoặc dùng hạ tầng của nhà cung cấp dịch vụ.
-- **VPN không phải một loại mạng theo quy mô:** VPN tạo một đường hầm logic, thường được mã hóa, chạy trên hạ tầng mạng có sẵn để kết nối người dùng hoặc các địa điểm từ xa.
+- **VPN không phải một loại mạng theo quy mô:** nó tạo tunnel trên hạ tầng có sẵn để nối người dùng hoặc địa điểm từ xa, bất kể mạng gốc là LAN hay WAN.
 
 ### VPN (Virtual Private Network)
 
-**VPN (Virtual Private Network)** tạo một mạng hoặc đường truyền logic (*tunnel*) chạy trên một mạng khác, thường là Internet. Tunnel đóng gói packet gốc vào packet mới để vận chuyển giữa các đầu VPN.
+**VPN (Virtual Private Network)** tạo một đường truyền logic trên một mạng không tin cậy như Internet. Mục đích là để hai thiết bị/mạng giao tiếp như có một đường riêng và có thể bảo vệ dữ liệu khỏi người quan sát ở giữa. Ví dụ: laptop ở nhà dùng VPN để truy cập server nội bộ của công ty.
 
-VPN hiện đại thường cung cấp **mã hóa, xác thực và kiểm tra tính toàn vẹn**, nhưng “tunnel” và “mã hóa” không đồng nghĩa tuyệt đối. Một số công nghệ tunneling như GRE tự nó không mã hóa dữ liệu và phải kết hợp với IPsec nếu cần bảo mật.
+- **Tunnel:** đóng packet gốc vào một packet khác để chở qua mạng trung gian. Tunnel giải quyết việc vận chuyển traffic của một mạng qua mạng khác, nhưng không mặc nhiên bảo mật.
+- **Encryption:** làm nội dung không đọc được nếu không có khóa; dùng để bảo vệ bí mật dữ liệu.
+- **Authentication:** xác minh đầu bên kia thực sự là ai, tránh kết nối nhầm kẻ giả mạo.
+- **Integrity:** phát hiện packet đã bị sửa trên đường truyền.
+
+Ví dụ GRE tạo tunnel nhưng không tự mã hóa; IPsec có thể bổ sung mã hóa, xác thực và integrity.
 
 #### Thành phần chính
 
 | Thành phần | Vai trò |
 |---|---|
-| **VPN client/peer** | Phần mềm hoặc thiết bị khởi tạo/kết thúc tunnel, mã hóa và giải mã lưu lượng. Trong site-to-site, hai đầu thường được gọi là các VPN peer/gateway thay vì client và server. |
-| **VPN gateway/server** | Xác thực peer/người dùng, kết thúc tunnel, cấp cấu hình mạng và chuyển tiếp packet tới mạng nội bộ hoặc Internet theo chính sách. |
-| **Virtual network interface** | Interface logic như `tun0`, được hệ điều hành coi gần giống card mạng để đưa lưu lượng phù hợp vào tunnel. |
-| **VPN protocol** | Quy định cách bắt tay, xác thực, trao đổi khóa và đóng gói dữ liệu; ví dụ WireGuard, OpenVPN hoặc IKEv2/IPsec. |
-| **Routing và policy** | Xác định lưu lượng nào đi qua VPN, người dùng được truy cập mạng/dịch vụ nào và DNS nào được sử dụng. |
+| **VPN client/peer (máy khách/đầu ngang hàng VPN)** | Phần mềm hoặc thiết bị khởi tạo/kết thúc tunnel, mã hóa và giải mã traffic. **Peer** là một đầu tham gia giao tiếp ngang hàng; trong site-to-site, hai đầu thường được gọi là VPN peer/gateway. |
+| **VPN gateway/server (cổng/máy chủ VPN)** | Xác thực peer/người dùng, kết thúc tunnel, cấp cấu hình mạng và chuyển tiếp packet theo chính sách. **Gateway** là điểm nối/chuyển traffic giữa các mạng. |
+| **Virtual network interface (giao diện mạng ảo)** | Interface logic như `tun0`, được hệ điều hành coi gần giống card mạng để đưa traffic phù hợp vào tunnel. **Interface** là điểm mà thiết bị gửi/nhận dữ liệu với mạng. |
+| **VPN protocol** | Quy định hai đầu tìm nhau, xác thực, tạo khóa và đóng gói packet như thế nào. Nếu hai đầu không dùng cùng protocol/cấu hình, tunnel không thể được thiết lập; ví dụ WireGuard, OpenVPN hoặc IKEv2/IPsec. |
+| **Routing và policy** | Quyết định traffic nào được đưa vào tunnel và người dùng được truy cập đích nào. Ví dụ chỉ route `10.0.0.0/8` qua VPN, đồng thời dùng DNS nội bộ để phân giải tên server công ty. |
 
 > **OpenVPN không chỉ là VPN client:** đây là phần mềm và giao thức VPN mã nguồn mở có cả phía client lẫn server. UDP `1194` là cổng mặc định phổ biến nhưng có thể cấu hình cổng và transport khác; TCP `443` không phải yêu cầu bắt buộc.
 
@@ -97,29 +102,29 @@ VPN hiện đại thường cung cấp **mã hóa, xác thực và kiểm tra t�
 
 | Loại | Kết nối | Trường hợp sử dụng |
 |---|---|---|
-| **Remote-access VPN** | Một thiết bị người dùng ↔ VPN gateway | Nhân viên từ nhà truy cập server, database hoặc máy tính trong công ty |
-| **Site-to-site VPN** | Gateway của mạng A ↔ gateway của mạng B | Kết nối LAN của trụ sở với LAN chi nhánh; máy người dùng thường không chạy VPN client |
-| **Consumer VPN** | Thiết bị người dùng ↔ máy chủ của nhà cung cấp VPN | Bảo vệ lưu lượng trên mạng không tin cậy hoặc thay đổi địa chỉ IP thoát ra Internet |
-| **Host-to-host VPN** | Một máy ↔ một máy | Bảo vệ trực tiếp lưu lượng giữa hai host cụ thể |
+| **Remote-access VPN (VPN truy cập từ xa)** | Một thiết bị người dùng ↔ VPN gateway | Nhân viên từ nhà truy cập server, **database (cơ sở dữ liệu)** hoặc máy tính trong công ty |
+| **Site-to-site VPN (VPN nối hai mạng)** | Gateway của mạng A ↔ gateway của mạng B | Kết nối LAN trụ sở với LAN chi nhánh; máy người dùng thường không chạy VPN client |
+| **Consumer VPN (VPN cho người dùng cá nhân)** | Thiết bị người dùng ↔ máy chủ nhà cung cấp VPN | Bảo vệ traffic trên mạng không tin cậy hoặc thay đổi địa chỉ IP thoát ra Internet |
+| **Host-to-host VPN (VPN giữa hai máy)** | Một máy ↔ một máy | Bảo vệ trực tiếp traffic giữa hai host cụ thể |
 
 Remote-access và site-to-site là hai mô hình khác nhau, không nên gộp thành một loại.
 
-#### Full tunnel và split tunnel
+#### Full tunnel (đường hầm toàn phần) và split tunnel (đường hầm phân tách)
 
 | Chế độ | Lưu lượng đi qua VPN | Đặc điểm |
 |---|---|---|
-| **Full tunnel** | Thường có route mặc định `0.0.0.0/0` và/hoặc `::/0`, nên hầu hết lưu lượng đi qua VPN | Dễ áp dụng chính sách tập trung; tăng tải và có thể tăng độ trễ |
-| **Split tunnel** | Chỉ các route được chỉ định, chẳng hạn `10.0.0.0/8`, đi qua VPN | Internet thông thường vẫn đi trực tiếp; tiết kiệm băng thông nhưng cần quản lý route và DNS cẩn thận |
+| **Full tunnel** | Hầu hết traffic, kể cả truy cập Internet công cộng, đi qua VPN | Công ty/VPN provider kiểm soát được toàn bộ traffic nhưng gateway chịu tải lớn hơn |
+| **Split tunnel** | Chỉ traffic tới các mạng được chỉ định đi qua VPN | Truy cập tài nguyên công ty qua VPN, còn YouTube hoặc website công cộng đi trực tiếp để tiết kiệm băng thông |
 
 Vì vậy, bật VPN công ty không nhất thiết làm mọi truy cập Internet đi qua công ty. Điều này phụ thuộc vào routing policy được cấp cho client.
 
 #### Luồng hoạt động của remote-access VPN
 
-1. **Kết nối và xác thực:** client liên hệ địa chỉ public của VPN gateway. Hai bên bắt tay, xác thực bằng certificate, khóa, tài khoản/MFA hoặc cơ chế do giao thức hỗ trợ, rồi tạo session key.
+1. **Kết nối và xác thực:** client liên hệ VPN gateway. Certificate liên kết danh tính với public key để client kiểm tra đúng server; MFA yêu cầu nhiều bằng chứng đăng nhập; session key là khóa ngắn hạn dùng mã hóa traffic của riêng phiên đó.
 2. **Cấp cấu hình:** client có thể nhận một IP ảo, DNS và các route được phép. IP ảo này không nhất thiết thuộc cùng subnet Layer 2 với máy công ty; VPN gateway có thể định tuyến giữa subnet VPN và các subnet nội bộ.
 3. **Đóng gói:** hệ điều hành chọn interface VPN theo routing table. VPN client mã hóa packet gốc rồi đóng nó trong một packet ngoài có đích là VPN gateway.
-4. **Truyền qua Internet:** trước NAT, IP nguồn ngoài có thể là IP private của laptop; router nhà sẽ đổi nó thành public IP của đường truyền. ISP nhìn thấy kết nối tới VPN gateway cùng metadata như thời gian và lượng dữ liệu, nhưng không đọc được payload đã mã hóa.
-5. **Tháo gói và kiểm soát truy cập:** gateway xác minh, giải mã packet, sau đó firewall/ACL kiểm tra danh tính, IP, route, port và policy trước khi chuyển tới đích. Kết nối VPN thành công không có nghĩa người dùng được truy cập toàn bộ LAN.
+4. **Truyền qua Internet:** trước **NAT (Network Address Translation: biên dịch địa chỉ mạng)**, IP nguồn ngoài có thể là IP private của laptop; router nhà đổi nó thành public IP. ISP thấy **metadata (dữ liệu mô tả như địa chỉ, thời gian và dung lượng)** nhưng không đọc được **payload (phần nội dung packet mang theo)** đã mã hóa.
+5. **Tháo gói và kiểm soát truy cập:** gateway giải mã packet. Firewall/ACL áp rule để quyết định user hoặc IP đó được truy cập đúng dịch vụ nào; kết nối được VPN không có nghĩa được phép vào toàn bộ mạng.
 6. **Phản hồi:** packet trả về được gateway mã hóa và đóng gói ngược về client.
 
 Packet có hai lớp địa chỉ khi nằm trong tunnel:
@@ -134,7 +139,7 @@ Packet có hai lớp địa chỉ khi nằm trong tunnel:
 Công ty có thể giữ máy nội bộ không truy cập trực tiếp được từ Internet và chỉ công khai VPN gateway. Sau khi client kết nối:
 
 - Route tới subnet công ty được đưa qua virtual interface.
-- Firewall chỉ cho phép đúng người dùng/nhóm và đúng dịch vụ cần thiết, ví dụ RDP TCP/UDP `3389`.
+- Firewall chỉ cho phép đúng người dùng/nhóm và dịch vụ cần thiết, ví dụ RDP cho phép xem và điều khiển desktop Windows từ xa qua port `3389`.
 - Người dùng kết nối RDP tới IP/DNS nội bộ của máy đích mà không cần port-forward trực tiếp cổng RDP trên router công ty.
 - VPN gateway vẫn phải có một endpoint có thể truy cập từ Internet, hoặc dùng kiến trúc overlay/relay khác; không thể nói rằng “không public gì ra Internet”.
 
@@ -146,31 +151,31 @@ Công ty có thể giữ máy nội bộ không truy cập trực tiếp đượ
 
 | Nhận định | Đánh giá chính xác |
 |---|---|
-| VPN bảo vệ trên Wi-Fi công cộng | **Đúng nhưng cần điều kiện:** VPN mã hóa lưu lượng từ thiết bị tới VPN gateway. HTTPS vẫn cần thiết để bảo vệ dữ liệu từ thiết bị tới website và xác thực website. |
+| VPN bảo vệ trên Wi-Fi công cộng | **Đúng nhưng cần điều kiện:** VPN bảo vệ đoạn thiết bị → VPN gateway; TLS/HTTPS tiếp tục bảo vệ và xác thực đoạn thiết bị → website, nên vẫn cần dùng HTTPS |
 | ISP không biết website đang truy cập | **Không tuyệt đối:** với full tunnel và DNS không bị leak, ISP chủ yếu thấy kết nối tới VPN gateway. ISP vẫn thấy metadata và có thể suy luận; split tunnel hoặc DNS leak có thể làm lộ thêm thông tin. |
 | Website thấy IP của VPN server | **Thường đúng với consumer full-tunnel:** gateway thường NAT lưu lượng Internet sang exit IP. Với VPN công ty chỉ định tuyến tài nguyên nội bộ, truy cập website công cộng có thể vẫn dùng IP mạng nhà. |
 | VPN giúp vượt giới hạn địa lý | **Có thể, không bảo đảm:** dịch vụ có thể phát hiện/chặn IP VPN; việc sử dụng còn phụ thuộc điều khoản dịch vụ và pháp luật tại nơi sử dụng. |
-| VPN làm người dùng ẩn danh | **Sai:** nhà cung cấp VPN có thể thấy metadata hoặc lưu lượng không mã hóa sau điểm thoát; website vẫn có cookie, tài khoản, browser fingerprint và các cách nhận diện khác. VPN chuyển điểm phải tin cậy từ ISP sang đơn vị vận hành VPN. |
-| Có VPN là an toàn trước malware/phishing | **Sai:** VPN không tự chặn mã độc, trang giả mạo, lộ mật khẩu hay thiết bị đã bị xâm nhập. |
-| Kết nối VPN nghĩa là thuộc hoàn toàn vào LAN từ xa | **Không chính xác:** client có một interface/IP logic và các route được cấp; quyền thực tế vẫn do segmentation, firewall, ACL và mô hình zero-trust quyết định. |
+| VPN làm người dùng ẩn danh | **Sai:** website vẫn có **cookie (dữ liệu nhỏ lưu trạng thái/nhận diện trình duyệt)**, tài khoản và **browser fingerprint (dấu vân tay trình duyệt tạo từ nhiều đặc điểm thiết bị/phần mềm)**. VPN chỉ chuyển điểm phải tin cậy từ ISP sang đơn vị vận hành VPN. |
+| Có VPN là an toàn trước malware/phishing | **Sai:** VPN không tự chặn **malware (phần mềm độc hại)**, **phishing (giả mạo để lừa lấy thông tin)**, lộ mật khẩu hay thiết bị đã bị xâm nhập. |
+| Kết nối VPN nghĩa là thuộc hoàn toàn vào LAN từ xa | **Không chính xác:** quyền thực tế vẫn do **network segmentation (phân đoạn mạng thành các vùng tách biệt)**, firewall, ACL và **zero trust (mô hình không mặc định tin cậy chỉ vì thiết bị đã ở trong mạng)** quyết định. |
 
 #### Hạn chế và rủi ro cần nhớ
 
-- Mã hóa/đóng gói làm tăng overhead, có thể giảm throughput và tăng latency.
-- MTU không phù hợp có thể gây fragmentation hoặc lỗi “truy cập được nhưng tải không xong”; thường cần điều chỉnh tunnel MTU/MSS.
-- DNS leak, IPv6 leak hoặc route sai có thể khiến một phần lưu lượng đi ngoài tunnel.
-- Kill switch có thể chặn lưu lượng khi VPN rớt, nhưng phải được cấu hình và kiểm thử đúng.
+- Mã hóa/đóng gói làm tăng **overhead (phần dữ liệu và công xử lý phụ thêm)**, có thể giảm **throughput (tốc độ dữ liệu hữu ích thực tế)** và tăng latency.
+- **MTU:** kích thước packet lớn nhất một interface/link chở được trong một frame. Tunnel thêm header nên packet cũ có thể trở nên quá lớn; giảm tunnel MTU hoặc TCP MSS giúp tránh phân mảnh và lỗi “kết nối được nhưng tải dữ liệu lớn bị treo”.
+- **DNS leak/IPv6 leak (rò rỉ truy vấn DNS hoặc traffic IPv6 ra ngoài VPN)** hoặc route sai có thể khiến một phần traffic không đi qua tunnel.
+- **Kill switch (cơ chế tự chặn traffic khi VPN mất kết nối)** giúp tránh rò rỉ nhưng phải được cấu hình và kiểm thử đúng.
 - Không nên dùng giao thức cũ/yếu như PPTP cho nhu cầu bảo mật hiện đại.
-- VPN gateway là điểm truy cập nhạy cảm: cần cập nhật bản vá, MFA, certificate/khóa mạnh, giới hạn quyền, logging và thu hồi credential khi cần.
+- VPN gateway là điểm truy cập nhạy cảm: cần cập nhật bản vá, MFA, certificate/khóa mạnh, giới hạn quyền, **logging (ghi nhật ký sự kiện)** và thu hồi **credential (thông tin dùng để xác thực như mật khẩu, token hoặc khóa)** khi cần.
 - Hai đầu mạng site-to-site không nên dùng các dải IP bị trùng nhau; ví dụ cả hai bên cùng dùng `192.168.1.0/24` sẽ gây xung đột định tuyến.
 
-## Network Edge
+## Network Edge (rìa mạng)
 
 - **Internet Edge (End system/ Hosts/ End nodes):** là các thiết bị cuối, sử dụng để khởi tạo và gửi request và là nơi cuối cùng nhận dữ liệu (máy tính, điện thoại, máy in, VoIP phone, credit card, barcode scanner, web server, ô tô kết nối mạng, ...).
 
 - Điểm chung là chúng đều chạy các ứng dụng mạng, nằm ở phần rìa của mạng, không phải thành phần trung gian nào nên được gọi là thiết bị cuối.
 
-- Access network là nơi mà giúp kết nối các End system với thành phần Network Core
+- **Access network (mạng truy nhập):** phần hạ tầng nối end system tới router đầu tiên và từ đó vào network core. Ví dụ: Wi-Fi và đường cáp quang từ router gia đình tới ISP.
 
 ![Access network](assets/image42.png)
 
@@ -178,13 +183,13 @@ Công ty có thể giữ máy nội bộ không truy cập trực tiếp đượ
 
 - **Ví dụ Access network dựa vào Mobile network theo hình:** các máy tính, điện thoại, ô tô kết nối internet tới trạm sóng cố định qua sóng do nó có thể di chuyển theo thời gian + trạm này lại nối tới router đầu tiên qua dây ⇒ lúc này Trạm sóng chính là Access network.
 
-## Network Core
+## Network Core (lõi mạng)
 
 ![Network Core và các access network](assets/image55.png)
 
 *Network Core và các access network*
 
-**Network Core (lõi mạng)** là tập hợp các router, switch tốc độ cao, đường truyền và hệ thống điều khiển nằm giữa các access network. Lõi mạng vận chuyển packet qua nhiều mạng trung gian để kết nối các end system ở những vị trí khác nhau.
+**Network Core:** tập hợp router, switch tốc độ cao, đường truyền và hệ thống điều khiển nằm giữa các access network. Lõi mạng vận chuyển packet qua nhiều mạng trung gian để kết nối các end system ở những vị trí khác nhau.
 
 “Core” là một khái niệm kiến trúc, không phải một mạng trung tâm duy nhất do một tổ chức sở hữu. Internet không có một router trung tâm hay một “Global ISP” duy nhất; nó được hình thành từ hàng chục nghìn mạng độc lập kết nối với nhau.
 
@@ -196,21 +201,22 @@ Công ty có thể giữ máy nội bộ không truy cập trực tiếp đượ
 
 | Thành phần/khái niệm | Vai trò |
 |---|---|
-| **Core router** | Chuyển tiếp packet giữa các đường truyền tốc độ cao dựa trên forwarding table |
-| **Backbone link** | Đường trục dung lượng lớn, thường dùng cáp quang mặt đất hoặc cáp quang biển |
-| **PoP (Point of Presence)** | Địa điểm nhà mạng đặt router và thiết bị để khách hàng hoặc mạng khác kết nối vào |
-| **Autonomous System (AS)** | Một tập các mạng IP và router do một tổ chức quản lý theo chính sách định tuyến chung; mỗi AS public có ASN |
-| **Routing protocol** | Trao đổi thông tin đường đi: OSPF/IS-IS thường dùng bên trong một AS; BGP dùng giữa các AS và cũng có thể dùng trong nội bộ |
-| **Forwarding plane** | Tra bảng và chuyển từng packet từ cổng vào sang cổng ra với tốc độ cao |
-| **Control plane** | Học/tính toán đường đi, xây dựng thông tin để cài vào forwarding table |
+| **Core router (router lõi)** | Chuyển tiếp packet giữa các đường truyền tốc độ cao dựa trên forwarding table |
+| **Backbone link (đường truyền trục)** | Link dung lượng lớn tạo xương sống của mạng, thường dùng cáp quang mặt đất hoặc cáp quang biển |
+| **PoP (Point of Presence)** | Địa điểm vật lý nhà mạng đặt router để đưa dịch vụ tới một khu vực và làm điểm khách hàng/mạng khác kết nối vào; PoP gần người dùng thường giúp giảm quãng đường truy nhập |
+| **Autonomous System (AS)** | Một mạng hoặc nhóm mạng do cùng tổ chức kiểm soát và áp dụng chung chính sách định tuyến. AS là đơn vị để Internet chia nhỏ quyền quản lý; ví dụ ISP A và Google vận hành các AS riêng |
+| **ASN** | Mã số giúp phân biệt các AS trong BGP, giống mã định danh của một tổ chức mạng |
+| **Routing protocol** | Giúp router trao đổi thông tin để học đường đi thay vì người quản trị phải nhập mọi route thủ công. OSPF/IS-IS thường tìm đường trong một tổ chức; BGP trao đổi khả năng đi tới các prefix giữa các tổ chức |
+| **Forwarding plane/data plane** | Phần xử lý từng packet theo bảng đã có; mục tiêu là chuyển packet thật nhanh |
+| **Control plane** | Phần học, tính toán và lựa chọn route; kết quả của nó được cài cho forwarding plane sử dụng |
 
 Các nhiệm vụ chính của network core:
 
 - Vận chuyển lượng lớn packet giữa các access network.
-- Chọn **đường phù hợp theo metric và policy**, không nhất thiết là đường ngắn nhất về địa lý hoặc có độ trễ thấp nhất.
+- Chọn đường phù hợp theo **metric (chỉ số dùng để so sánh route, như cost hoặc độ trễ)** và policy, không nhất thiết là đường ngắn nhất về địa lý.
 - Cung cấp nhiều đường đi dự phòng để có thể hội tụ lại khi link/router gặp lỗi.
-- Quản lý lưu lượng bằng queue, scheduling, traffic engineering và QoS.
-- Kết nối nhiều công nghệ mạng khác nhau; tại lõi nhà mạng có thể gặp IP/MPLS, Ethernet tốc độ cao và mạng truyền dẫn quang.
+- Quản lý traffic bằng queue, scheduling, traffic engineering và QoS: packet phải chờ khi link bận, scheduling chọn packet gửi trước, traffic engineering phân bố luồng lên các đường, còn QoS bảo đảm traffic quan trọng nhận mức phục vụ phù hợp.
+- Kết nối nhiều công nghệ; tại lõi nhà mạng có thể gặp IP/MPLS, Ethernet tốc độ cao và **OTN (Optical Transport Network: mạng truyền tải quang)**.
 
 Network core giúp tăng độ tin cậy nhưng **không bảo đảm tuyệt đối** tránh nghẽn mạng, packet loss hoặc sự cố. Khi lưu lượng tới nhanh hơn khả năng xử lý/truyền đi, queue có thể tăng và packet vẫn có thể bị loại bỏ.
 
@@ -220,19 +226,19 @@ Nếu `N` mạng đều cần một kết nối vật lý riêng tới mọi m�
 
 `N × (N - 1) / 2`
 
-Mô hình full-mesh này tăng gần theo `N²`, tốn cổng, đường truyền, chi phí và khó quản trị. Internet mở rộng bằng cách tổ chức các mạng thành AS, dùng kết nối nhà cung cấp/khách hàng và peering thay vì bắt mọi mạng nối trực tiếp với nhau.
+Mô hình **full mesh (liên kết toàn phần: mỗi mạng nối trực tiếp với mọi mạng còn lại)** tăng gần theo `N²`, tốn cổng, đường truyền và khó quản trị. Internet mở rộng bằng cách tổ chức mạng thành AS, dùng quan hệ nhà cung cấp/khách hàng và peering.
 
 ![Kết nối thông qua Global ISP](assets/image7.png)
 
 *Mô hình đơn giản hóa: access network kết nối qua một ISP. Trong thực tế có nhiều ISP và nhiều tầng kết nối.*
 
-### ISP, transit, peering và IXP
+### ISP, transit, peering và IXP (Internet Exchange Point: điểm trao đổi Internet)
 
 | Quan hệ | Cách hoạt động | Chi phí/đặc điểm |
 |---|---|---|
-| **Transit** | Mạng khách hàng trả tiền cho provider để provider chuyển lưu lượng tới phần còn lại của Internet | Provider quảng bá route của khách hàng và cung cấp khả năng tiếp cận rộng |
-| **Private peering (PNI)** | Hai mạng kết nối trực tiếp để trao đổi lưu lượng của chính họ và khách hàng của họ theo thỏa thuận | Phù hợp khi lưu lượng giữa hai bên đủ lớn; có thể miễn phí hoặc có phí |
-| **Public peering tại IXP** | Nhiều mạng cắm vào hạ tầng switching chung của IXP và tự thiết lập phiên BGP với nhau hoặc qua route server | Giảm số đường nối vật lý riêng và có thể giảm chi phí/độ trễ |
+| **Transit** | Một mạng trả tiền cho provider để provider đưa traffic tới cả những mạng mà khách hàng không kết nối trực tiếp | Dùng khi cần khả năng đi tới phần còn lại của Internet |
+| **Private peering/PNI** | Hai mạng nối riêng với nhau để traffic giữa họ không phải vòng qua transit provider | Có lợi khi hai bên trao đổi lượng traffic lớn, ví dụ ISP kết nối trực tiếp với Google |
+| **Public peering tại IXP** | Nhiều mạng cùng cắm vào một hạ tầng Layer 2 và tự thỏa thuận trao đổi route bằng BGP | Giảm số dây nối riêng, chi phí transit và đôi khi giảm độ trễ |
 
 ![Các ISP và Internet Exchange Point](assets/image20.png)
 
@@ -242,27 +248,27 @@ Mô hình full-mesh này tăng gần theo `N²`, tốn cổng, đường truyề
 
 *Mô hình phân cấp ISP mang tính khái quát; Internet thực tế có nhiều kết nối chéo và không phải một cây phân cấp cứng.*
 
-**IXP (Internet Exchange Point)** là địa điểm và hạ tầng Layer 2 cho phép nhiều AS trao đổi traffic. IXP:
+**IXP:** hạ tầng Layer 2 chung nơi nhiều AS cắm kết nối để peering. Mục đích là cho traffic giữa các thành viên đi trực tiếp hơn thay vì luôn mua transit qua mạng thứ ba.
 
 - Không phải “Internet trung tâm” và không bắt buộc mọi ISP phải đi qua.
 - Thường không tự quyết định route cho các thành viên; từng mạng vẫn dùng BGP và chính sách riêng.
 - Không đồng nghĩa với transit provider. Thành viên thường trả phí cổng/thành viên, còn việc peering phụ thuộc thỏa thuận giữa các mạng.
 - Có thể rút ngắn đường đi, giảm chi phí transit và giữ traffic nội vùng, nhưng không phải lúc nào cũng là đường tốt nhất.
 
-Các mạng lớn như ISP, cloud provider và content provider còn có thể đặt cache/CDN gần người dùng hoặc kết nối private peering để tránh đưa mọi traffic qua transit.
+Các mạng lớn có thể đặt cache/CDN gần người dùng. Cache giữ bản sao resource đã có; CDN tổ chức nhiều máy chủ phân tán để chọn nơi phục vụ gần hoặc phù hợp nhất, nhờ đó giảm latency và tải cho origin server.
 
-### Routing và forwarding
+### Routing (định tuyến) và forwarding (chuyển tiếp)
 
 | Khái niệm | Câu hỏi cần trả lời | Phạm vi/thời gian |
 |---|---|---|
-| **Routing** | Có những đường nào tới prefix đích và nên chọn đường nào theo metric/policy? | Control plane; diễn ra trên nhiều router và cập nhật khi topology/policy đổi |
-| **Forwarding** | Packet vừa tới phải đi ra interface/next hop nào? | Data plane; thực hiện cục bộ cho từng packet |
+| **Routing** | Quá trình học và chọn đường để hình thành bảng định tuyến | Ví dụ BGP chọn nhà mạng nào sẽ được dùng để tới prefix của Google |
+| **Forwarding** | Dùng bảng đã có để xử lý một packet cụ thể | Ví dụ router nhìn IP đích rồi chuyển packet ra cổng nối tới next hop |
 
 Router thường không lưu “toàn bộ hành trình cố định” trong mỗi packet. Nó tra IP đích theo quy tắc **longest prefix match**, chọn next hop/interface rồi chuyển packet tới chặng tiếp theo. Mỗi router lặp lại quá trình này.
 
-### Circuit switching
+### Circuit switching (chuyển mạch kênh)
 
-**Circuit switching là chuyển mạch kênh**, không phải “chuyển mạch vòng”. Trước khi truyền dữ liệu, mạng thiết lập một circuit và dành trước tài nguyên trên các chặng, chẳng hạn time slot trong TDM hoặc dải tần trong FDM.
+**Circuit switching:** mạng dành trước một phần tài nguyên cho phiên trước khi truyền dữ liệu. Mục đích là cung cấp băng thông và độ trễ dễ dự đoán, đổi lại tài nguyên vẫn bị giữ ngay cả khi người dùng tạm không gửi gì. Ví dụ cuộc gọi điện thoại TDM truyền thống được cấp một time slot riêng.
 
 | Đặc điểm | Ý nghĩa |
 |---|---|
@@ -271,13 +277,13 @@ Router thường không lưu “toàn bộ hành trình cố định” trong m�
 | **Đường logic tương đối ổn định** | Dữ liệu của phiên đi theo circuit đã thiết lập cho tới khi circuit đổi hoặc bị lỗi |
 | **Hiệu quả với traffic liên tục** | Phù hợp thoại truyền thống; kém hiệu quả khi nguồn gửi dữ liệu theo từng đợt vì tài nguyên vẫn bị giữ lúc rảnh |
 
-Circuit switching không đồng nghĩa với “không có delay”: vẫn có propagation delay, transmission delay, processing delay và thời gian thiết lập circuit. Ưu điểm chính là delay/jitter dễ dự đoán hơn sau khi tài nguyên đã được dành trước.
+Circuit switching vẫn có **propagation delay (độ trễ do tín hiệu lan truyền trên đường truyền)**, **transmission delay (thời gian đẩy toàn bộ bit lên link)**, **processing delay (thời gian thiết bị xử lý dữ liệu)** và thời gian thiết lập circuit. Ưu điểm là delay và **jitter (mức dao động của độ trễ)** dễ dự đoán hơn sau khi dành tài nguyên.
 
-Nói “Internet không sử dụng circuit switching” là quá tuyệt đối. IP của người dùng chủ yếu dùng packet switching, nhưng hạ tầng truyền dẫn bên dưới có thể dùng circuit hoặc lightpath được cấp phát, ví dụ mạng quang/OTN. MPLS tạo đường chuyển tiếp logic nhưng vẫn là công nghệ packet switching, không phải circuit switching cổ điển.
+IP của người dùng chủ yếu dùng packet switching, nhưng hạ tầng bên dưới có thể dùng circuit hoặc **lightpath (đường quang logic được cấp tài nguyên qua mạng quang)**. MPLS tạo đường chuyển tiếp logic nhưng vẫn là packet switching.
 
-### Packet switching
+### Packet switching (chuyển mạch gói)
 
-**Packet switching (chuyển mạch gói)** chia dữ liệu thành các đơn vị có header và payload rồi ghép xen traffic của nhiều luồng trên cùng đường truyền. Tài nguyên thường không được dành riêng cho từng phiên, gọi là **statistical multiplexing**.
+**Packet switching:** chia dữ liệu thành các packet độc lập để nhiều người dùng chia sẻ động cùng đường truyền. Mục đích là tận dụng link tốt hơn với traffic lúc có lúc không; đổi lại packet có thể phải xếp hàng, trễ hoặc mất khi nghẽn. Internet ở tầng IP chủ yếu dùng mô hình này.
 
 | Ưu điểm | Hạn chế |
 |---|---|
@@ -288,10 +294,10 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 #### Những điểm cần hiểu chính xác
 
-- Packet của cùng một luồng **có thể**, nhưng không bắt buộc, đi qua các đường khác nhau. Route change hoặc load balancing có thể làm thay đổi đường đi.
+- **Load balancing:** phân phối traffic qua nhiều link hoặc server để tránh một nơi quá tải và tăng khả năng dự phòng. Tùy thuật toán, các flow khác nhau hoặc thậm chí packet khác nhau có thể đi đường khác nhau.
 - IP cung cấp dịch vụ best-effort: packet có thể đến trễ, mất, lặp hoặc sai thứ tự.
-- IP không tự ghép lại toàn bộ file theo thứ tự. TCP dùng sequence number, ACK và retransmission để cung cấp byte stream tin cậy; UDP không cung cấp các bảo đảm đó. Ứng dụng hoặc giao thức tầng trên phải xử lý nếu cần.
-- Không phải mọi packet đều có “số thứ tự”. Trường header phụ thuộc giao thức; IPv4 có checksum cho **header**, còn TCP/UDP có checksum bao phủ transport data theo quy tắc của chúng.
+- IP không tự ghép file theo thứ tự. TCP dùng **sequence number (số thứ tự byte/segment)**, **ACK (Acknowledgment: xác nhận đã nhận dữ liệu)** và **retransmission (truyền lại dữ liệu bị mất)** để cung cấp **byte stream (luồng byte liên tục)** tin cậy; UDP không có các bảo đảm đó.
+- Không phải mọi packet đều có số thứ tự. IPv4 có **checksum (giá trị kiểm tra giúp phát hiện lỗi bit)** cho header; TCP/UDP có checksum theo quy tắc riêng.
 - Router thường chỉ kiểm tra/chuyển tiếp packet và không biết nó thuộc file, video hay email nào.
 - Có thể nói **Internet ở tầng IP dựa trên packet switching**, nhưng “100% Internet chỉ dùng packet switching” bỏ qua các công nghệ circuit/quang ở hạ tầng bên dưới.
 
@@ -304,17 +310,17 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 | Băng thông/delay | Dễ dự đoán hơn | Thay đổi theo tải mạng |
 | Hiệu quả với traffic burst | Thấp hơn nếu circuit nhàn rỗi | Cao hơn nhờ statistical multiplexing |
 | Khi nghẽn | Có thể từ chối thiết lập circuit mới | Queue tăng, delay tăng và có thể loss |
-| Ví dụ | Mạng điện thoại PSTN truyền thống, circuit TDM | IP/Ethernet và phần lớn traffic Internet |
+| Ví dụ | **PSTN (Public Switched Telephone Network: mạng điện thoại chuyển mạch công cộng)** truyền thống, circuit TDM | IP/Ethernet và phần lớn traffic Internet |
 
 ## Repeater, Hub, Bridge, Switch, Router
 
-### Repeater
+### Repeater (bộ lặp/tái tạo tín hiệu)
 
-- Repeater là 1 thiết bị mạng hoạt động ở Physical layer (bởi đơn giản nó chỉ nhận tín hiệu vật lý rồi khuếch đại, phát lại mà không quan tâm dữ liệu chứa gì) trong mô hình OSI, nhiệm vụ chính của nó là tiếp nhận tín hiệu vật lý (điện, sóng vô tuyến, quang) từ 1 thiết bị khác, khuếch đại tín hiệu để khắc phục sự suy hao do khoảng cách, tái tạo tín hiệu rồi truyền tín hiệu đi xa.
+- **Repeater:** nhận tín hiệu đã yếu hoặc biến dạng, tái tạo rồi phát tiếp để tăng khoảng cách truyền. Nó chỉ xử lý tín hiệu/bit, không biết IP, MAC hay ứng dụng nào đang gửi dữ liệu.
 
-- Nếu như không có repeater, tín hiệu có thể yếu đi dẫn tới device còn không biết packet được gửi tới vì nó cực kỳ yếu/ device nhận biết được packet nhưng không thể giải mã chính xác dẫn tới CRC không khớp ⇒ kết quả cuối cùng là packet bị mất, yêu cầu gửi lại packet mới.
+- **CRC:** giá trị được tính từ các bit của frame để phía nhận phát hiện frame đã bị lỗi trên đường truyền. CRC phát hiện lỗi nhưng không tự sửa hoặc truyền lại frame.
 
-- Bộ khuếch đại đơn thuần (Amplifier) chỉ tăng cường mọi thứ, cả tín hiệu nhiễu lẫn gốc đều được khuếch đại tức là sẽ thu được tín hiệu khuếch đại nhưng vẫn sẽ bị nhiễu >< Repeater không chỉ khuếch đại tín hiệu, mà còn tái tạo tín hiệu: decode tín hiệu yếu ớt thành các bit dữ liệu → tạo ra bản sao mới, sạch sẽ, mạnh mẽ từ tín hiệu gốc này → phát đi dữ liệu mới
+- **Amplifier (bộ khuếch đại)** tăng biên độ cả tín hiệu gốc lẫn nhiễu. Repeater số cố gắng **decode (giải mã tín hiệu thành bit)** rồi tạo lại một tín hiệu sạch hơn trước khi phát tiếp.
 
 - Các router (wifi), switch hầu như đều tích hợp Repeater, nếu không thì cần phải đầu tư 1 thiết bị Repeater riêng + trong hạ tầng ISP, dọc theo đường trục cáp quang thì cứ khoảng 80-100km lại có bộ khuếch quang để bù đắp sự suy hao của tín hiệu ánh sáng trong sợi quang để đảm bảo đi hàng ngàn km dữ liệu không bị lỗi.
 
@@ -324,9 +330,9 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 - **Suy hao/ mất:** năng lượng của tín hiệu gốc bị giảm dần trên đường truyền. Nguyên nhân có thể là do: điện trở của vật làm cáp, khoảng cách xa,... → làm giảm biên độ của tín hiệu gốc, tín hiệu trở nên nhỏ hơn, yếu hơn
 
-### Hub
+### Hub (bộ chia tín hiệu nhiều cổng)
 
-- **Hub là 1 thiết bị mạng hoạt động ở Physical layer của mô hình OSI:** khi tín hiệu đi vào 1 cổng của Hub, nó sẽ sao chép tín hiệu rồi phát tín hiệu đó tới toàn bộ các cổng còn lại
+- **Hub:** bộ lặp nhiều cổng; tín hiệu vào một cổng được phát ra tất cả cổng còn lại. Nó dùng để nối nhiều máy trên Ethernet đời cũ nhưng lãng phí băng thông và tạo chung một collision domain, nên hiện gần như được switch thay thế.
 
 ![Hub và miền truyền tín hiệu](assets/image1.png)
 
@@ -342,19 +348,19 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 - Băng thông chia sẻ cho tất cả thiết bị kết nối vào Hub + dù các thiết bị không phải thiết bị đích nhưng vẫn nhận được tín hiệu → hiệu suất sẽ thấp, lãng phí băng thông, thậm chí còn gây ra các vấn đề bảo mật khi sniff
 
-- **Collision domain:** do Hub sử dụng Half-duplex, không thể vừa nhận, vừa gửi tín hiệu cùng lúc: (do dùng chung đường dây cáp) khi 2 thiết bị khác nhau gửi tín hiệu cùng lúc sẽ va chạm vào nhau và hủy lẫn nhau (do tín hiệu va chạm với nhau trên cùng phương tiện truyền dẫn) >< Hiện đại đều sử dụng Full-duplex, cơ chế queue của router khiến các packet đi tuần tự mà không lo collision.
+- **Collision domain (miền xung đột):** tập thiết bị cùng chia sẻ môi trường truyền, nơi hai thiết bị gửi đồng thời có thể làm tín hiệu va chạm. Hub Ethernet cũ dùng **half-duplex (bán song công: tại một thời điểm chỉ gửi hoặc nhận)**; switch hiện đại thường dùng **full-duplex (song công toàn phần: gửi và nhận đồng thời)** nên không có collision kiểu này trên từng link.
 
-### Bridge
+### Bridge (cầu nối mạng)
 
-- **Bridge:** là 1 thiết bị mạng hoạt động ở Link layer trong mô hình OSI, mục đích là kết nối nhiều mạng LAN lại với nhau để trở thành mạng LAN lớn hơn, quản lý lưu lượng truy cập dựa trên địa chỉ MAC để quyết định xem nên loại bỏ hay chuyển tiếp tín hiệu đi
+- **Bridge:** nối hai hoặc vài segment LAN và chỉ chuyển frame sang segment khác khi cần. Mục đích là giảm traffic không cần thiết so với hub bằng cách học MAC nằm ở phía nào.
 
 ![Bridge trong mạng](assets/image40.png)
 
 *Bridge trong mạng*
 
-- **Learning:** khi 1 frame đi vào bridge, bridge sẽ xem MAC address nguồn, port bridge vừa nhận frame đó → học được là thiết bị nào đang kết nối vào port nào của bridge.
+- **Learning:** bridge/switch nhìn MAC nguồn của frame để học thiết bị đang nằm sau port nào. Nhờ đó, frame sau có thể được chuyển đúng port thay vì phát khắp mạng.
 
-- **Filtering:** khi 1 frame đi vào, bridge cũng xem MAC address đích để xem frame này đi đến thiết bị có nằm trong cùng mạng LAN của thiết bị gửi hay không. Nếu nằm trên cùng LAN, bridge sẽ bỏ qua frame đó mà không chuyển đi.
+- **Filtering (lọc):** nếu bridge biết đích nằm cùng phía với nguồn, nó không chuyển frame sang segment còn lại.
 
 - **Forwarding:** chuyển frame từ LAN này qua LAN khác nếu MAC address đích nằm khác LAN với thiết bị gửi.
 
@@ -382,9 +388,9 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 *Hình 23*
 
-### Switch
+### Switch (bộ chuyển mạch)
 
-- **Switch:** là 1 thiết bị mạng hoạt động ở Link layer của mô hình OSI, có thể coi như là 1 Bridge đa cổng với hiệu suất cao hơn, nhiều tính năng hơn
+- **Switch:** bridge nhiều cổng dùng MAC table để chuyển frame tới đúng port thay vì phát cho mọi thiết bị. Nó là thiết bị trung tâm phổ biến để kết nối máy trong cùng LAN/VLAN.
 
 ![Switch trong mạng LAN](assets/image27.png)
 
@@ -392,7 +398,7 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 - Nhiệm vụ chính là kết nối các thiết bị trong cùng mạng LAN + sử dụng MAC address để forward dữ liệu thông minh hơn Hub, Bridge để đến đúng thiết bị (mỗi MAC address mapping tới 1 port kết nối tới thiết bị cụ thể trong mạng)
 
-- **Aging:** MAC table không keep MAC address mãi mãi, nếu không gửi tới 1 thiết bị trong 1 khoảng thời gian thì xóa MAC đi.
+- **Aging (làm cũ và xóa entry):** switch không giữ một mapping trong **MAC table (bảng ánh xạ MAC với port)** mãi mãi; entry không được quan sát trong một thời gian sẽ hết hạn.
 
 - **Full-duplex:** sử dụng cáp xoắn đôi, 1 dây chuyên nhận tín hiệu đến, 1 dây chuyên nhận tín hiệu đi nên không xảy ra hiện tượng collision.
 
@@ -402,7 +408,7 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 - **Router:** là thiết bị mạng quan trọng bậc nhất, giúp kết nối các mạng khác lại với nhau hoạt động ở Network layer trong mô hình OSI.
 
-### Router
+### Router (bộ định tuyến)
 
 ![Router kết nối LAN với Internet](assets/image73.png)
 
@@ -416,27 +422,27 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 - Khi các packet được truyền đi từ máy, bản chất nó sẽ truyền đi qua các router cho tới khi tới đích + Network core gồm 1 tập các router kết nối với nhau
 
-- Nhiệm vụ chính là định tuyến packet giữa các mạng khác nhau dựa trên IP đích: Router nhận packet từ thiết bị trong mạng/ nhận từ 1 mạng khác → đọc IP address đích → tra cứu Routing table để xác định con đường tốt nhất để chuyển packet tới đích → forward packet theo con đường đã xác định (nếu đích thuộc mạng khác thì phải gửi packet đó tới router tiếp theo).
+- **Router:** kết nối các mạng IP khác nhau. Nó tra IP đích trong routing table để chọn next hop; ví dụ router gia đình nối LAN `192.168.1.0/24` với mạng của ISP.
 
-- **Wifi gia đình cũng là 1 router:** kết nối các thiết bị trong nhà tạo ra mạng LAN, gán IP cho từng thiết bị trong mạng qua DHCP + là cánh cổng duy nhất để tất cả thiết bị trong mạng có thể ra ngoài internet + có các tính năng bảo mật cơ bản để bảo vệ mạng nội bộ khỏi sự truy cập trái phép từ bên ngoài.
+- **DHCP:** tự cấp cho thiết bị các thông tin cần để tham gia mạng như IP, subnet mask, default gateway và DNS. Nhờ DHCP, điện thoại vào Wi-Fi không cần người dùng nhập cấu hình IP thủ công.
 
-### Forwarding, store-and-forward và queue
+### Forwarding, store-and-forward (lưu rồi chuyển) và queue (hàng đợi)
 
-- **Forwarding (switching) là chức năng thực thi nội bộ của 1 Router:** mỗi 1 Router sẽ có 1 bảng là Local Forwarding Table lưu trữ thông tin mapping giữa header value và output value: giúp dựa vào header packet gửi tới Router, sẽ xác định xem Router nào sẽ nhận được packet này tiếp theo (dựa vào IP đích (VD: IP đích là 10.1.1.5 tới 10.1.1.200 thì sẽ gửi tới Router A chẳng hạn) chứ không hề lưu hết quãng đường tới đích (rất tốn chi phí lưu trữ))
+- **Local forwarding table (bảng chuyển tiếp cục bộ):** ánh xạ prefix/header cần tra cứu với interface hoặc next hop đầu ra. Router chỉ cần biết chặng kế tiếp, không lưu toàn bộ hành trình trong từng packet.
 
-- **Store-and-forward:** khi router nhận được 1 packet: toàn bộ packet được tải vào bộ nhớ đệm buffer (store) -> tính toán checksum để phát hiện packet bị hỏng -> nếu packet hợp lệ, router tra local forwarding table rồi gửi packet đi (forward) ⇒ Thực sự hiệu quả, nếu 1 packet bị lỗi sẽ yêu cầu gửi lại ngay thay vì gửi tới tận nơi xử lý rồi mới nhận ra là packet lỗi (nhanh hơn do router phát hiện lỗi gần với nơi gửi request hơn + giảm nghẽn mạng do bị ảnh hưởng bởi các packet lỗi) >< việc này lại gây delay, không phù hợp với các ứng dụng real-time + router phải lưu tạm thời chúng trên buffer gây tốn tài nguyên (nên không phải cứ tách càng nhiều packet thì performance càng tốt, mỗi packet phải chịu lượng delay này)
+- **Store-and-forward (lưu rồi chuyển):** thiết bị nhận đủ frame/packet vào **buffer (vùng nhớ đệm tạm thời)**, kiểm tra và tra bảng trước khi gửi tiếp. Cách này tạo thêm delay nhưng cho phép kiểm tra lỗi và xếp hàng. Một số switch còn hỗ trợ **cut-through (bắt đầu chuyển frame trước khi nhận hết frame)** để giảm độ trễ.
 
 ![Queue tại router](assets/image52.png)
 
 *Queue tại router*
 
-- **Packet-switching queue:** như đã học ở trên, khi packet tới được router sẽ cần trải qua store-and-forward. Tuy nhiên vấn đề là tốc độ gửi packet tới router này lại > tốc độ gửi ra (do là router có thể nhận được các packet này từ nhiều router khác, nhưng lại đổ dữ liệu lên vài router khác dẫn tới chậm do tổng lưu lượng cùng vào 1 router chậm). Router có Input Queue (packet mới tới router, chưa xử lý gì) + Output Queue (packet đã được xử lý, đợi truyền đi do tốc độ xử lý bị giới hạn) ⇒ Quy trình thực sự là: Router nhận packet từ cổng vào -> lưu lại -> tra bảng định tuyến để xác định router đích -> đưa gói tin vào hàng đợi router đích -> đưa gói tin tới router đích theo thứ tự hàng đợi.
+- **Input queue (hàng đợi đầu vào)** giữ packet chờ xử lý; **output queue (hàng đợi đầu ra)** giữ packet đã chọn được cổng nhưng đang chờ link rảnh. Queue tăng khi tốc độ traffic đến lớn hơn tốc độ xử lý hoặc truyền đi.
 
-- **Packet loss:** xảy ra khi packet chưa được gửi đi mà đã bị loại bỏ khỏi Router dù bản thân packet không bị lỗi do: queue đầy cần loại bỏ bớt để xử lý/ lỗi phần cứng của router,... (khi buffer đầy, packet nào tới thì sẽ bị loss)
+- **Packet loss (mất gói):** packet bị loại bỏ trước khi tới đích, thường do buffer đầy, lỗi đường truyền, lỗi thiết bị hoặc policy.
 
 - **Port vật lý:** là những cổng có thể chạm, nhìn thấy ở phía sau router
 
-- **WAN port (Internet port) :** thường là 1 cổng, dùng để kết nối router tới modem/ internet mà ISP cung cấp
+- **WAN port/Internet port:** cổng nối router gia đình tới **modem (thiết bị chuyển đổi tín hiệu để kết nối đường truy nhập của ISP)** hoặc thiết bị đầu cuối đường truyền.
 
 - **LAN port:** thường có 2-4 cổng dùng để kết nối có dây tới các thiết bị trong mạng nội bộ
 
@@ -462,9 +468,9 @@ Nói “Internet không sử dụng circuit switching” là quá tuyệt đối
 
 *Hình 31*
 
-### Network Firewall
+### Network Firewall (tường lửa mạng)
 
-**Firewall (tường lửa)** là điểm thực thi chính sách bảo mật mạng: quan sát traffic đi qua nó rồi cho phép, từ chối, loại bỏ, ghi log hoặc xử lý theo rule đã cấu hình.
+**Firewall:** thiết bị/phần mềm kiểm soát traffic nào được phép đi qua một ranh giới mạng. Mục đích là giảm quyền truy cập không cần thiết; ví dụ cho user truy cập web server qua port `443` nhưng không cho truy cập trực tiếp database qua port `5432`.
 
 Firewall chỉ kiểm soát được traffic **đi qua đường xử lý của nó**. Nếu hai máy trong cùng VLAN giao tiếp trực tiếp qua switch, firewall đặt ở cổng Internet sẽ không nhìn thấy traffic đó. Muốn kiểm soát traffic nội bộ cần phân đoạn mạng và buộc traffic giữa các zone/VLAN đi qua firewall hoặc cơ chế lọc tương đương.
 
@@ -484,7 +490,7 @@ Máy nhân viên `10.0.10.25` thực hiện hai kết nối:
 
 Firewall không tự biết kết nối nào là hợp lệ về mặt nghiệp vụ. Người quản trị phải khai báo rule dựa trên yêu cầu thực tế.
 
-#### Ví dụ stateful firewall
+#### Ví dụ stateful firewall (tường lửa lưu trạng thái kết nối)
 
 Máy `10.0.10.25:53000` truy cập website `203.0.113.20:443`:
 
@@ -506,7 +512,7 @@ Nếu firewall chỉ đặt giữa switch và Internet, traffic A–B không đi
 
 - Tách A và B sang các VLAN/security zone khác nhau rồi route qua firewall.
 - Dùng host firewall trên A/B.
-- Dùng cơ chế microsegmentation hoặc policy trên switch/hypervisor.
+- Dùng **microsegmentation (phân đoạn rất nhỏ, áp chính sách gần từng workload)** hoặc policy trên switch/**hypervisor (lớp phần mềm vận hành máy ảo)**.
 
 ![Network Firewall](assets/image80.png)
 
@@ -516,12 +522,12 @@ Nếu firewall chỉ đặt giữa switch và Internet, traffic A–B không đi
 
 | Vị trí/loại | Phạm vi bảo vệ | Ví dụ |
 |---|---|---|
-| **Perimeter/network firewall** | Biên giữa mạng nội bộ và Internet hoặc mạng đối tác | Firewall appliance, virtual firewall, router có ACL/stateful firewall |
-| **Internal segmentation firewall** | Traffic giữa user, server, production, database, OT hoặc các VLAN | Firewall giữa các security zone |
-| **Host-based firewall** | Một máy cụ thể, kể cả traffic từ máy khác trong cùng LAN | Windows Defender Firewall, Linux nftables/iptables, macOS Application Firewall/PF |
-| **Cloud firewall** | Tài nguyên trong VPC/VNet và traffic Internet/cloud-to-cloud | Security group, network ACL, managed cloud firewall |
-| **Container/Kubernetes policy** | Traffic giữa workload/pod/service | Kubernetes NetworkPolicy, CNI policy |
-| **Distributed/microsegmentation firewall** | Chính sách gần từng workload/VM thay vì chỉ tại biên | Hypervisor firewall, endpoint agent |
+| **Perimeter/network firewall (tường lửa biên/mạng)** | Biên giữa mạng nội bộ và Internet hoặc mạng đối tác | **Firewall appliance (thiết bị chuyên dụng)**, virtual firewall, router có ACL/stateful firewall |
+| **Internal segmentation firewall (tường lửa phân đoạn nội bộ)** | Traffic giữa user, server, **production (môi trường hệ thống đang phục vụ thật)**, database, **OT (Operational Technology: hệ thống điều khiển/vận hành công nghiệp)** hoặc VLAN | Firewall giữa các security zone |
+| **Host-based firewall (tường lửa trên máy)** | Một máy cụ thể, kể cả traffic từ máy khác trong cùng LAN | Windows Defender Firewall, Linux nftables/iptables |
+| **Cloud firewall (tường lửa đám mây)** | Tài nguyên trong **VPC/VNet (mạng riêng ảo trên nền tảng cloud)** và traffic Internet/cloud-to-cloud | **Security group (bộ rule gắn với tài nguyên cloud)**, network ACL, managed cloud firewall |
+| **Container/Kubernetes policy** | Traffic giữa **workload (đơn vị ứng dụng/tác vụ đang chạy)**, **pod (đơn vị triển khai nhỏ của Kubernetes)** và service | Kubernetes NetworkPolicy, **CNI (Container Network Interface: chuẩn plugin mạng cho container)** policy |
+| **Distributed/microsegmentation firewall** | Chính sách gần từng workload/**VM (Virtual Machine: máy ảo)** thay vì chỉ tại biên | Hypervisor firewall, **endpoint agent (phần mềm bảo vệ chạy trên máy cuối)** |
 
 Router gia đình thường tích hợp stateful firewall, NAT, DHCP, Wi-Fi access point và switch. Tuy nhiên NAT và firewall là hai chức năng khác nhau: NAT dịch địa chỉ; firewall quyết định traffic có được phép hay không.
 
@@ -532,22 +538,22 @@ Khả năng kiểm tra phụ thuộc loại firewall:
 | Mức kiểm tra | Thuộc tính có thể dùng |
 |---|---|
 | **Layer 3** | Source/destination IP, subnet, interface, zone, IP protocol |
-| **Layer 4** | TCP/UDP source và destination port, TCP flags, ICMP type/code |
-| **State/session** | Kết nối mới hay phản hồi của kết nối đã cho phép, trạng thái TCP, timeout |
-| **Identity/device** | User, group, máy được quản lý, certificate hoặc posture của endpoint |
-| **Layer 7/application** | HTTP method/host, DNS query, TLS metadata, loại ứng dụng hoặc chữ ký giao thức |
-| **Threat/content** | IPS signature, malware/file type, URL category, reputation/IP intelligence |
-| **Time/context** | Thời gian, vị trí, tenant, tag cloud hoặc nhãn workload |
+| **Layer 4** | TCP/UDP source/destination port và TCP flag. Flag như SYN, ACK, FIN cho biết packet đang mở, xác nhận hay đóng kết nối |
+| **State/session** | Kết nối mới hay phản hồi, trạng thái TCP, **timeout (thời gian chờ trước khi state hết hạn)** |
+| **Identity/device** | User, group, máy được quản lý, certificate hoặc **security posture (mức đáp ứng yêu cầu bảo mật của thiết bị)** |
+| **Layer 7/application** | **HTTP method (loại thao tác như GET/POST)**, host, **DNS query (truy vấn tên miền)**, TLS metadata hoặc chữ ký giao thức |
+| **Threat/content** | **IPS signature (mẫu nhận diện tấn công)**, malware/file type, URL category, **reputation intelligence (dữ liệu đánh giá độ tin cậy của IP/domain)** |
+| **Time/context** | Thời gian, vị trí, **tenant (khách hàng/không gian dùng chung nhưng tách biệt)**, tag cloud hoặc nhãn workload |
 
-Firewall truyền thống thường tập trung Layer 3/4. **NGFW (Next-Generation Firewall)** bổ sung nhận diện ứng dụng, user, IDS/IPS, URL filtering, threat intelligence và đôi khi TLS inspection.
+**NGFW:** firewall bổ sung khả năng nhận diện ứng dụng/người dùng và kiểm tra sâu hơn packet filter truyền thống. Nó thường tích hợp IDS/IPS, URL filtering, threat intelligence hoặc TLS inspection để policy không chỉ dựa trên IP/port.
 
-#### Stateless và stateful firewall
+#### Stateless (không lưu trạng thái) và stateful firewall (có lưu trạng thái)
 
 | Loại | Cách hoạt động | Ưu/nhược điểm |
 |---|---|---|
-| **Stateless packet filter/ACL** | Đánh giá từng packet độc lập theo rule | Nhanh và đơn giản, nhưng phải viết rule cho cả hai chiều và không hiểu trạng thái phiên |
-| **Stateful firewall** | Lưu connection state và nhận biết packet thuộc phiên nào | Cho phép traffic phản hồi chính xác hơn; tốn state/memory và có thể bị ảnh hưởng bởi asymmetric routing |
-| **Proxy/application firewall** | Kết thúc kết nối phía client rồi tạo kết nối mới tới server | Hiểu giao thức sâu và cô lập hai phía tốt hơn, nhưng phức tạp và tốn tài nguyên hơn |
+| **Stateless packet filter** | Xét từng packet riêng dựa trên IP, port và protocol | Phù hợp với luật đơn giản nhưng không biết packet có phải phản hồi của kết nối hợp lệ hay không |
+| **Stateful firewall** | Ghi nhớ trạng thái kết nối để liên hệ packet đi và về | Khi client mở HTTPS ra ngoài, firewall tự nhận ra response tương ứng và cho quay lại |
+| **Proxy/application firewall** | Đứng giữa, kết thúc kết nối từ client rồi tạo kết nối khác tới server | Có thể kiểm tra nội dung giao thức sâu hơn nhưng tốn tài nguyên và phức tạp hơn |
 
 Ví dụ với stateful firewall:
 
@@ -557,11 +563,11 @@ Ví dụ với stateful firewall:
 4. Một packet từ Internet tự ý gửi tới `10.0.10.25:53000` nhưng không khớp state hợp lệ sẽ bị chặn.
 5. State bị xóa khi phiên kết thúc hoặc hết timeout.
 
-Stateful không có nghĩa firewall hiểu đầy đủ logic ứng dụng. Một kết nối TCP hợp lệ vẫn có thể mang SQL injection, malware hoặc dữ liệu bị đánh cắp nếu không có lớp kiểm tra/phòng vệ phù hợp.
+Stateful không có nghĩa firewall hiểu đầy đủ logic ứng dụng. Một kết nối TCP hợp lệ vẫn có thể mang **SQL injection (chèn câu lệnh SQL độc hại qua dữ liệu đầu vào)**, malware hoặc dữ liệu bị đánh cắp.
 
-#### Connection tracking và trạng thái
+#### Connection tracking (theo dõi kết nối) và trạng thái
 
-Firewall thường nhận diện flow bằng các trường như:
+Firewall thường nhận diện **flow (luồng packet có chung các thuộc tính nguồn, đích, port và protocol)** bằng các trường như:
 
 `source IP + destination IP + source port + destination port + protocol`
 
@@ -574,40 +580,43 @@ Một số trạng thái khái niệm thường gặp:
 | **RELATED** | Flow mới có liên hệ với flow đã biết, tùy protocol/helper |
 | **INVALID** | Packet không thể gắn vào trạng thái hợp lệ |
 
-Tên và cách xử lý cụ thể phụ thuộc sản phẩm. UDP không có handshake như TCP nhưng firewall vẫn tạo state giả theo flow và timeout. ICMP cũng cần được xử lý có chọn lọc; chặn toàn bộ ICMP có thể làm hỏng chẩn đoán mạng và Path MTU Discovery.
+UDP không có handshake như TCP nhưng firewall vẫn tạo state theo flow và timeout. **ICMP** mang thông báo lỗi/chẩn đoán mạng; **PMTUD** dựa vào các thông báo này để tìm kích thước packet phù hợp trên toàn đường đi, nên chặn toàn bộ ICMP có thể làm kết nối bị treo.
 
-#### Security zone và network segmentation
+#### Security zone (vùng bảo mật) và network segmentation (phân đoạn mạng)
 
-Thay vì chỉ nghĩ “bên trong đáng tin, Internet không đáng tin”, nên chia mạng thành các **security zone**:
+**Security zone:** nhóm mạng/interface có cùng vai trò và mức tin cậy để viết policy dễ hơn. Mục đích là không coi toàn bộ “mạng nội bộ” đều an toàn như nhau; user, server, database và guest nên nằm ở các zone khác nhau.
 
 | Zone ví dụ | Tài nguyên | Chính sách gợi ý |
 |---|---|---|
 | **Internet/Untrusted** | Mạng công cộng | Mặc định không được khởi tạo kết nối vào nội bộ |
 | **User** | Laptop, desktop nhân viên | Chỉ truy cập dịch vụ cần thiết; hạn chế kết nối ngang |
-| **Server/Application** | API, application server | Chỉ nhận từ reverse proxy/user/service được phép |
+| **Server/Application** | **API (Application Programming Interface: giao diện để phần mềm gọi chức năng/dữ liệu của phần mềm khác)**, application server | Chỉ nhận từ reverse proxy/user/service được phép |
 | **Database** | Database, cache nhạy cảm | Chỉ nhận từ application server trên đúng port |
-| **DMZ** | Reverse proxy, VPN gateway, mail gateway công khai | Tách khỏi LAN; nếu bị xâm nhập vẫn hạn chế đường vào hệ thống bên trong |
-| **Management** | SSH/RDP, hypervisor, network management | Chỉ cho admin qua bastion/VPN và MFA |
-| **Guest/IoT** | Khách, camera, thiết bị ít tin cậy | Cho ra Internet có giới hạn; chặn vào mạng nội bộ |
+| **DMZ** | Reverse proxy, VPN gateway, mail gateway | Chứa dịch vụ buộc phải công khai nhưng tách khỏi LAN; nếu dịch vụ bị chiếm quyền, attacker vẫn chưa đứng thẳng trong mạng nội bộ |
+| **Management** | SSH, RDP, hypervisor | Tách đường quản trị khỏi user traffic; bastion host làm điểm trung gian duy nhất để ghi log và kiểm soát admin |
+| **Guest/IoT** | Khách, camera, cảm biến và thiết bị ít được tin cậy | Cho ra Internet có giới hạn; chặn vào mạng nội bộ để thiết bị yếu bảo mật không trở thành đường tấn công |
 
 Ví dụ luồng ba tầng:
 
 `Internet → Reverse proxy:443 → Application:8080 → Database:5432`
 
-Firewall không nên cho Internet truy cập thẳng database. Mỗi mũi tên là một rule tối thiểu theo nguồn, đích và dịch vụ cụ thể. Đây là **least privilege** và **defense in depth**.
+Firewall không nên cho Internet truy cập thẳng database.
 
-Segmentation giúp hạn chế **lateral movement**: nếu một máy user bị chiếm quyền, kẻ tấn công không mặc nhiên quét hoặc truy cập mọi server trong tổ chức.
+- **Least privilege:** chỉ cho đúng nguồn truy cập đúng dịch vụ cần thiết; ví dụ chỉ application server được vào database port `5432`.
+- **Defense in depth:** bố trí nhiều lớp bảo vệ để một lớp hỏng không làm mất toàn bộ hệ thống; ví dụ WAF → reverse proxy → firewall → authentication → database policy.
 
-#### Inbound, outbound và east-west traffic
+Segmentation hạn chế **lateral movement (di chuyển ngang: từ một máy đã chiếm quyền sang các máy khác)**.
+
+#### Inbound (đi vào), outbound (đi ra) và east-west traffic (traffic ngang nội bộ)
 
 | Hướng | Ví dụ | Vì sao cần kiểm soát |
 |---|---|---|
-| **Inbound** | Internet truy cập web/VPN gateway | Giảm bề mặt tấn công; chỉ công khai dịch vụ cần thiết |
-| **Outbound/egress** | Server hoặc user kết nối Internet | Hạn chế malware gọi C2, tải payload hoặc exfiltrate dữ liệu |
-| **East-west/lateral** | User ↔ server, service ↔ database | Ngăn di chuyển ngang và cô lập sự cố |
-| **North-south** | Traffic vào/ra data center hoặc cloud | Kiểm soát ranh giới giữa các môi trường |
+| **Inbound (traffic đi vào)** | Internet truy cập web/VPN gateway | Giảm **attack surface (bề mặt tấn công: các điểm có thể bị khai thác)** |
+| **Outbound/egress (traffic đi ra)** | Server hoặc user kết nối Internet | Hạn chế malware gọi **C2 (Command and Control: máy chủ điều khiển mã độc)**, tải payload hoặc **exfiltrate (đưa trái phép dữ liệu ra ngoài)** |
+| **East-west/lateral traffic (traffic ngang nội bộ)** | User ↔ server, service ↔ database | Ngăn di chuyển ngang và cô lập sự cố |
+| **North-south traffic (traffic vào/ra môi trường)** | Traffic vào/ra **data center (trung tâm dữ liệu)** hoặc cloud | Kiểm soát ranh giới giữa các môi trường |
 
-Chỉ lọc inbound là chưa đủ. Egress filtering còn giúp ngăn IP spoofing, giới hạn DNS/SMTP trực tiếp, buộc traffic web qua proxy và phát hiện máy nội bộ kết nối tới đích bất thường.
+Chỉ lọc inbound là chưa đủ. **Egress filtering (lọc traffic đi ra)** còn giúp ngăn IP spoofing, giới hạn DNS hoặc **SMTP (Simple Mail Transfer Protocol: giao thức truyền email)** trực tiếp và phát hiện kết nối bất thường.
 
 #### Cách firewall xử lý rule
 
@@ -637,34 +646,35 @@ Nguyên tắc quan trọng:
 
 - Bắt đầu từ **default deny**, rồi chỉ allow nhu cầu đã xác định.
 - Dùng subnet/host/service cụ thể; tránh `Any → Any → Allow`.
-- Đặt rule cụ thể trước rule rộng nếu firewall dùng first-match.
+- Đặt rule cụ thể trước rule rộng nếu firewall dùng **first-match (dừng tại rule đầu tiên khớp)**.
 - Không dựa vào source IP như bằng chứng danh tính duy nhất.
 - Ghi mô tả, ticket/owner và thời hạn cho rule tạm thời.
-- Loại bỏ rule trùng, shadowed, hết hạn hoặc không còn hit.
-- Test cả chiều đi, chiều về, failover và các luồng quản trị khẩn cấp.
+- Loại bỏ rule trùng, **shadowed (không bao giờ được xét vì rule trước đã khớp hết)**, hết hạn hoặc không còn **hit (không có traffic khớp)**.
+- Kiểm thử cả chiều đi, chiều về, **failover (chuyển sang hệ thống dự phòng khi hệ thống chính lỗi)** và luồng quản trị khẩn cấp.
 
-#### Allow, drop và reject
+#### Allow (cho phép), drop (loại im lặng) và reject (từ chối có phản hồi)
 
 | Action | Hành vi | Khi nào phù hợp |
 |---|---|---|
 | **Allow/accept** | Cho traffic đi qua | Flow đã được phê duyệt |
 | **Drop/deny silently** | Loại packet, không phản hồi | Giảm thông tin lộ ra cho nguồn không tin cậy; client phải chờ timeout |
-| **Reject** | Loại packet và gửi TCP RST hoặc ICMP error phù hợp | Mạng nội bộ hoặc khi muốn client thất bại nhanh |
+| **Reject** | Loại packet và gửi **TCP RST (cờ reset để kết thúc/từ chối kết nối)** hoặc ICMP error phù hợp | Mạng nội bộ hoặc khi muốn client thất bại nhanh |
 | **Log** | Ghi sự kiện, thường đi kèm allow/deny | Điều tra và giám sát; không nên log mù quáng mọi packet |
 
 Drop không làm host trở nên “vô hình” tuyệt đối; timing, các dịch vụ khác và nhiều tín hiệu mạng vẫn có thể tiết lộ sự tồn tại.
 
-#### Firewall, NAT, IDS/IPS, WAF và proxy khác nhau thế nào?
+#### Firewall, NAT, IDS/IPS, WAF (Web Application Firewall: tường lửa ứng dụng web) và proxy khác nhau thế nào?
 
 | Công nghệ | Mục tiêu chính | Không nên nhầm với |
 |---|---|---|
 | **Firewall** | Thực thi policy cho flow/traffic | Không tự động hiểu mọi lỗ hổng ứng dụng |
-| **NAT/PAT** | Dịch IP/port | Không phải cơ chế bảo mật thay thế firewall |
-| **IDS** | Phát hiện và cảnh báo traffic đáng ngờ | Thường không chặn trực tiếp |
-| **IPS** | Phát hiện và chặn signature/hành vi mạng | Có nguy cơ false positive; cần tuning |
-| **WAF** | Bảo vệ HTTP/HTTPS application khỏi một số tấn công web | Không bảo vệ mọi protocol hoặc sửa code lỗi |
-| **Forward proxy/SWG** | Kiểm soát client đi ra web | Khác reverse proxy bảo vệ/publish server |
-| **EDR/antimalware** | Giám sát hành vi trên endpoint | Firewall không thay thế bảo vệ endpoint |
+| **NAT/PAT (Port Address Translation: biên dịch địa chỉ và port)** | Dịch IP/port | Không phải cơ chế bảo mật thay thế firewall |
+| **IDS** | Quan sát traffic để phát hiện dấu hiệu tấn công và gửi cảnh báo | Giống camera báo động; thường không trực tiếp chặn |
+| **IPS** | Đặt trên đường đi để vừa phát hiện vừa chặn traffic khớp mẫu/hành vi nguy hiểm | Có thể chặn nhầm nên cần điều chỉnh rule |
+| **WAF** | Hiểu HTTP và bảo vệ ứng dụng web trước một số request độc hại như SQL injection | Không bảo vệ SSH, SMTP hay sửa được code ứng dụng có lỗi |
+| **Forward proxy/SWG** | Đại diện cho client khi truy cập web để lọc URL, malware hoặc áp policy | Dùng để kiểm soát chiều user đi ra Internet |
+| **Reverse proxy** | Đứng trước server, nhận request từ client rồi chuyển vào backend | Dùng để công bố, cân bằng tải hoặc bảo vệ server |
+| **EDR** | Chạy trên endpoint để quan sát process, file và hành vi sau khi traffic đã tới máy | Bổ sung góc nhìn mà firewall mạng không có |
 
 Các chức năng có thể nằm chung trong một sản phẩm NGFW, nhưng về mặt khái niệm chúng vẫn giải quyết các bài toán khác nhau.
 
@@ -672,12 +682,12 @@ Các chức năng có thể nằm chung trong một sản phẩm NGFW, nhưng v�
 
 Khi traffic dùng HTTPS, firewall thông thường vẫn thấy metadata như IP, port, lưu lượng và một phần thông tin bắt tay TLS, nhưng không đọc được HTTP payload đã mã hóa.
 
-**TLS inspection/decryption** cho phép firewall giải mã, kiểm tra rồi mã hóa lại traffic. Đổi lại:
+**TLS inspection/decryption (kiểm tra/giải mã TLS)** cho phép firewall giải mã, kiểm tra rồi mã hóa lại traffic. Đổi lại:
 
-- Cần triển khai CA tin cậy trên thiết bị được quản lý.
-- Tăng tải xử lý và có thể phá vỡ certificate pinning/mTLS.
+- **CA:** bên phát hành/ký certificate để thiết bị kiểm tra public key có thuộc đúng danh tính hay không. TLS inspection cần CA riêng được thiết bị tin cậy vì firewall phải tạo certificate thay thế khi đứng giữa kết nối.
+- Có thể phá vỡ **certificate pinning (ứng dụng chỉ tin một certificate/public key đã định trước)** hoặc **mTLS (Mutual TLS: hai phía cùng trình certificate để xác thực)**.
 - Tạo rủi ro riêng tư và pháp lý; không nên giải mã tùy tiện dữ liệu y tế, ngân hàng hoặc thiết bị cá nhân.
-- Firewall trở thành điểm nắm plaintext và khóa rất nhạy cảm, cần bảo vệ nghiêm ngặt.
+- Firewall trở thành điểm nắm **plaintext (dữ liệu dạng rõ chưa mã hóa)** và khóa rất nhạy cảm.
 
 Không thể kết luận “dùng HTTPS thì firewall không kiểm soát được gì”, nhưng khả năng kiểm tra nội dung phụ thuộc kiến trúc và chính sách giải mã.
 
@@ -688,33 +698,33 @@ Không thể kết luận “dùng HTTPS thì firewall không kiểm soát đư�
 | Firewall chặn truy cập trái phép | **Đúng nếu** traffic đi qua firewall và rule được thiết kế đúng |
 | Firewall ngăn mọi malware/hacker | **Sai:** malware có thể đi qua traffic được allow, HTTPS, email, USB hoặc credential hợp lệ |
 | Firewall chặn website độc hại | **Chỉ khi** có DNS/URL/application filtering phù hợp; packet filter Layer 3/4 đơn thuần không biết đầy đủ URL |
-| Firewall chặn DDoS | **Có giới hạn:** có thể rate-limit/drop một số traffic, nhưng nếu đường truyền đã bị bão hòa thì phải xử lý upstream qua ISP/CDN/scrubbing service |
+| Firewall chặn DDoS | **Có giới hạn:** có thể **rate limit (giới hạn tốc độ)** hoặc drop traffic, nhưng khi link đã bão hòa phải xử lý **upstream (ở mạng phía trước/gần nguồn hơn)** qua ISP/CDN/**scrubbing service (dịch vụ lọc traffic tấn công quy mô lớn)** |
 | NAT bảo vệ giống firewall | **Sai:** NAT có thể làm inbound khó tiếp cận hơn nhưng không thay thế policy và stateful inspection |
-| Có firewall thì không cần vá lỗi | **Sai:** dịch vụ được allow vẫn có thể bị khai thác; patching và hardening vẫn bắt buộc |
+| Có firewall thì không cần vá lỗi | **Sai:** vẫn cần **patching (cập nhật bản vá)** và **hardening (giảm bề mặt tấn công bằng cấu hình an toàn)** |
 | Host firewall không cần nếu đã có perimeter firewall | **Sai:** host firewall bảo vệ khi roaming và trước lateral traffic trong cùng LAN |
 | Chặn toàn bộ ICMP là an toàn | **Sai:** có thể gây lỗi PMTUD và làm chẩn đoán mạng khó khăn |
 
-#### Logging, monitoring và vận hành
+#### Logging (ghi log), monitoring (giám sát) và vận hành
 
 Firewall không chỉ là tập rule; vận hành mới quyết định nó có hữu ích lâu dài hay không:
 
-- Đồng bộ thời gian bằng NTP để log có timestamp chính xác.
-- Gửi log quan trọng tới hệ thống tập trung/SIEM, tránh chỉ lưu cục bộ.
+- **NTP:** đồng bộ đồng hồ các thiết bị để log từ firewall, server và ứng dụng có thể ghép đúng thứ tự khi điều tra.
+- **SIEM:** thu thập log từ nhiều hệ thống, liên kết sự kiện và cảnh báo mẫu bất thường; ví dụ một IP đăng nhập thất bại ở VPN rồi quét nhiều server.
 - Theo dõi deny spike, scan, login/VPN bất thường, rule change và traffic tới đích hiếm gặp.
 - Log session start/end hoặc deny có chọn lọc; log mọi packet có thể gây quá tải và che lấp tín hiệu.
-- Bảo vệ log khỏi sửa/xóa và đặt retention theo yêu cầu điều tra/compliance.
-- Sao lưu cấu hình, version control hoặc audit thay đổi, dùng tài khoản quản trị riêng và MFA.
-- Kiểm thử định kỳ bằng flow log, packet capture, port scan có ủy quyền và diễn tập failover.
-- Cập nhật firmware/signature; firewall chưa vá lỗi chính nó có thể trở thành cửa ngõ bị tấn công.
+- Bảo vệ log khỏi sửa/xóa và đặt **retention (thời gian lưu giữ)** theo yêu cầu điều tra/**compliance (tuân thủ quy định)**.
+- Sao lưu cấu hình, dùng **version control (quản lý phiên bản)** hoặc **audit (ghi nhận/kiểm tra thay đổi)**.
+- Kiểm thử bằng **flow log (nhật ký tóm tắt luồng mạng)**, **packet capture (ghi lại packet để phân tích)** và **port scan (quét tìm cổng/dịch vụ đang mở)** có ủy quyền.
+- Cập nhật **firmware (phần mềm hệ thống chạy trên thiết bị)** và signature.
 
-#### High availability và lỗi kiến trúc thường gặp
+#### High availability - HA (tính sẵn sàng cao) và lỗi kiến trúc thường gặp
 
-Firewall nằm trên đường truyền có thể trở thành bottleneck hoặc single point of failure. Hệ thống quan trọng thường dùng:
+Firewall có thể trở thành **bottleneck (điểm nghẽn giới hạn hiệu năng)** hoặc **single point of failure - SPOF (một điểm lỗi có thể làm hỏng toàn hệ thống)**. Hệ thống quan trọng thường dùng:
 
-- Cặp firewall active/passive hoặc active/active.
+- Cặp firewall **active/passive (một máy chạy, một máy chờ)** hoặc **active/active (cả hai cùng xử lý)**.
 - Đồng bộ connection state để failover ít làm rớt phiên.
-- Redundant link, switch, nguồn điện và đường ISP.
-- Capacity planning theo throughput thực khi bật IPS/TLS inspection, không chỉ theo con số forwarding tối đa.
+- **Redundant (dự phòng nhiều thành phần)** link, switch, nguồn điện và đường ISP.
+- **Capacity planning (lập kế hoạch năng lực/tải)** theo throughput thực khi bật IPS/TLS inspection.
 
 Các lỗi phổ biến:
 
@@ -728,7 +738,7 @@ Các lỗi phổ biến:
 
 #### Checklist thiết kế firewall
 
-1. Lập sơ đồ zone, subnet, tài sản và trust boundary.
+1. Lập sơ đồ zone, subnet, tài sản và **trust boundary (ranh giới nơi mức tin cậy thay đổi)**.
 2. Ghi rõ các flow nghiệp vụ cần thiết: ai kết nối tới đâu, bằng protocol/port nào.
 3. Chọn default-deny giữa các zone và cho phép tối thiểu theo least privilege.
 4. Tách management, user, server, database, guest/IoT và DMZ.
@@ -736,78 +746,86 @@ Các lỗi phổ biến:
 6. Bật logging/alert có chọn lọc và gắn owner cho từng rule.
 7. Dùng MFA, bastion/VPN và giới hạn nguồn cho đường quản trị.
 8. Rà soát rule, firmware, certificate, backup và capacity định kỳ.
-9. Kết hợp firewall với patching, IAM, EDR, IDS/IPS, WAF, backup và giám sát.
+9. Kết hợp firewall với patching, **IAM (Identity and Access Management: quản lý danh tính và quyền truy cập)**, EDR, IDS/IPS, WAF, **backup (bản sao lưu phục hồi)** và giám sát.
 10. Kiểm thử chính sách từ góc nhìn attacker lẫn luồng nghiệp vụ hợp lệ.
 
 ## IP, ISP
 
-### Địa chỉ IP
-
-- **ISP (Internet service provider):** nhà cung cấp dịch vụ internet, là các công ty, tổ chức cung cấp quyền cho mọi người sử dụng internet
-
-- **ISP kết nối tới thiết bị của mình:** bản thân ISP lắp đặt cáp quang, đường dây điện thoại, cáp đồng trục, thiết lập kết nối không dây,... đến tận nhà/ văn phòng của mình
-
-- **ISP kết nối tới thế giới:** các ISP lớn kết nối lại với nhau qua IXP để giúp các ISP khác nhau có thể trao đổi dữ liệu.
-
-- **Định tuyến lưu lượng:** khi gửi 1 request tới google.com, ISP của mình sẽ đóng vai trò làm trạm trung chuyển đầu tiên, packet đi qua các router của ISP mình → đi qua các ISP của mạng khác cho tới khi tới đích.
-
-- **Kho cấp phát địa chỉ IP:** ISP sở hữu 1 lượng lớn địa chỉ Public IP, thường là các dải IP nhất định được quản lý bởi các tổ chức toàn cầu như IANA và các đăng ký khu vực (APNIC cho Châu Á) → Khi thông qua Public IP, có thể truy ngược lại để biết được IP này thuộc về ISP nào, địa chỉ, quốc gia nào,.. (VD: 1 Public IP là 123.24.*.* có thể xác định là thuộc về FPT Telecom, tại Hà Nội)
-
-- Khi đăng ký dịch vụ internet, ISP sẽ cho thuê, cấp phát 1 Public IP tạm thời/ cố định từ kho lưu trữ của họ (Khi kết nối wifi của FPT cung cấp, router khi bật sẽ xin 1 Public IP từ FPT ISP)
-
-- **Quản lý, theo dõi người dùng:** ISP cấp IP cho mình, nên họ có thể dễ dàng theo dõi các hoạt động trên internet của mình qua IP (nếu web không được mã hóa) để biết truy cập website nào, thời điểm nào để: điều tiết băng thông, khắc phục sự cố, chặn truy cập vào website bị cấm, đưa ra quảng cáo nhờ thói quen, sở thích của người dùng,...
-
-- **Dịch vụ internet cho cá nhân, gia đình:**
-
-- **Cáp quang (FTTH/FTTP):** sử dụng sợi quang học, cho tốc độ cao và ổn định
-
-- **DSL (Digital subscriber line):** tận dụng đường dây điện thoại cũ, tốc độ thấp hơn cáp quang.
-
-- **Cáp đồng trục:** sử dụng hệ thống cáp tivi, phổ biến ở một số nơi
-
-- **Internet vệ tinh:** dành cho khu vực nông thôn, vùng sâu vùng xa không có hạ tầng cáp
-
 ### ISP
 
-- **Internet di động (3G/ 4G/ 5G):** sử dụng sóng di động từ các nhà mạng như Viettel, Vinaphone,...
+- **ISP (Internet Service Provider):** nhà cung cấp dịch vụ Internet, là tổ chức vận hành hạ tầng và cung cấp khả năng kết nối Internet cho cá nhân, doanh nghiệp hoặc một mạng khác.
 
-- Dịch vụ cho doanh nghiệp thì thường có tốc độ cao hơn, ổn định hơn, đi kèm với các dịch vụ như IP tĩnh, cam kết băng thông SLA
+- **Kết nối người dùng (access network):** ISP triển khai cáp quang, DSL, cáp đồng trục, mạng di động hoặc vệ tinh để nối nhà ở, văn phòng và thiết bị của khách hàng vào mạng ISP.
 
-- **Tại Việt Nam, có nhiều ISP nổi bật như:** VNPT, FPT Telecom, Viettel Telecom,...
+- **Kết nối tới phần còn lại của Internet:** Internet không có một ISP trung tâm. Mỗi ISP thường vận hành một Autonomous System (AS) và trao đổi traffic với các mạng khác bằng:
 
-- **IP (Internet protocol):** là bộ quy tắc, một giao thức định tuyến giúp các packet đến đúng đích, cho phép các thiết bị giao tiếp với nhau qua internet/ mạng nội bộ
+  - **IP transit:** trả phí cho một mạng khác để có đường tới phần còn lại của Internet.
+  - **Public peering:** kết nối và trao đổi traffic với các mạng khác tại Internet Exchange Point (IXP).
+  - **Private peering:** hai mạng thiết lập kết nối trực tiếp, thường khi lượng traffic giữa chúng đủ lớn.
 
-- **Định danh:** đóng vai trò như CCCD cho 1 thiết bị (private IP để phân biệt các thiết bị trên mạng nội bộ), router (public IP để phân biệt các mạng với nhau)
+- IXP là địa điểm/hạ tầng giúp nhiều mạng kết nối và trao đổi traffic hiệu quả; không phải mọi traffic Internet đều phải đi qua IXP.
 
-- **Định vị:** IP giúp xác định vị trí mạng của thiết bị trên internet + router có Routable giúp định tuyến tới router tiếp theo dựa trên IP đích.
+- **Định tuyến lưu lượng:** khi gửi request tới `google.com`, packet thường đi qua router mặc định rồi vào mạng ISP. Từ đó, ISP chọn đường tới mạng đích theo bảng định tuyến và chính sách BGP. Traffic có thể đi qua transit, peering trực tiếp hoặc tới một máy chủ cache/CDN được đặt ngay trong mạng ISP.
 
-- **Thiết lập kết nối:** địa chỉ IP là thứ đầu tiên cần có để bắt đầu cuộc trao đổi thông tin, cho dù là truy cập web, gửi mail hay xem video.
+- **Phân bổ địa chỉ IP:** chuỗi IANA → RIR → ISP/tổ chức giúp public IP không bị các mạng tự ý dùng trùng. IANA điều phối kho toàn cầu; RIR như APNIC quản lý theo khu vực; ISP/tổ chức nhận prefix để sử dụng hoặc cấp tiếp.
+
+- **WHOIS/RDAP:** dịch vụ tra cứu tổ chức nào được phân bổ prefix/ASN và thông tin liên hệ đăng ký. Nó phục vụ vận hành, xử lý abuse và kiểm tra ownership; không xác định chính xác vị trí người dùng.
+
+- Khi đăng ký Internet, khách hàng có thể được cấp IPv4 public, IPv4 private/shared phía sau **CGNAT (Carrier-Grade NAT: NAT quy mô nhà mạng)**, prefix IPv6 hoặc kết hợp nhiều loại.
+
+- **ISP có thể quan sát những gì:** ISP thấy metadata của các kết nối đi qua hạ tầng của họ, gồm IP nguồn/đích, thời gian, dung lượng và mẫu traffic. Với HTTP hoặc DNS không mã hóa, ISP có thể đọc thêm nội dung tương ứng. Với HTTPS, ISP thường không đọc được URL path, request body, mật khẩu hoặc payload đã mã hóa, nhưng hostname vẫn có thể lộ qua DNS hoặc một số thông tin bắt tay TLS. VPN chuyển phần lớn khả năng quan sát traffic từ ISP sang nhà cung cấp VPN, chứ không tạo ra sự ẩn danh tuyệt đối.
+
+- **Các loại dịch vụ truy cập phổ biến:**
+
+  - **FTTH/FTTP (Fiber To The Home/Premises: cáp quang tới nhà/cơ sở):** dùng sợi quang tới gần hoặc tận địa điểm khách hàng.
+  - **DSL (Digital Subscriber Line: đường thuê bao số):** truyền dữ liệu trên đường dây điện thoại bằng đồng.
+  - **Cáp đồng trục:** dùng hạ tầng truyền hình cáp và thường chia sẻ dung lượng trong một khu vực.
+  - **Internet di động 3G/4G/5G:** truy cập qua mạng vô tuyến của nhà mạng.
+  - **Internet vệ tinh:** phù hợp với nơi khó triển khai hạ tầng mặt đất; độ trễ phụ thuộc loại quỹ đạo vệ tinh.
+
+- Dịch vụ doanh nghiệp thường có thêm IP/prefix tĩnh và **SLA (Service Level Agreement: cam kết mức dịch vụ như uptime, thời gian hỗ trợ hoặc băng thông)**.
+
+### Địa chỉ IP
+
+- **IP (Internet Protocol):** giao thức tạo hệ thống địa chỉ logic và định dạng packet để router có thể đưa dữ liệu qua nhiều mạng khác nhau. IP giải quyết bài toán “packet cần đi tới máy/mạng nào”, không giải quyết dữ liệu có đến đủ và đúng thứ tự hay không.
+
+- IP là giao thức **connectionless (không thiết lập trạng thái kết nối trước khi gửi)** và **best-effort (cố gắng chuyển nhưng không bảo đảm giao hàng)**. Độ tin cậy, nếu cần, do giao thức tầng trên như TCP hoặc **QUIC (giao thức transport bảo mật chạy trên UDP, được HTTP/3 sử dụng)** đảm nhiệm.
+
+- IP không phải routing protocol. IP cung cấp địa chỉ đích để router thực hiện forwarding; các giao thức như BGP, OSPF hoặc IS-IS giúp router học và lựa chọn route để xây dựng bảng định tuyến.
+
+- **Địa chỉ logic:** địa chỉ IP được gán cho interface trong phạm vi mạng và có thể thay đổi khi thiết bị chuyển mạng. Một thiết bị có thể có nhiều interface và nhiều địa chỉ IP; một địa chỉ public cũng có thể đại diện cho nhiều thiết bị thông qua NAT, proxy hoặc load balancer. Vì vậy, IP giống một địa chỉ nhận thư hiện tại hơn là CCCD cố định của thiết bị.
+
+- **Longest prefix match (khớp prefix dài nhất):** khi nhiều route cùng khớp IP đích, router chọn route có prefix cụ thể nhất; ví dụ `/24` được ưu tiên hơn `/16`.
+
+- Có địa chỉ IP không đồng nghĩa một kết nối đã được thiết lập. IP chỉ cung cấp nền tảng để trao đổi packet; ứng dụng còn cần port, giao thức transport, DNS và các cơ chế khác tùy trường hợp.
 
 ### Public IP và Private IP
 
-- **IPv4:** có dạng xxx.xxx.xxx.xxx (4 nhóm số, mỗi nhóm từ 0-255). Do số lượng thiết bị internet bùng nổ, IPv4 sẽ bị cạn kiệt nếu mỗi thiết bị sở hữu 1 unique IPv4
+- **IPv4:** địa chỉ dài 32 bit, thường được viết thành 4 số thập phân từ `0` đến `255`, ví dụ `192.0.2.10`. Không gian địa chỉ IPv4 hạn chế nên không thể cấp một IPv4 public riêng cho mọi thiết bị.
 
-- **IPv6:** được tạo ra để thay thế, có dạng hexadecimal dài hơn nhiều, cung cấp số lượng địa chỉ gần như vô hạn + về lý thuyết thì mỗi thiết bị đều có thể có Public IP unique dựa trên IPv6
+- **IPv6:** địa chỉ dài 128 bit, viết dạng **hexadecimal (hệ thập lục phân dùng ký số `0–9`, `a–f`)**, ví dụ `2001:db8::10`. Interface có thể có **global unicast (địa chỉ định tuyến toàn cục một-đến-một)**, **link-local (chỉ dùng trên link cục bộ)** và **temporary address (địa chỉ tạm giúp giảm theo dõi)**.
 
-- **Public IP:** IP công cộng, là IP duy nhất trên toàn internet, được nhà mạng ISP cung cấp cho router
+- **Public IP:** địa chỉ mà Internet công cộng có thể định tuyến tới hoặc dùng làm địa chỉ nguồn/đích toàn cục. Nó cần duy nhất trong phạm vi Internet để router không nhầm hai mạng; ví dụ web server công khai cần một public IP hoặc dịch vụ đại diện có public IP.
 
-- Mọi thiết bị ra ngoài internet đều được định danh bằng Public IP dựa vào NAT
+- Trong mạng IPv4 gia đình dùng NAT/PAT, nhiều thiết bị private thường dùng chung một địa chỉ public khi ra Internet. Tuy nhiên, không phải mọi mạng đều dùng NAT và với IPv6, thiết bị có thể dùng địa chỉ global riêng mà vẫn được bảo vệ bằng firewall.
 
-- Public IP lộ thiên trên internet, có thể trở thành mục tiêu của các cuộc tấn công scan, dò quét, DDoS,... nếu không được bảo vệ bằng tường lửa
+- Có public IP không đồng nghĩa thiết bị tự động truy cập được từ Internet. Khả năng truy cập còn phụ thuộc route, firewall, ACL, dịch vụ đang lắng nghe và chính sách của ISP. NAT cũng không phải cơ chế thay thế firewall.
 
-- Sự khan hiếm của IPv4 dẫn tới chỉ sử dụng Public IP trên router thay vì toàn bộ thiết bị trên internet
+- Sự khan hiếm IPv4 thúc đẩy việc dùng private address, NAT/PAT, CGNAT và triển khai IPv6.
 
-- **Dynamic IP:** ISP cho router mượn 1 Public IP trong pool của họ, IP này có thể thay đổi sau mỗi lần router khởi động lại/ sau 1 khoảng thời gian nhất định, đặc biệt phổ biến cho hộ gia đình/ cá nhân
+- **Dynamic IP (IP động):** địa chỉ cấp theo **lease (thời hạn thuê địa chỉ)**, thường qua DHCP; có thể được gia hạn hoặc thay đổi.
 
-- **Static IP:** IP cố định, không bao giờ thay đổi, phù hợp cho Web server, chi phí cao hơn
+- **Static IP:** địa chỉ được cấu hình hoặc được nhà cung cấp cam kết duy trì ổn định trong thời gian cung cấp dịch vụ. Nó phù hợp với server, VPN gateway, DNS và các hệ thống cần địa chỉ dễ dự đoán, nhưng vẫn có thể thay đổi khi đổi hợp đồng hoặc nhà cung cấp.
 
-- **Private IP:** IP riêng tư, là địa chỉ được router cấp phát cho các thiết bị trong mạng nội bộ
+- **Private IPv4:** địa chỉ dành cho mạng nội bộ và được phép tái sử dụng ở nhiều tổ chức. Mục đích là tiết kiệm IPv4 public; ví dụ hàng triệu gia đình đều có thể dùng `192.168.1.10` mà không xung đột vì các mạng được tách biệt.
 
-- Các địa chỉ này không được sử dụng để truy cập trực tiếp từ internet, mà chỉ sử dụng nội bộ trong cùng mạng để các thiết bị trong mạng giao tiếp với nhau
+- Private IPv4 không được định tuyến trên Internet công cộng, nhưng có thể được định tuyến giữa nhiều subnet, VLAN, chi nhánh hoặc qua VPN trong một hệ thống riêng.
 
 - Các mạng khác nhau thì các thiết bị có thể có Private IP trùng nhau → tiết kiệm được IPv4.
 
-- Các Private IP được ẩn mình sau router, bên ngoài internet không thể nhìn thấy/ kết nối trực tiếp tới từng thiết bị có Private IP (trừ khi được config NAT Port Forwarding)
+- Thiết bị dùng private IP thường đi ra Internet qua NAT/PAT. Kết nối từ ngoài vào cần port forwarding, NAT tĩnh, reverse proxy, VPN hoặc cơ chế công bố dịch vụ tương ứng.
+
+- **CGNAT:** ISP đặt thêm một lớp NAT ngoài router nhà để nhiều thuê bao chia sẻ public IPv4. Nó tiết kiệm địa chỉ nhưng làm inbound connection, port forwarding, một số game/P2P và việc truy vết theo IP phức tạp hơn.
 
 ### Các dải địa chỉ IPv4
 
@@ -819,57 +837,57 @@ Các lỗi phổ biến:
 
 ### NAT (Network Address Translation)
 
-- **NAT (Network Address Translation):** là cơ chế được tích hợp trong router, chuyển đổi Private IP sang Public IP và ngược lại, sử dụng để chuyển lại phản hồi đến đúng thiết bị gửi request.
+- **NAT:** thay đổi địa chỉ IP khi packet đi qua thiết bị biên. NAT thường dùng để nối một miền địa chỉ với miền khác; trong gia đình, nó cho phép private IPv4 giao tiếp với Internet qua public IPv4.
 
-- NAT bản chất sinh ra để chữa cháy IPv4 cạn kiệt dần
+- **PAT/NAPT:** thay đổi cả IP và port để phân biệt nhiều kết nối cùng dùng một public IPv4. Ví dụ hai laptop cùng truy cập Google sẽ được router gán hai source port public khác nhau để response quay về đúng máy.
 
-- **Port Forwarding:** để chạy dịch vụ ra ngoài internet như cung cấp trang web chẳng hạn, cần Port Forwarding trên router: hễ có ai gõ vào cổng 80 của Public IP, hãy chuyển nó tới cổng 81 của web server
+- NAT/PAT làm suy giảm mô hình **end-to-end (hai endpoint có thể giao tiếp trực tiếp mà không cần dịch địa chỉ giữa đường)** và làm kết nối inbound phức tạp hơn.
 
-1. **B1:** Thiết bị nội bộ với Private IP 192.168.1.5 muốn truy cập google.com
+- **Port forwarding:** tạo ánh xạ tĩnh cho kết nối đi vào, ví dụ traffic tới `198.51.100.10:80` được chuyển tới web server nội bộ `192.168.1.10:8080`. Port forwarding chỉ hoạt động khi phía ngoài thực sự có địa chỉ/route nhận traffic; nó thường không tự hoạt động qua CGNAT của ISP.
 
-1. **B2:** Thiết bị gửi gói tin với thông tin Nguồn: 192.168.1.5:54321 ;Đích: googleIP:80
+1. **B1:** Thiết bị nội bộ có địa chỉ `192.168.1.5` muốn kết nối tới một web server.
 
-1. **B3:** Goi tin được gửi tới router + router thực hiện NAT:
+1. **B2:** Thiết bị gửi packet với nguồn `192.168.1.5:54321`, đích `203.0.113.20:443`.
 
-- Thay đổi IP nguồn từ Private IP sang Public IP của router 123.456.789.100
+1. **B3:** Packet được gửi tới router và router thực hiện PAT:
 
-- **NAT table:** ghi nhớ mapping này: 192.168.1.5:54321 đang được ánh xạ tới 123.456.789.100:62345
+   - Router thay đổi nguồn thành địa chỉ public/port phía ngoài `198.51.100.10:62345`.
 
-- **Packet bây giờ là:** Nguồn: 123.456.789.100:62345 ;Đích: googleIP:80
+   - NAT table ghi nhớ mapping `192.168.1.5:54321` ↔ `198.51.100.10:62345` cùng protocol và trạng thái cần thiết.
 
-1. **B4:** Google nhận gói tin, xử lý và trả thông tin về 123.456.789.100:62345
+   - Packet phía ngoài có nguồn `198.51.100.10:62345`, đích `203.0.113.20:443`.
 
-1. **B5:** Router nhận gói tin, tra NAT table và nhận thấy cần gửi lại về thiết bị 192.168.1.5 + đổi IP đích thành Private IP: 192.168.1.5  + chuyển gói tin về đúng thiết bị nội bộ
+1. **B4:** Server xử lý và gửi phản hồi về `198.51.100.10:62345`.
+
+1. **B5:** Router tra NAT table, đổi đích về `192.168.1.5:54321` rồi chuyển packet tới thiết bị nội bộ.
 
 ### Default gateway
 
-- **Default gateway:** là 1 thiết bị mạng mà thiết bị sử dụng dịch vụ mạng (điện thoại, máy tính) sẽ gửi tất cả các packet tới nếu như đích đến không nằm trong cùng internal network (LAN)
+- **Default gateway:** router mà host gửi packet tới khi đích không nằm trên mạng trực tiếp và không có route cụ thể hơn. Nó là “lối ra mặc định” sang mạng khác, không nhất thiết luôn là Internet.
 
-- Thông thường Default gateway chính là router
+- Trong mạng gia đình, default gateway thường là interface LAN của router.
 
-- Gõ ipconfig, tim dòng Default Gateway để biết được Private IP của router >< https://whatismyipaddress.com để biết được Public IP của router (vì = Public IP của device).
+- **On-link (nằm trực tiếp trên cùng link/prefix):** đích mà host có thể gửi frame trực tiếp không cần router trung gian.
 
-- **Như là 1 cửa ngõ để có thể ra ngoài mạng khác (VD:** gọi vào google, facebook,…), nếu không có Default gateway thì device chỉ có thể giao tiếp được trong cùng mạng. (tất cả các packet đều phải đi qua Default gateway nếu muốn giao tiếp khác mạng)
-
-- Còn nếu như chỉ giao tiếp trong cùng mạng, không cần gửi packet tới Default gateway mà thay vào đó, chỉ cần gửi tới đúng máy đó thông qua Private IP/ tên service (service discovery) trong cùng mạng.
+- IPv4 dùng ARP để tìm MAC của IPv4 on-link; IPv6 dùng Neighbor Discovery để tìm hàng xóm/router, phân giải địa chỉ link-layer và kiểm tra khả năng truy cập.
 
 ![Hình 34](assets/image8.png)
 
 *Hình 34*
 
-### Subnet, subnet mask và CIDR
+### Subnet, subnet mask và CIDR (Classless Inter-Domain Routing: định tuyến không phân lớp)
 
-- **Subnet (subnetwork):** tức mạng con từ 1 mạng IP lớn được chia thành nhiều mạng nhỏ hơn để quản lý hiệu quả
+- **Subnet:** một nhóm địa chỉ IP dùng chung prefix và thường được coi là cùng mạng on-link. Subnet giúp quyết định host nào có thể gửi trực tiếp cho nhau, chia broadcast domain và tổ chức route; ví dụ `192.168.1.0/24`.
 
-- **Giảm Broadcast traffic:** trong mạng lớn, các gói tin broadcast sẽ lan truyền khắp nơi trong mạng gây tắc nghẽn, giảm hiệu suất → Subset tạo biên giới để chặn các gói tin broadcast này lại, 1 gói tin trong Subnet A không thể lan sang Subnet B
+- **Broadcast (một-đến-tất-cả trong miền cục bộ)** không được router chuyển tiếp thông thường giữa subnet. IPv6 dùng **multicast (một-đến-một nhóm đã tham gia)** thay broadcast.
 
-- **Tăng bảo mật:** các máy chủ quan trọng vào subnet riêng biệt, các máy nhân viên vào subnet khác,... + bằng cách sử dụng các công cụ như Access Control Lists (ACLs) trên router/ firewall, ta có thể dễ dàng kiểm soát luồng dữ liệu giữa các Subnet + cũng dễ dàng theo dõi, khắc phục sự cố, phân quyền cho từng subnet.
+- **Hỗ trợ phân đoạn mạng:** có thể đặt server và máy người dùng ở các subnet/VLAN khác nhau rồi dùng firewall hoặc ACL để kiểm soát traffic giữa chúng. Việc chia subnet tự nó không tạo ra bảo mật nếu không có chính sách lọc phù hợp.
 
-- **Tối ưu hóa địa chỉ IP:** các lớp mạng Network Classes tiêu chuẩn (như class A, B, C) thường cung cấp lượng địa chỉ IP rất lớn, có thể vượt quá nhu cầu thực tế của mạng cục bộ → Subnet cho phép tận dụng dải địa chỉ IP một cách linh hoạt, hiệu quả hơn hơn, tránh lãng phí địa chỉ.
+- **Phân bổ địa chỉ linh hoạt:** Internet hiện dùng CIDR thay cho mô hình class A/B/C cũ. Prefix có thể được chia theo nhu cầu thực tế và có thể được tổng hợp để giảm số route.
 
-- **Subnet mask:** là 1 dãy số 32bit (đối với IPv4) sử dụng để xác định phần network, phần host trong 1 địa chỉ IP
+- **Subnet mask:** là dãy 32 bit đối với IPv4, dùng để xác định phần prefix và phần host trong một địa chỉ.
 
-- Các bit network được đặt là 1, các bit phần host được đặt là 0
+- Các bit prefix được đặt là `1`, các bit phần host được đặt là `0`.
 
 ![Hình 35](assets/image83.png)
 
@@ -879,7 +897,7 @@ Các lỗi phổ biến:
 
 *Hình 36*
 
-- **CIDR (Prefix length):** việc đặt Subnet mask quá dài dòng, để ngắn gọn thì dùng CIDR, là cách viết rút gọn của Subnet mask bằng cách đếm số lượng số bit 1.
+- **CIDR:** cách biểu diễn và cấp phát mạng bằng prefix dài tùy ý thay vì class A/B/C cố định. Mục đích là dùng địa chỉ hiệu quả và tổng hợp route; `/24` nghĩa 24 bit đầu xác định prefix.
 
 ![Hình 37](assets/image48.png)
 
@@ -889,11 +907,15 @@ Các lỗi phổ biến:
 
 *Hình 38*
 
-- Số Host có thể dùng = 2^ số bit host - 2 (trừ đi network address, địa chỉ broadcast)
+- Với IPv4 truyền thống, trừ **network address (địa chỉ đại diện subnet)** và **directed broadcast address (địa chỉ gửi tới mọi host trong subnet)**. **Point-to-point (link chỉ có hai đầu)** `/31`, host route `/32` và IPv6 là ngoại lệ.
 
-- Khi 1 thiết bị muốn gửi packet đi, nó cần xác định xem địa chỉ đích có cùng trong mạng nội bộ hay không hay cần phải gửi ra ngoài internet + nhờ Subnet mask mà ta có thể xác định được
+- Khi gửi packet, hệ điều hành tra bảng định tuyến và chọn route khớp dài nhất. Subnet mask/prefix của interface tạo ra một route on-link, nhưng còn có thể tồn tại các route cụ thể khác.
 
-- AND(IP nguồn, Subnet mask nguồn) == AND(IP đích, Subnet mask đích) thì 2 thiết bị chung mạng nội bộ → packet sẽ chỉ cần chuyển tới switch và chuyển tới đích >< nếu khác thì 2 thiết bị khác mạng → packet cần chuyển tới default gateway (thường là router) để chuyển ra ngoài internet.
+- Cách minh họa đơn giản để kiểm tra IPv4 đích có thuộc prefix on-link của interface nguồn:
+
+  `IP nguồn AND subnet mask của interface == IP đích AND subnet mask của interface`
+
+- Nếu thuộc cùng prefix on-link, máy gửi trực tiếp ở Layer 2. Nếu không, máy gửi packet cho next hop của route phù hợp hoặc default gateway. Next hop đó có thể dẫn tới một mạng nội bộ khác, không nhất thiết là Internet.
 
 ![Hình 39](assets/image35.png)
 
@@ -905,37 +927,35 @@ Các lỗi phổ biến:
 
 ## UDP, TCP
 
-### UDP
+### TCP
 
-- TCP (Transmission Control Protocol) là giao thức truyền tải hướng kết nối, đáng tin cậy nằm ở Transport layer
+- **TCP:** giao thức vận chuyển tạo một luồng byte đáng tin cậy giữa hai ứng dụng. Nó dùng sequence number, ACK, truyền lại, flow control và congestion control để ứng dụng không phải tự xử lý các packet mất hoặc sai thứ tự. TCP phù hợp với web truyền thống, SSH, email và truyền file.
 
-- **Connection - oriented (hướng kết nối):** trước khi gửi dữ liệu, một lối đi ảo phải được thiết lập giữa client, server thông qua quy trình bắt tay 3 bước + khi server phản hồi thành công lại cho client thì kết nối cũng sẽ được close đi (nói là kết nối thế thôi, nhưng nó chỉ là khái niệm logic, kiểu như là sự xác nhận của 2 bên khi truyền đạt dữ liệu để đảm bảo tin cậy)
+- **Connection-oriented (hướng kết nối):** hai đầu thiết lập trạng thái logic bằng handshake trước khi trao đổi dữ liệu. Đây không phải đường vật lý riêng; hai bên chỉ ghi nhớ sequence number, cửa sổ truyền và trạng thái của phiên.
 
-- **Reliable (đáng tin cậy):** đảm bảo dữ liệu gửi tới đích nguyên vẹn
+- **Reliable delivery (truyền đáng tin cậy):** TCP phát hiện mất/lỗi, truyền lại và sắp xếp byte đúng thứ tự. TCP không bảo đảm ứng dụng đích xử lý thành công dữ liệu.
 
-- Đảm bảo máy gửi điều chỉnh được tốc độ gửi dữ liệu dựa trên khả năng của máy nhận + tự động giảm tốc độ gửi dữ liệu khi mạng bị tắc nghẽn
+- **Flow control (kiểm soát luồng):** điều chỉnh tốc độ theo khả năng nhận của máy đích. **Congestion control (kiểm soát tắc nghẽn):** giảm tốc độ khi mạng có dấu hiệu nghẽn.
 
 - Phù hợp với ứng dụng mà đảm bảo độ tin cậy cao nhất có thể, chấp nhận chậm một chút cũng không sao (gửi mail, truyền file, SSH,...)
 
-- **3 - way handshake:** là bước đầu tiên khi thực hiện thiết lập TCP connection
+- **Three-way handshake:** ba packet `SYN → SYN-ACK → ACK` dùng để hai đầu thống nhất trạng thái ban đầu và kiểm tra rằng cả hai chiều đều liên lạc được trước khi truyền dữ liệu.
 
 ![TCP three-way handshake](assets/image82.png)
 
 *TCP three-way handshake*
 
-### TCP
-
 - Giả sử A muốn truyền dữ liệu tới B qua 1 TCP connection, trước khi truyền A cần thiết lập TCP connection trước qua 3 - way handshake như sau:
 
-1. **B1:** A gửi B packet có cờ SYN và seq bắt đầu của A (VD: 100) với ý nghĩa: chào B, tôi là A, tôi muốn kết nối với bạn, số thứ tự bắt đầu của tôi là 100 (đảm bảo A có khả năng gửi)
+1. **B1:** A gửi **SYN (Synchronize: cờ yêu cầu mở kết nối và đồng bộ sequence number)** với sequence number ban đầu, ví dụ `100`.
 
-1. **B2:** B nhận packet, gửi lại A 1 packet cờ SYN, seq bắt đầu của B (VD: 300) kèm theo cờ ACK để xác nhận, ACK number (số báo nhận, VD = 101 = seqA + 1) với ý nghĩa: chào A, tôi đã nhận được yêu cầu của bạn (ACK = 101), tôi đồng ý kết nối, số thứ tự bắt đầu của tôi là 300 (đảm bảo B có khả năng nhận, gửi)
+1. **B2:** B gửi **SYN-ACK (vừa yêu cầu đồng bộ phía B, vừa xác nhận SYN của A)** với sequence number `300` và acknowledgment number `101`.
 
 1. **B3:** Sau khi TCP connection được thiết lập, gửi lại B 1 packet seq = 101, ACK = 301 (301 = ACK B + 1) để báo rằng đã nhận được packet seq = 300 của B. (đảm bảo A có khả năng nhận)
 
-- **4 - way handshake:** là quy trình để 2 máy tính đồng ý ngắt kết nối TCP sau khi hoàn thành việc trao đổi dữ liệu. Mục đích là để đảm bảo cả 2 bên đều đã gửi hết dữ liệu và sẵn sàng đóng kết nối
+- **Four-way termination (đóng kết nối bốn bước):** thường dùng chuỗi `FIN → ACK → FIN → ACK` vì mỗi chiều của TCP được đóng độc lập.
 
-1. **B1:** A gửi packet có cờ FIN tới B với ý nghĩa: Này B, tôi đã gửi xong toàn bộ dữ liệu rồi, tôi muốn đóng channel gửi dữ liệu từ tôi tới bạn, tuy nhiên tôi vẫn sẵn sàng nhận dữ liệu từ bạn nếu bạn còn gì để gửi.
+1. **B1:** A gửi **FIN (Finish: cờ báo phía A đã gửi xong)**; A vẫn có thể nhận dữ liệu từ B.
 
 1. **B2:** B gửi packet có cờ ACK với ý nghĩa: oke A, tôi đã nhận được yêu cầu đóng kết nối của bạn, nhưng tôi vẫn còn đang xử lý → connection vẫn còn mở
 
@@ -943,17 +963,19 @@ Các lỗi phổ biến:
 
 1. **B4:** A gửi packet có cờ ACK tới B với ý nghĩa: đồng ý, tôi đã nhận được, chúng ta hãy cùng đóng kết nối an toàn.
 
-- **UDP (User Datagram Protocol):** là giao thức không kết nối và không đáng tin cậy nằm ở Transport layer
+### UDP
 
-- Được thiết kế để gửi các gói dữ liệu (gọi là diagram) một cách nhanh chóng và hiệu quả
+- **UDP:** giao thức vận chuyển gửi từng thông điệp độc lập mà không thiết lập kết nối hay tự truyền lại. Mục đích là giảm overhead và cho ứng dụng tự quyết định cách xử lý độ tin cậy; thường dùng cho DNS, thoại/video thời gian thực, game và làm nền cho QUIC.
+
+- Đơn vị dữ liệu của UDP gọi là **datagram (thông điệp độc lập có ranh giới rõ ràng)**, không phải “diagram”.
 
 - **Connectionless (không kết nối):** UDP không thiết lập kết nối trước khi gửi dữ liệu, máy cứ thế phóng các gói tin đi mà không cần biết gói nhận có đang sẵn sàng hay không → tiết kiệm thời gian, tài nguyên hơn TCP
 
-- **Unreliable (không đáng tin cậy):** máy gửi không nhận được ACK từ máy nhận + nếu gói tin mất trên đường đi thì UDP không có cơ chế gửi lại → gói tin mất vĩnh viễn
+- **Unreliable/best-effort:** UDP không tự ACK, truyền lại, sắp xếp thứ tự hay kiểm soát tắc nghẽn; ứng dụng có thể tự bổ sung nếu cần.
 
 - Phù hợp với các ứng dụng ưu tiên tốc độ, thời gian thực hơn là độ chính xác tuyệt đối (streaming video, game online, DNS,...)
 
-- **Socket:** là cổng logic mà chương trình sử dụng để kết nối với chương trình khác chạy trên máy tính khác trên internet, sử dụng để truyền, nhận dữ liệu qua internet.
+- **Socket:** đối tượng/API mà process dùng để nói chuyện với network stack của hệ điều hành. Nó là điểm giao giữa code ứng dụng và TCP/UDP; ví dụ web server tạo socket, bind port `8080`, listen và nhận kết nối từ client.
 
 ### Socket
 
@@ -967,9 +989,9 @@ Các lỗi phổ biến:
 
 - Socket hỗ trợ hầu hết các hđh (Window, Linux,...) + được sử dụng với nhiều ngôn ngữ lập trình phổ biến (C, C++, Java,…)
 
-- **Stream Socket:** còn được gọi là Socket hướng kết nối, là socket hoạt động dựa trên giao thức TCP
+- **Stream socket (socket luồng):** socket thường dùng với TCP, cung cấp một luồng byte hai chiều sau khi kết nối được thiết lập.
 
-### Stream Socket
+### Stream socket (socket luồng)
 
 ![Stream socket](assets/image12.png)
 
@@ -983,9 +1005,9 @@ Các lỗi phổ biến:
 
 - **Phía Server:**
 
-1. **B1:** Khi chương trình khởi động, tạo main socket: socket() để tạo socket, bind() để gắn socket với port, IP của máy chủ + lúc này main socket có trạng thái là LISTEN, main socket lắng nghe các kết nối từ Client.
+1. **B1:** Server gọi `socket()` để tạo socket, `bind()` để gắn local IP/port và `listen()` để tạo **listening socket (socket chờ kết nối mới)**.
 
-1. **B2:** Khi có Client kết nối tới, Server chấp nhận kết nối accept(), tạo 1 Socket khác để có thể giao tiếp với Client đó + main socket tiếp tục lắng nghe các Client khác.
+1. **B2:** `accept()` tạo **connected socket (socket dành riêng cho một kết nối TCP)**; listening socket tiếp tục chờ client khác.
 
 - **Phía Client:**
 
@@ -997,9 +1019,9 @@ Các lỗi phổ biến:
 
 1. **B4:** Khi giao tiếp xong, 2 bên sẽ close() để đóng connection, Client sẽ close socket đi.
 
-- **Datagram Socket:** còn được gọi là socket không kết nối, hoạt động qua giao thức UDP
+- **Datagram socket (socket datagram):** thường dùng với UDP; mỗi lần gửi/nhận xử lý một datagram và giữ nguyên ranh giới thông điệp.
 
-### Datagram Socket
+### Datagram socket (socket datagram)
 
 ![Datagram socket](assets/image69.png)
 
@@ -1007,15 +1029,15 @@ Các lỗi phổ biến:
 
 - Khác ở chỗ chỉ cần 1 main socket ở phía server để handle toàn bộ request từ các client (không cần tạo socket mới vì không nắm giữ thông tin như TCP: số lượng packet, ACK number, trạng thái kết nối,...)
 
-- Channel là con đường logic/ vật lý để dữ liệu truyền từ điểm này tới điểm khác
+- **Channel (kênh truyền):** con đường vật lý hoặc logic để dữ liệu đi từ điểm này tới điểm khác.
 
 - Có thể hình dung nó như đường ống/ làn đường dành riêng cho việc vận chuyển dữ liệu + mỗi Channel cho phép luồng thông tin riêng biệt di chuyển giữa các thiết bị.
 
-### Channel vật lý và Channel logic
+### Physical channel (kênh vật lý) và logical channel (kênh logic)
 
-- **Channel vật lý:** nằm ở Physical layer, là phương tiện truyền dẫn như: cáp đồng trục, cáp quang, sóng vô tuyến (như wifi),...
+- **Physical channel (kênh vật lý):** phương tiện/tài nguyên truyền tín hiệu thực như cáp, sợi quang, tần số vô tuyến hoặc khe thời gian.
 
-- **Channel logic:** nằm ở Transport layer, là channel ảo được tạo ra bởi các giao thức thông qua các socket + chạy trên 1 channel vật lý bằng các kỹ thuật như multiplexing + 1 channel vật lý có thể chứa hàng trăm channel logic khác nhau + 1 channel logic mang dữ liệu cho 1 kết nối/ dịch vụ khác nhau
+- **Logical channel (kênh logic):** luồng giao tiếp được giao thức phân biệt trên cùng hạ tầng vật lý, ví dụ nhiều kết nối TCP cùng dùng một link Ethernet. Logical channel không nhất thiết chỉ tồn tại ở Transport layer.
 
 ![Hình 45](assets/image49.png)
 
@@ -1029,21 +1051,21 @@ Các lỗi phổ biến:
 
 *Hình 47*
 
-- **Channel trong mạng không dây:** thường là 2.4GHz/ 5GHz, được chia thành nhiều channel nhỏ hơn (giống như 1 làn đường trên đường cao tốc vậy) để giúp các mạng không dây gần nhau có thể hoạt động mà không nhiễu lẫn nhau bằng cách chọn các channel khác nhau. (VD: nhà mình và hàng xóm cùng dùng channel 6 thì hiệu suất mạng có thể bị kém đi)
+- **Wi-Fi channel (kênh Wi-Fi):** một dải tần con trong băng tần như `2.4 GHz`, `5 GHz` hoặc `6 GHz`. Các mạng gần nhau dùng kênh trùng/chồng lấn có thể phải chia sẻ airtime và giảm hiệu năng.
 
 - **Channel trong lập trình mạng:** trong lập trình, 1 channel riêng biệt thể hiện như 1 Socket connection giữa Client và Server.
 
-### Simplex, Half-duplex và Full-duplex
+### Simplex (đơn công), half-duplex (bán song công) và full-duplex (song công toàn phần)
 
-- **Simplex (đơn công):** dữ liệu chỉ có thể truyền theo 1 hướng duy nhất (đài phát thanh, truyền hình,... ta chỉ có thể nghe/ xem mà không thể gửi tín hiệu ngược lại qua cùng Channel đó (bản chất là do thiết kế của thiết bị: đài phát được thiết kế chỉ để phát sóng điện từ ra môi trường, radio chỉ có mạch thu, anten để bắt sóng điện từ, không có bộ phận phát tín hiệu về đài)
+- **Simplex (đơn công):** dữ liệu chỉ truyền theo một hướng, ví dụ đài phát thanh quảng bá tới máy thu.
 
 - **Half-duplex (bán song công):** dữ liệu có thể truyền theo 2 hướng, nhưng không đồng thời (bộ đàm: một người nói “over” để báo hiệu kết thúc và chuyển sang chế độ nghe, cho phép người kia trả lời), chỉ 1 thiết bị được phát tại 1 thời điểm (xảy ra khi tín hiệu cùng tồn tại trên 1 channel chung: nếu 2 đầu cùng send message thì sẽ bị collision gây biến dạng mà 2 đầu không thể nhận biết được message → giải pháp là chờ tới lượt nhau)
 
-- **Full-duplex (song công):** dữ liệu có thể truyền đi đồng thời theo cả 2 hướng (gọi điện, gọi video call,... cả 2 người có thể nói và nghe cùng lúc). Bản chất là do đã loại bỏ phương tiện truyền dẫn chung mà sử dụng đường dẫn tách biệt cho gửi và nhận riêng (Cáp quang sử dụng hai sợi thủy tinh riêng biệt: 1 sợi để gửi, 1 sợi để nhận)
+- **Full-duplex (song công toàn phần):** hai phía gửi và nhận đồng thời, ví dụ Ethernet switched hiện đại hoặc cuộc gọi điện thoại.
 
-### Multiplexing
+### Multiplexing (ghép kênh)
 
-- **Multiplexing (ghép kênh):** là việc hợp nhất nhiều Channel logic lại để có thể truyền chúng đồng thời qua 1 Channel vật lý duy nhất
+- **Multiplexing:** cho nhiều luồng dùng chung một tài nguyên nhưng vẫn phân biệt được nhau. Mục đích là không phải cấp một đường vật lý riêng cho từng kết nối; ví dụ hàng trăm TCP connection cùng dùng một card mạng và được phân biệt bằng IP/port.
 
 - Thường xảy ra ở phía nguồn phát
 
@@ -1063,9 +1085,9 @@ Các lỗi phổ biến:
 
 *Hình 50*
 
-### Demultiplexing
+### Demultiplexing (tách kênh)
 
-- **Demultiplexing (tách kênh):** ngược lại, tách 1 luồng tín hiệu tổng hợp từ Channel vật lý thành các Channel logic ban đầu
+- **Demultiplexing:** quá trình ngược lại ở phía nhận: đọc thông tin định danh để giao dữ liệu tới đúng luồng. Ví dụ hệ điều hành đọc destination port `8080` và đưa segment tới socket của ứng dụng đang listen port đó.
 
 - Thường xảy ra ở phía nhận tín hiệu
 
@@ -1079,13 +1101,13 @@ Các lỗi phổ biến:
 
 *Hình 52*
 
-### Workflow
+### Workflow (luồng xử lý)
 
 ![Hình 53](assets/image75.png)
 
 *Hình 53*
 
-- IP nguồn đích =1 Socket
+- Một endpoint socket thường được mô tả bằng IP + port + transport protocol. Một kết nối TCP được phân biệt bởi bộ 5: source IP, source port, destination IP, destination port và protocol.
 
 ![Hình 54](assets/image58.png)
 
@@ -1111,9 +1133,9 @@ Các lỗi phổ biến:
 
 *Hình 59*
 
-## Basic Characteristics
+## Basic Characteristics (các đặc tính cơ bản)
 
-- Fault tolerance (khả năng chịu lỗi) là 1 đặc điểm cơ bản tối quan trọng trong mạng máy tính, tức mạng máy tính vẫn tiếp tục hoạt động bất kể là mạng đang có lỗi (continue working despite failures) + sẽ không mất đi request hiện tại đang truyền đi khi mạng bị lỗi (ensure no loss of service)
+- **Fault tolerance (khả năng chịu lỗi):** hệ thống tiếp tục cung cấp dịch vụ ở mức chấp nhận được khi một thành phần lỗi, thường nhờ đường đi hoặc thiết bị dự phòng. Điều này không bảo đảm mọi packet đang truyền đều không mất.
 
 ![Mạng có nhiều đường đi dự phòng](assets/image65.png)
 
@@ -1125,31 +1147,31 @@ Các lỗi phổ biến:
 
 - Tuy nhiên khi mà link/ Router1 gone down thì request vẫn tiếp tục thực hiện và hệ thống mạng máy tính này vẫn sẽ hoạt động, request vừa rồi thay vì được rout tới Router1 thì sẽ được rout tới Router2 -> Router4 -> Router5 ->…
 
-- Scalability (khả năng mở rộng) tức khi ta thêm nhiều máy tính vào 1 network thì mạng này vẫn sẽ hoạt động như bình thường
+- **Scalability (khả năng mở rộng):** khả năng tăng số người dùng, thiết bị hoặc traffic mà hệ thống vẫn vận hành được sau khi bổ sung tài nguyên/thiết kế phù hợp.
 
 - Giả sử tôi connect 100 computer vào Router3 thì mạng vẫn hoạt động bình thường
 
 - Thêm mạng mới thì hệ thống mạng toàn cầu vẫn hoạt động bình thường.
 
-- Quality of Service (QoS) liên quan tới việc đặt mức độ ưu tiên xử lý (priorities) + quản lý lưu lượng dữ liệu để tránh mất dữ liệu, giảm delay trên quá trình truyền tải dữ liệu
+- **Quality of Service (QoS: chất lượng dịch vụ):** tập cơ chế phân loại, ưu tiên, xếp hàng hoặc giới hạn traffic để đáp ứng mục tiêu delay, jitter, bandwidth và packet loss cho từng loại ứng dụng.
 
 - **Khi giữa 2 request:** nói chuyện điện thoại và gửi email và việc handle request này đều trải qua Router1 tại cùng 1 thời điểm + Router có khả năng nhận ra rằng việc nói chuyện điện thoại là realtime nên nó sẽ ưu tiên xử lý trước để routing tới Router khác
 
-### Security (khả năng bảo mật) tức mạng máy tính phải có tính bảo mật
+### Security (bảo mật)
 
 - Giả sử ta send 1 request với thông tin khá nhạy cảm, trong quá trình routing thì tại Router3, hacker đã steal được request của ta tại Router3
 
-- Nếu dữ liệu là nhạy cảm thì cần convert data này sang 1 form khác và chỉ có thể biết được bởi sender và receiver (integrity)
+- **Confidentiality** ngăn người không được phép đọc dữ liệu; **integrity** phát hiện dữ liệu bị sửa; **availability** giữ dịch vụ hoạt động khi người dùng hợp lệ cần. Ba mục tiêu giải quyết ba loại rủi ro khác nhau.
 
-## Network Protocols & Communication
+## Network Protocols & Communication (giao thức và truyền thông mạng)
 
 ### Protocol
 
-- Data communication là sự trao đổi data giữa các nodes thông qua một số dạng phương tiện truyền dẫn (transmission medium)
+- **Data communication (truyền thông dữ liệu):** sự trao đổi dữ liệu giữa các node qua một **transmission medium (môi trường truyền dẫn)** như cáp đồng, sợi quang hoặc sóng vô tuyến.
 
 - Link chỉ sự kết nối giữa 2 thiết bị, có thể là logic/ vật lý (chỉ mang tính chất là nói về connection) >< Transmission medium (form of Link) là bản chất của phương tiện truyền dẫn (cáp, dây đồng, sóng vô tuyến,...)
 
-- Protocol (giao thức) quản lý toàn bộ hoạt động trao đổi thông tin trong mạng máy tính, là tập các quy tắc, quy ước được thiết lập để các nodes trong 1 network có thể communicate với nhau một cách hiệu quả và an toàn
+- **Protocol (giao thức):** tập quy tắc về định dạng, thứ tự, thời điểm và cách xử lý lỗi để các hệ thống có thể hiểu nhau. Ví dụ HTTP quy định cách client biểu diễn web request và server biểu diễn response.
 
 ![Internet là network of networks](assets/image4.png)
 
@@ -1163,11 +1185,13 @@ Các lỗi phổ biến:
 
 - **Các protocols phổ biến có thể kể tới như:** HTTP, TCP, IP, 4/5G, Ethernet, Skype, Wifi,…
 
-- Các protocols này thường được mô tả ở trong RFC (Request for Comments) + thường được các tổ chức phát hành, bảo trì như: IETF (Internet Engineering Task Force), W3C,...
+- Nhiều giao thức Internet được mô tả trong **RFC (Request for Comments: tài liệu kỹ thuật/tiêu chuẩn của cộng đồng Internet)** do **IETF (Internet Engineering Task Force: tổ chức phát triển tiêu chuẩn Internet)** công bố; tiêu chuẩn web còn có **W3C (World Wide Web Consortium)**.
 
 - Why need protocol
 
-### Syntax, Semantics và Synchronization
+### Syntax (cú pháp), semantics (ngữ nghĩa) và synchronization (đồng bộ)
+
+- **Syntax (cú pháp):** cấu trúc và định dạng bit/trường dữ liệu. **Semantics (ngữ nghĩa):** ý nghĩa của từng trường và hành động cần thực hiện. **Synchronization/timing (đồng bộ/thời điểm):** khi nào gửi, tốc độ nào và thứ tự trao đổi.
 
 - Nếu không tuân thủ các quy tắc đặt ra của protocol thì các nodes sẽ không biết cách trao đổi dữ liệu với nhau, nodes nhận được data có thể sẽ không hiểu/ giải được data đó dẫn đến việc truyền tải không thể chính xác
 
@@ -1175,7 +1199,7 @@ Các lỗi phổ biến:
 
 - Không có cách nào để quản lý luồng dữ liệu, dẫn tới data có thể truyền quá nhanh/ quá chậm làm tắc nghẽn mạng/ gây delay đáng kể
 
-- Các protocol thường tích hợp với các phương thức bảo mật data trong quá trình truyền tải + message encoding + message formatting, encapsulation + message timing + message size,...
+- Protocol có thể quy định **message encoding (cách mã hóa dữ liệu thành bit/ký tự)**, **message formatting (bố cục thông điệp)**, **encapsulation (đóng gói dữ liệu tầng trên vào đơn vị của tầng dưới)**, timing và message size.
 
 - Protocol giúp xác thực các bên tham gia giao tiếp, nếu không có protocol thì không có cách nào mà đảm bảo rằng thông tin đến từ 1 nguồn hợp lệ/ người nhận có quyền nhận thông tin đó
 
@@ -1185,7 +1209,7 @@ Các lỗi phổ biến:
 
 - Được dùng để đo lường lượng dữ liệu có thể truyền qua 1 kênh truyền (có dây/ không dây) trong 1 giây
 
-- **Đơn vị thường dùng là:** Mbps (Megabit/ giây), Gbps (Gigabit/ giây), Kbps (Kilobit/ giây) ⇒ Băng thông cao thì dữ liệu đi qua càng nhiều, nhanh >< Băng thông thấp dữ liệu sẽ có gặp tình trạng tắc nghẽn, tốc độ truyền chậm.
+- Đơn vị thường dùng: **Kbps/Mbps/Gbps (kilobit/megabit/gigabit mỗi giây)**. Chữ `b` thường là bit; chữ `B` trong `MB/s` là byte và `1 byte = 8 bit`.
 
 - **Các yếu tố có thể ảnh hưởng tới băng thông như:** loại kết nối, gói cước nhà mạng, số lượng người dùng chung,...
 
@@ -1213,7 +1237,7 @@ Các lỗi phổ biến:
 
 - • 1 row = 50 KB → 1,000,000 rows = 50,000,000 KB = 48,828.125 MB = ≈47.68 GiB.
 
-### Bandwidth, Throughput, Delay và Packet loss
+### Bandwidth (băng thông), throughput (thông lượng), delay (độ trễ) và packet loss (mất gói)
 
 - **Nếu đọc toàn bộ:**
 
@@ -1245,11 +1269,11 @@ Các lỗi phổ biến:
 
 - Có một số trường hợp đặc biệt truyền thẳng mà không chia packet như: truyền dữ liệu thời gian thực dùng UDP gửi nguyên khối, không đảm bảo tin cậy nhưng nhanh hơn;  Hoặc trong mạng nội bộ tốc độ cao, đôi khi truyền nguyên frame lớn
 
-## TCP/IP model
+## TCP/IP model (mô hình TCP/IP)
 
-### Application Layer
+### Application Layer (tầng ứng dụng)
 
-- **OSI (Open System Interconnection):** là mô hình lý thuyết tiêu chuẩn (tức là chỉ là để cho dễ hiểu thôi) để mô tả cách thức hệ thống mạng hoạt động.
+- **OSI:** mô hình tham chiếu chia giao tiếp mạng thành 7 tầng để dễ học, thiết kế và khoanh vùng lỗi. Nó không phải một phần mềm chạy trong máy; đây là khung tư duy, ví dụ lỗi cáp thuộc Physical layer còn lỗi IP route thuộc Network layer.
 
 - OSI chia quy trình truyền dữ liệu qua mạng thành 7 layer nhỏ hơn, mỗi layer là một chức năng, nhiệm vụ riêng biệt.
 
@@ -1257,7 +1281,7 @@ Các lỗi phổ biến:
 
 - → Tuy nhiên trong thực tế, mô hình sử dụng phổ biến là TCP/IP chỉ có 4 layer còn OSI thường sử dụng để làm chuẩn để giảng dạy, tham chiếu.
 
-- Application Layer =  Application (giao thức sử dụng là gì) + Presentation (mã hóa) + Session (quản lý phiên)
+- Trong mô hình TCP/IP, Application layer thường gộp chức năng của ba tầng OSI: **Application (dịch vụ cho ứng dụng)**, **Presentation (biểu diễn/mã hóa dữ liệu)** và **Session (quản lý phiên giao tiếp)**.
 
 - Layer này tương tác trực tiếp với người dùng, cung cấp giao diện thân thiện cho người dùng + nhận yêu cầu của người dùng, chuyển thành các message đại diện cho yêu cầu của người dùng.
 
@@ -1265,9 +1289,9 @@ Các lỗi phổ biến:
 
 - **VD:** khi mở trình duyệt lên, bật google lên -> trình duyệt sử dụng HTTP để gửi request tới máy chủ google -> máy chủ phản hồi bằng trang web google
 
-- **Sử dụng các giao thức như:** HTTP, IMAP, SMTP, DNS, Telnet/ SSH, ... (tùy vào loại ứng dụng đang sử dụng)
+- Giao thức thường gặp gồm HTTP, **IMAP (Internet Message Access Protocol: truy cập và đồng bộ email trên server)**, SMTP, DNS, **Telnet (giao thức terminal từ xa không mã hóa)** và SSH.
 
-### Transport Layer
+### Transport Layer (tầng vận chuyển)
 
 - **Đơn vị dữ liệu:** message/ data, là dữ liệu thuần túy của application, chưa thêm thông tin gì
 
@@ -1275,39 +1299,39 @@ Các lỗi phổ biến:
 
 - ⇒ Có thể nói layer này là cầu nối giữa người sử dụng và mạng máy tính, cung cấp các giao thức để ứng dụng giao tiếp qua mạng, xác định cách ứng dụng trao đổi dữ liệu qua mạng.
 
-- **Transport Layer:** phụ trách vận chuyển dữ liệu từ process máy nguồn tới process máy đích một cách hiệu quả
+- **Transport layer:** nối process nguồn với process đích bằng port. Nó giải quyết “ứng dụng nào trên máy cần nhận dữ liệu” và, với TCP, cung cấp độ tin cậy cùng kiểm soát luồng/tắc nghẽn.
 
 - **Sử dụng các giao thức như:** UDP (không kết nối nên không cần 3-way handshake, không kiểm tra lỗi, không chờ xác nhận, phù hợp với application real-time), TCP (an toàn hơn, kiểm tra lỗi dùng checksum, yêu cầu gửi lại nếu mất packet nhưng chậm hơn, dùng cho web, email, download file)
 
-- **Đơn vị dữ liệu:** Segment (TCP), Datagram (UDP); dữ liệu được chia thành các khối nhỏ từ message, thêm các thông tin bổ trợ cho các message để biết là cần gửi đến process nào.
+- **Protocol Data Unit - PDU (đơn vị dữ liệu giao thức):** ở Transport layer thường gọi là **segment** với TCP và datagram với UDP.
 
 - Mỗi application đang chạy có 1 port riêng, Transport layer sử dụng port này để định tuyến message tới đúng process đang chạy này.
 
-- **Kiểm soát luồng:** điều chỉnh tốc độ gửi nếu nghẽn mạng
+- Kiểm soát luồng điều chỉnh theo máy nhận; kiểm soát tắc nghẽn điều chỉnh theo tình trạng mạng — hai khái niệm liên quan nhưng không giống nhau.
 
 - ⇒ Layer này giúp gửi message giữa các application trên các thiết bị khác nhau + quyết định cách message được gửi đi + đảm bảo application nhận đúng dữ liệu dựa vào port + không quan tâm máy đích là máy nào, chỉ quan tâm là ứng dụng nào cần nhận thông điệp
 
-### Network Layer
+### Network Layer (tầng mạng)
 
-- **Network Layer:** phụ trách việc dẫn packet từ máy nguồn tới máy đích, thậm chí xuyên qua nhiều mạng trung gian (router) khác nhau (router, IP hoạt động giữa các mạng với nhau)
+- **Network layer:** đưa packet từ host nguồn tới host đích qua nhiều router bằng địa chỉ IP và routing. Nó giải quyết phạm vi liên mạng, nơi MAC/Link layer đơn lẻ không thể đi xuyên nhiều mạng.
 
 - **Giải quyết vấn đề của Link layer không làm được là:** định tuyến xuyên qua các mạng vật lý khác nhau
 
 - **Sử dụng giao thức như:** IP, ICMP (internet control message protocol), routing protocol, IPSec (bảo mật IP packet), ARP
 
-- **Đơn vị dữ liệu:** packet, mỗi packet có Header chứa source IP, destination IP, TTL, thông tin phân mảnh,... + Payload: dữ liệu tầng Transport
+- Packet IP có header gồm source/destination IP, **TTL (Time To Live: giới hạn số router packet được đi qua)** hoặc Hop Limit ở IPv6 và các trường điều khiển khác.
 
 - Xác định đường đi tối ưu cho packet qua nhiều mạng trung gian (Router dựa vào destination IP, bảng định tuyến để gửi packet sang bước tiếp theo)
 
 - **Forwarding:** hành động thực tế của router, nhận packet từ cổng này và chuyển tiếp nó ra cổng khác dẫn tới router tiếp theo cho tới đích
 
-- **Logical Addressing:** tầng này gán cho mỗi thiết bị 1 Private IP
+- **Logical addressing (địa chỉ logic):** dùng địa chỉ IP để xác định interface/prefix. Địa chỉ có thể là private hoặc public, IPv4 hoặc IPv6; Network layer không mặc nhiên “gán private IP”.
 
 - ⇒ Layer này giúp xác định đường đi (routing), tìm đường đi ngắn nhất, phù hợp nhất với tình trạng mạng + thực hiện truyền packet từ nguồn tới đích qua nhiều mạng trung gian + chia nhỏ packet nếu cần + quan tâm máy đích là máy nào, không quan tâm ứng dụng nào của máy đích nhận thông điệp.
 
-### Link Layer
+### Link Layer (tầng liên kết)
 
-- **Link Layer:** phụ trách việc truyền dữ liệu đi (Network layer lo việc đi đâu >< Link layer lo việc đi như thế nào trên chặng đường cụ thể)
+- **Link layer:** vận chuyển frame qua một chặng/link cụ thể, ví dụ laptop → access point hoặc switch → router. Mỗi khi packet đi sang link mới, frame và địa chỉ MAC có thể được tạo lại.
 
 - Vai trò chính là thiết lập, duy trì, quản lý việc truyền dữ liệu giữa 2 thiết bị trên 1 đường truyền vật lý + nhận packet từ network và chuẩn bị chúng để truyền đi trên phương tiện vật lý.
 
@@ -1319,7 +1343,7 @@ Các lỗi phổ biến:
 
 - IP là địa chỉ logic, dùng để xác định đích cuối cùng >< MAC là địa chỉ vật lý, dùng để chuyển dữ liệu trong mạng cục bộ (Switch, card mạng hoạt động ở Link layer, không hiểu IP)
 
-- **Framing:** nhận packet, bọc chúng thành các frame bằng cách thêm MAC nguồn, MAC đích
+- **Framing (đóng khung):** bọc packet thành frame và thêm header/trailer tầng liên kết, ví dụ source/destination MAC và CRC.
 
 - **Trong mỗi liên kết vật lý:** Host -> router -> router -> … Sau mỗi lần chuyển tới thiết bị tiếp theo, source & destination MAC sẽ được thay đổi lại.
 
@@ -1327,19 +1351,19 @@ Các lỗi phổ biến:
 
 *Link Layer*
 
-### Physical Layer
+### Physical Layer (tầng vật lý)
 
-- **Physical Layer:** phụ trách việc truyền các bit dữ liệu qua phương tiện truyền dẫn từ thiết bị này sang thiết bị khác
+- **Physical layer:** biến bit thành tín hiệu điện, ánh sáng hoặc sóng vô tuyến và truyền qua môi trường vật lý. Nó giải quyết đầu nối, tần số, điện áp, tốc độ tín hiệu và cách mã hóa bit, không hiểu IP hay ứng dụng.
 
 - **Dạng dữ liệu:** chuyển đổi các bit nhị phân 1, 0 thành tín hiệu vật lý (điện, ánh sáng, sóng radio,...) để truyền qua môi trường truyền dẫn (có dây/ không dây)
 
 - Xác định đặc tính vật lý của phương tiện truyền dẫn → quyết định cách thức các bit được mã hóa tín hiệu dựa trên phương tiện truyền dẫn vừa xác định + xác định số lượng bit được truyền đi trong 1s
 
-- **Sử dụng các thiết bị như:** repeater, hub, modem, media converter,...
+- Thiết bị thường gặp gồm repeater, hub, modem và **media converter (bộ chuyển đổi loại môi trường truyền, ví dụ Ethernet đồng sang quang)**.
 
 - **Sử dụng các giao thức như:** Ethernet, Wifi, USB, HDMI, Bluetooth,...
 
-### Workflow khi truy cập một website
+### Workflow (luồng xử lý) khi truy cập một website
 
 - **Workflow:** khi mở trình duyệt, truy cập vào https://www.google.com và nhấn enter
 
@@ -1375,25 +1399,25 @@ Các lỗi phổ biến:
 
 - Các máy nằm trên Network core sẽ không chạy ứng dụng người dùng mà chỉ để routing.
 
-- **Peer to peer:** là mô hình phi tập trung, client vừa là server chia sẻ trực tiếp dịch vụ với nhau.
+- **Peer-to-peer (P2P):** các máy tham gia có thể vừa tải vừa cung cấp dữ liệu cho nhau. Mục đích là phân tán tải và tài nguyên thay vì mọi thứ đi qua một server trung tâm; BitTorrent là ví dụ điển hình.
 
 - BitTorrent, Blockchain,...
 
-- **Client server:** là mô hình tập trung, nơi server cung cấp dịch vụ, client yêu cầu và sử dụng dịch vụ.
+- **Client-server:** server tập trung cung cấp dịch vụ, còn client chủ động yêu cầu. Mô hình này giúp quản lý dữ liệu, quyền và cập nhật tập trung; ví dụ trình duyệt gọi API của web server.
 
-- **server:** ứng dụng cung cấp dịch vụ (luôn sẵn sàng chờ đợi yêu cầu của ứng dụng người dùng nên nó luôn luôn phải được chạy + luôn có tên miền cố định + ứng dụng này nằm trong các data center để có thể dễ dàng scale)
+- **Server (máy chủ/chương trình phục vụ):** process lắng nghe request và trả response. Server không bắt buộc phải có domain cố định hay nằm trong data center, dù dịch vụ công khai thường được triển khai như vậy.
 
-- **client:** ứng dụng dành cho người dùng cuối (việc khởi tạo kết nối tới server nằm ở client + kết nối này có thể không liên tục + không cần cố định địa chỉ IP vì ai cũng có thể kết nối tới server + các client thường không kết nối trực tiếp tới nhau mà thông qua server vì VD: ta gửi tin nhắn cho 1 người nhưng họ không bật máy thì sẽ không thể gửi được >< con server luôn bật, lưu tin nhắn nếu người dùng không hoạt động).
+- **Client (máy khách/chương trình khách):** process thường chủ động khởi tạo request hoặc kết nối tới server; ví dụ trình duyệt, ứng dụng email hoặc app điện thoại.
 
-- Process là ứng dụng mà đang chạy thì được gọi là process (Có thể vào Task manager để xem những ứng dụng đang chạy ở tab Process)
+- **Process (tiến trình):** một chương trình đang chạy cùng vùng nhớ, tài nguyên và trạng thái thực thi của nó.
 
-- Nếu 2 process trong cùng thiết bị mà muốn communicate với nhau thì sử dụng Inter-process communication (được cung cấp bởi OS)
+- Hai process cùng máy có thể dùng **IPC (Inter-Process Communication: cơ chế giao tiếp liên tiến trình)** như pipe, shared memory hoặc local socket do **OS (Operating System: hệ điều hành)** cung cấp.
 
 - Nếu 2 process khác thiết bị muốn communicate với nhau thì phải thông qua message.
 
 - IP giúp biết chuyển message tới thiết bị nào >< Port giúp biết chuyển message tới process nào (bản thân DNS sẽ phân giải cả IP, Port để biết cần gửi cho máy nào, process nào)
 
-### Mối quan hệ giữa Application Layer và Transfer Layer
+### Mối quan hệ giữa Application Layer và Transport Layer
 
 ![Yêu cầu truyền tải của các ứng dụng](assets/image53.png)
 
@@ -1403,53 +1427,51 @@ Các lỗi phổ biến:
 
 *Hình 64*
 
-- Các dịch vụ ở tầng trên phụ thuộc vào dịch vụ cung cấp ở tầng bên dưới -> khi các ứng dụng hoạt động phải dựa vào Transfer Layer ở bên dưới.
+- Các dịch vụ ở tầng trên phụ thuộc vào dịch vụ của Transport Layer bên dưới.
 
-- **Data integrity:** liên quan tới tính toàn vẹn dữ liệu cao như gửi file, gửi mail thì muốn gửi đi thế nào nhận y thế -> cần việc truyền dữ liệu đáng tin cậy 100%
+- **Data integrity (tính toàn vẹn dữ liệu):** dữ liệu nhận không bị thay đổi ngoài ý muốn so với dữ liệu gửi; ví dụ file tải về phải có nội dung chính xác.
 
-- **Timing:** liên quan tới việc dữ liệu truyền đi nhanh chóng mà không cần đảm bảo chính xác hoàn toàn như: gọi điện (mất vài âm, xoẹt xoẹt nhưng cũng chẳng ảnh hưởng tới cuộc trò chuyện, chấp nhận mất mát nhất định), chơi game ⇒ Transfer layer không cần đảm bảo, miễn nhanh là được.
+- **Timing (yêu cầu thời gian):** ứng dụng tương tác như gọi điện hoặc game nhạy với delay/jitter và có thể chấp nhận một lượng mất mát nhỏ hơn là dữ liệu đến quá muộn.
 
 - **Throughput:** một vài ứng dụng yêu cầu thông lượng tối thiểu như xem phim online, streaming,... truyền đi dữ liệu lớn hỗn hợp cả hình ảnh, âm thanh,... yêu cầu băng thông đạt tới mức độ nhất định.
 
-## Web and HTTP
+## Web and HTTP (Web và giao thức HTTP)
 
-### Web page, Website và Object
+### Web page (trang web), website và web object (tài nguyên web)
 
-- Web page (trang web) là 1 tài liệu thường được viết bằng HTML, có thể được hiển thị trong trình duyệt web (giống như 1 trang trong quyển sách nhưng ở dạng kỹ thuật số)
+- **Web page (trang web):** tài liệu/tài nguyên được trình duyệt hiển thị, thường có tài liệu **HTML (HyperText Markup Language: ngôn ngữ đánh dấu cấu trúc nội dung web)** làm nền.
 
-- Tập hợp các Web page liên kết với nhau dưới dạng tên miền chung thì tạo thành 1 Website (trang mạng)
+- **Website (trang mạng):** tập hợp web page và tài nguyên liên quan, thường được truy cập dưới cùng một domain.
 
-- chứa nhiều objects, có thể được lưu trên nhiều Web servers khác nhau
+- **Web object/resource (đối tượng/tài nguyên web):** một đơn vị có URL riêng như HTML, **CSS (Cascading Style Sheets: ngôn ngữ định kiểu giao diện)**, **JavaScript/JS (ngôn ngữ lập trình chạy trên web)**, ảnh **JPEG**, font hoặc audio.
 
-- Objects có thể là HTML file, JPEG, audio file, …
-
-- Mỗi web page đều chứa 1 HTML file cơ sở, nó sẽ tham chiếu tới các objects khác nhau thông qua url.
+- **URL:** chỉ ra cách và nơi lấy một resource: `https` là scheme, `example.com` là host và `/images/logo.png` là path. Trình duyệt dùng các phần này để chọn protocol, tìm server và yêu cầu đúng object.
 
 ![Cấu trúc URL](assets/image24.png)
 
 *Cấu trúc URL*
 
-- Khi truy cập url như google.com, trình duyệt gửi 1 HTTP request qua mạng internet đến server lưu trữ web page đó → server nhận được yêu cầu, tìm kiếm các tệp tin (HTML, CSS, JS, image,...) cần thiết cho web page mà mình muốn xem, gửi chúng trở lại trình duyệt dưới dạng packet → trình duyệt nhận được packet, lắp ráp, render HTML, CSS, JS để hiển thị web page hoàn chỉnh lên màn hình.
+- Trình duyệt gửi HTTP request tới server, nhận các resource rồi **render (phân tích và dựng giao diện hiển thị)** HTML/CSS/JS thành trang hoàn chỉnh.
 
-### Hosting
+### Hosting (dịch vụ lưu trữ/vận hành)
 
-- **Hosting:** là dịch vụ cho thuê chỗ trên các máy chủ, giúp lưu trữ: code, văn bản, hình ảnh, database,... luôn bật 24/7
+- **Hosting (dịch vụ lưu trữ/vận hành website):** cung cấp server, storage, network và môi trường chạy để website có thể phục vụ người dùng.
 
 - Khi gõ tên miền vào trình duyệt, trình duyệt sẽ kết nối tới máy chủ hosting, tải toàn bộ dữ liệu từ hosting về trình duyệt
 
-- **Shared hosting:** thuê hosting dùng chung với nhiều người thuê khác, rẻ nhưng bị ảnh hưởng tài nguyên vì dùng chung với các người thuê khác
+- **Shared hosting (lưu trữ dùng chung):** nhiều website dùng chung hệ điều hành/tài nguyên server; chi phí thấp nhưng khả năng kiểm soát và cách ly hạn chế.
 
-- **VPS (máy chủ riêng ảo):** cũng hosting chung với nhiều người thuê khác trên 1 máy tính (chia 1 máy chủ vật lý thành các máy chủ con độc lập), tuy nhiên phần tài nguyên của từng người thuê sẽ được cố định, riêng tư, vì vậy cũng đắt hơn chút, đòi hỏi hơn về kiến thức kỹ thuật cũng như quản lý.
+- **VPS (Virtual Private Server: máy chủ riêng ảo):** máy ảo có hệ điều hành và phần tài nguyên riêng, chạy cùng máy vật lý với các VPS khác.
 
-- **Virtualization Technology (công nghệ ảo hóa):** một máy chủ vật lý mạnh với CPU nhiều core, RAM lớn, ổ cứng SSD được cài phần mềm ảo hóa (như VMWare, KVM, Hyper-V) giúp chia máy chủ vật lý thành nhiều máy ảo độc lập, mỗi máy ảo tương ứng 1 VPS.
+- **Virtualization (ảo hóa):** dùng hypervisor chia tài nguyên máy vật lý thành nhiều VM cách ly tương đối. **CPU** là bộ xử lý, **RAM** là bộ nhớ làm việc và **SSD** là ổ lưu trữ thể rắn.
 
 - Mỗi VPS có hđh riêng (Window server/ các bản phân phối linux như CentOS, Ubuntu,...) + một phần CPU, RAM, ổ cứng được cấp phát riêng cho từng VPS
 
-- **Dedicated Server:** thuê nguyên 1 máy chủ vật lý, toàn bộ tài nguyên là riêng của mình, vì vậy hiệu năng mạnh mẽ hơn, bảo mật cao, toàn quyền kiểm soát tài nguyên, nhưng giá thành sẽ cao hơn (phù hợp website lớn, lượng truy cập khổng lồ)
+- **Dedicated server (máy chủ vật lý thuê riêng):** toàn bộ máy vật lý dành cho một khách hàng.
 
-- **Cloud hosting:** website được host trên mạng lưới nhiều máy chủ kết nối với nhau, cực kỳ ổn định, dễ dàng mở rộng tài nguyên ngay lập tức, chỉ trả tiền cho những gì mình dùng (phù hợp với mọi website, đặc biệt với loại website biến động về lưu lượng truy cập nhiều)
+- **Cloud hosting (lưu trữ trên hạ tầng đám mây):** chạy website trên tài nguyên ảo hóa có thể cấp phát/co giãn qua nền tảng cloud; độ ổn định vẫn phụ thuộc thiết kế nhiều vùng, backup và cách triển khai.
 
-### Domain
+### Domain (tên miền)
 
 - **Domain (tên miền):** là địa chỉ website, là phần mà mọi người gõ vào thanh địa chỉ của trình duyệt để truy cập website (VD: google.com, youtube.com, facebook.com,…)
 
@@ -1459,17 +1481,17 @@ Các lỗi phổ biến:
 
 - **Cấu trúc:** subdomain . second-level-domain . top-level-domain . (root)
 
-- **Root domain:** dấu chấm cuối cùng trong tên miền, đại diện cho gốc của hệ thống tên miền. Từ Root domain đổ đi sẽ bị ẩn bởi trình duyệt (đó là lý do tại sao gõ google.com thì trên thanh url của trình duyệt chỉ hiển thị google).
+- **DNS root (gốc DNS):** đỉnh của cây tên miền, biểu diễn bằng dấu chấm cuối trong tên miền đầy đủ như `www.example.com.`; trình duyệt thường không hiển thị dấu chấm này.
 
-- **Top-level domain (TLD):** phần đuôi miền, là phần cuối cùng của domain, đứng sau Root domain (tức đứng sau dấu (.) cuối cùng của domain), bị ẩn đi trên thanh url của trình duyệt → cho biết loại hình/ phạm vi hoạt động của website
+- **TLD (Top-Level Domain: tên miền cấp cao nhất):** nhãn ngay dưới root như `.com`, `.org`, `.vn`.
 
 ![Hình 66](assets/image26.png)
 
 *Hình 66*
 
-- **Second-level domain (SLD):** là tên chính của domain, nằm ngay trước TLD, là phần độc nhất do ta tự lựa chọn và đăng ký (youtube.com thì youtube là SLD)
+- **SLD (Second-Level Domain: tên miền cấp hai):** nhãn ngay bên trái TLD, ví dụ `example` trong `example.com`.
 
-- **Subdomain:** tên miền phụ, là phần mở rộng tách ra từ tên miền chính, đứng ở phía trước SLD (www.youtube.com thì www là 1 subdomain)
+- **Subdomain (tên miền con):** nhãn nằm bên trái domain cha, ví dụ `api` trong `api.example.com`.
 
 - Khi có Domain chính rồi, ta có thể tạo vô hạn subdomain hoàn toàn miễn phí + và subdomain có thể trỏ tới server khác tùy vào cấu hình
 
@@ -1479,11 +1501,11 @@ Các lỗi phổ biến:
 
 ### HTTP
 
-- HTTP (hypertext transfer protocol): là giao thức thuộc Application layer được sử dụng để truyền tải dữ liệu giữa Client và Server trên mạng internet
+- **HTTP:** giao thức quy định client biểu diễn request và server biểu diễn response như thế nào. Mục đích là tạo một ngôn ngữ chung cho Web và API; ví dụ trình duyệt gửi `GET /products/1`, server trả status `200`, header và JSON/HTML trong body.
 
 - Mỗi khi nhấp vào 1 link/ nhập 1 địa chỉ web vào trình duyệt, ta đang khởi tạo 1 HTTP request và gửi tới server → sau đó thì server sẽ xử lý và gửi lại HTTP response.
 
-- HTTP hoạt động dựa trên mô hình Client - server: trình duyệt thiết lập kết nối TCP tới web server thông qua 1 port mặc định (thường là port 80 cho HTTP) → trình duyệt gửi 1 HTTP request đến server chứa các thông tin như: HTTP method, URL, Header, Body,... → server nhận request, xử lý, gửi lại HTTP response cho trình duyệt chứa các thông tin: Status Code, Response header, Response body,... → Sau khi phản hồi được gửi đi, kết nối sẽ bị đóng
+- **HTTP request (yêu cầu HTTP)** gồm method, URL/path, header và body tùy chọn. **HTTP response (phản hồi HTTP)** gồm **status code (mã kết quả như `200`, `404`)**, header và body. HTTP/1.1 và HTTP/2 thường chạy trên TCP; HTTP/3 chạy trên QUIC/UDP.
 
 ![HTTP status code](assets/image56.png)
 
@@ -1491,7 +1513,7 @@ Các lỗi phổ biến:
 
 - HTTP hoạt động dựa trên giao thức TCP/IP: HTTP là nội dung request + TCP đóng vai trò chia nhỏ, đánh số request để đảm bảo request đến đúng nơi nhận + IP đóng vai trò làm người chỉ dẫn request tới đúng nơi nhận (routing). Lý do phải dựa trên TCP/IP là vì HTTP không quan tâm dữ liệu được vận chuyển thế nào, chỉ định ra nội dung giao tiếp → cần TCP/IP để nội dung này đến đúng nơi nhận.
 
-- **Stateless:** HTTP là 1 giao thức không trạng thái, tức mỗi request sẽ đều độc lập, server sẽ không nhớ bất kỳ thông tin nào về các request trước đó → mỗi request cần phải gửi thêm định danh/ context.
+- **Stateless:** bản thân HTTP không yêu cầu server nhớ request trước để hiểu request sau. Điều này giúp request dễ phân phối qua nhiều server; nếu ứng dụng cần đăng nhập hoặc giỏ hàng, nó bổ sung cookie, token hoặc session.
 
 ### HTTP/0.9
 
@@ -1519,7 +1541,7 @@ Các lỗi phổ biến:
 
 - Hỗ trợ HTTP header để cung cấp thêm context cho cả request, response: loại trình duyệt, hệ điều hành đang sử dụng của thiết bị, loại dữ liệu mà server cần xử lý, loại dữ liệu trong response, kích thước response,... → nhờ Content-Type header, web không chỉ còn là văn bản mà có thể chứa cả hình ảnh, âm thanh và các định dạng khác → biến website trở thành nền tảng đa phương tiện
 
-- **Hỗ trợ HTTP method khác ngoài GET:** HEAD, POST → cung cấp POST để cho phép người dùng gửi dữ liệu, mở ra kỷ nguyên của biểu mẫu, bình luận, giao dịch,... → tạo nền tảng cho sự tương tác
+- **HTTP method (phương thức HTTP):** biểu thị hành động mong muốn; `GET` lấy resource, `HEAD` lấy header không lấy body, `POST` gửi dữ liệu/xử lý một yêu cầu.
 
 - Tuy nhiên vẫn còn nhược điểm là kết nối không liên tục như HTTP 0.9, 1 TCP mới được thiết lập cho mỗi request và bị đóng ngay sau khi hoàn thành → gây hiệu suất thấp do mỗi lần request đều phải 3-way handshake.
 
@@ -1527,19 +1549,19 @@ Các lỗi phổ biến:
 
 - HTTP 1.1: là phiên bản update, khắc phục những điểm yếu về hiệu suất, tính năng của HTTP 1.0, là phiên bản sử dụng phổ biến suốt gần 2 thập kỷ qua.
 
-- **Persistent Connections:** thay vì mỗi request cần TCP connection mới, gây độ trễ thì HTTP 1.1 cung cấp Connection: keep-alive header giúp 1 TCP connection có thể sử dụng cho nhiều request/ response → giảm đáng kể độ trễ so với 3-way handshake liên tục với mỗi request, giảm tải cho cả client, server.
+- **Persistent connection/keep-alive:** giữ TCP connection để nhiều HTTP request dùng lại. Mục đích là tránh lặp lại handshake và slow start cho từng resource.
 
-- **Pipeline:** client có thể gửi nhiều request liên tiếp mà không cần chờ phản hồi cho từng cái >< Head-of Line Blocking: nếu request đầu tiên xử lý chậm, tất cả các request sau nó sẽ phải đợi request đầu xử lý, response xong rồi các request sau mới được response + ta có thể không bật pipeline thì sẽ không gặp vấn đề này, nhưng từng request/ response sẽ lần lượt trên 1 TCP/IP → vẫn sử dụng nhiều TCP connection đồng thời.
+- **HTTP pipelining:** client gửi nhiều request liên tiếp trên HTTP/1.1 trước khi nhận response. Nó định giảm thời gian chờ nhưng response vẫn phải đúng thứ tự, nên request đầu chậm sẽ giữ các request sau; vì vậy ít được dùng.
 
-- HTTP 1.0 thì 1 máy chủ vật lý chỉ có thể host 1 website vì không có cách nào để phân biệt, → HTTP 1.1 cung cấp Host header bắt buộc cho mọi request, lợi ích là support Virtual hosting, cho phép nhiều website với các domain khác nhau cùng chia sẻ 1 IP, 1 máy chủ vật lý
+- **Host header:** cho biết domain mà client muốn truy cập. Nó hỗ trợ **virtual hosting (nhiều website/domain dùng chung một IP hoặc server)**.
 
-- **Caching mạnh mẽ:**
+- **Caching:** giữ bản sao response gần người dùng để không phải tải hoặc xử lý lại mỗi lần. Nó giảm latency, bandwidth và tải server; `Cache-Control` quy định thời gian dùng lại, còn `ETag` giúp kiểm tra bản sao đã cũ chưa.
 
 ![Hình 69](assets/image78.png)
 
 *Hình 69*
 
-- **Hỗ trợ Chunked Transfer Encoding:**
+- **Chunked Transfer Encoding (mã hóa truyền theo từng khối):** HTTP/1.1 cho phép server gửi body dần khi chưa biết trước tổng kích thước.
 
 ![Hình 70](assets/image6.png)
 
@@ -1559,17 +1581,17 @@ Các lỗi phổ biến:
 
 *So sánh HTTP/1.1 và HTTP/2*
 
-- HTTP 2.0 được xây dựng dựa trên SPDY protocol của Google, giải quyết hầu hết vấn đề của HTTP 1.1, tăng hiệu suất sử dụng băng thông, giảm độ trễ.
+- HTTP/2 kế thừa nhiều ý tưởng từ **SPDY (giao thức thử nghiệm của Google nhằm tăng tốc Web)**, dùng framing nhị phân và multiplexing.
 
-- **Multiplexing over Single Connection:** cho phép gửi, nhận nhiều request/ response đồng thời trên cùng 1 TCP connection mà không cần phải đợi như HTTP 1.1 → đã giải quyết được Head-of-line blocking + cũng cho phép bật độ ưu tiên của từng request (CSS, JS ưu tiên thì lấy trước, request lấy ảnh ở tận phía dưới màn hình cần cuộn chuột thì lấy sau,...) >< nếu 1 packet hỏng/ thất lạc, toàn bộ kết nối TCP sẽ dừng lại để chờ packet đó được gửi lại
+- **HTTP/2 multiplexing:** chia request-response thành frame có stream ID rồi xen kẽ nhiều stream trên một TCP connection. Mục đích là request chậm ở tầng HTTP không phải chặn toàn bộ request khác; tuy nhiên mất packet TCP vẫn có thể làm mọi stream chờ truyền lại.
 
-- Mỗi request được gán stream id để giúp phân biệt từng request với nhau + mỗi frame của từng request được gán stream id tương ứng + chúng được trộn lẫn với nhau và gửi qua 1 TCP duy nhất → sau khi nhận response thì mỗi frame cũng được gán stream id để nhận biết là response của request nào, lắp ghép lại rồi hiển thị lên màn hình.
+- **Stream ID (mã luồng):** số định danh giúp HTTP/2 ghép các frame về đúng request-response logic.
 
 - HTTP 2 được chuyển sang hệ nhị phân, các frame được thiết kế để máy tính phân tích nhanh, hiệu quả hơn nhiều
 
-- **HPACK:** giúp nén header để giảm kích thước khi truyền/ nhận dữ liệu trên internet bằng cách: duy trì bảng tra cứu các header đã được sử dụng trước đó, chỉ gửi sự khác biệt trong các request tiếp theo.
+- **HPACK:** cơ chế nén header của HTTP/2 bằng bảng tĩnh/động và mã hóa hiệu quả để tránh lặp lại toàn bộ header.
 
-- **Server push:** server có thể tự động đẩy các tài nguyên như CSS, JS, ảnh,... về client ngay cả khi client không yêu cầu chúng dựa trên dự đoán rằng client sẽ cần gì (Kiểu lần đầu load HTML, trả về client, đồng thời trả thêm CSS, JS mà không cần client request).
+- **Server Push (đẩy tài nguyên chủ động):** HTTP/2 từng cho phép server gửi resource trước khi client request; tính năng này ít được dùng và nhiều browser đã ngừng hỗ trợ do hiệu quả thực tế hạn chế.
 
 ## Email, SMTP, IMAP
 
@@ -1579,13 +1601,13 @@ Các lỗi phổ biến:
 
 *Hệ thống thư điện tử*
 
-- **User agent:** trình đọc thư, soạn thư (outlook, gmail,…) ⇒ có thể nói là ứng dụng mà người dùng sử dụng để gửi/ nhận email
+- **Mail user agent - MUA (ứng dụng thư của người dùng):** phần mềm soạn, gửi, đọc và quản lý email, ví dụ Outlook hoặc ứng dụng Gmail.
 
-- **Mail server:** nơi nhận mail từ người gửi, lưu lại chúng + user agent sẽ kiểm tra thư đến, nếu có sẽ lấy về để đọc
+- **Mail server (máy chủ thư):** hệ thống nhận, chuyển tiếp và lưu email cho domain/người dùng.
 
-- **Outgoing message queue:** khi 1 thư gửi từ user tới mail server, thư chưa được chuyển đi ngay mà đưa vào queue + dần dần gửi tới mail server đích qua SMTP + nếu server đích lỗi thì thư được giữ lại ở Retry queue và gửi lại sau
+- **Outgoing message queue (hàng đợi thư đi):** giữ email chờ gửi; **retry queue (hàng đợi thử lại)** giữ thư tạm thời khi server đích chưa nhận được.
 
-- **User mailbox:** là nơi chứa thư đến, khi server đích nhận được thư, sẽ lưu vào mailbox của người nhận + sau đó user agent dùng IMAP hoặc POP3 để lấy thư từ mailbox
+- **Mailbox (hộp thư):** vùng lưu email và trạng thái thư của một người dùng trên mail server.
 
 ### Workflow trong hệ thống thư điện tử:
 
@@ -1597,7 +1619,7 @@ Các lỗi phổ biến:
 
 1. **B4:** Mail server (microsoft server) của người nhận kiểm tra giả mạo, spam, tính hợp lệ rồi thư lưu lại thư vào User mailbox
 
-1. **B5:** Người nhận thư mở User agent, kết nối tới Mail server qua IMAP/ POP3 để lấy thư.
+1. **B5:** Người nhận mở user agent, kết nối mail server qua IMAP hoặc **POP3 (Post Office Protocol version 3: giao thức tải email về client)**.
 
 ### Lý do phải có nhiều Mail server vì:
 
@@ -1611,23 +1633,23 @@ Các lỗi phổ biến:
 
 - Các công ty lớn như Google, Outlook, Yahoo,... xây dựng hệ thống mail phân tán, kết hợp với nhau qua các giao thức chuẩn để tạo thành mạng lưới thư điện tử toàn cầu
 
-- **DNS MX record (Mail exchange record):** là loại bản ghi DNS quan trọng, dùng để chỉ định Mail server nào có trách nhiệm nhận email khi gửi đến 1 domain cụ thể (khi gửi mail tới user@ptit.com, sẽ truy vấn tới DNS để tìm MX record của domain ptit.com, DNS trả về danh sách các mail server được ủy quyền nhận mail + yên tâm là mỗi mail server này đều có backup và độ ưu tiên riêng).
+- **MX record (Mail Exchanger record: bản ghi máy chủ nhận thư):** bản ghi DNS chỉ định mail server nhận email cho một domain và giá trị preference/priority giữa các server.
 
 ### SMTP
 
-- **SMTP (simple mail transfer protocol):** là giao thức thuộc Application sử dụng để truyền tải thư điện tử email
+- **SMTP:** giao thức dùng để đẩy email từ ứng dụng gửi lên mail server và giữa các mail server. Nó giải quyết khâu gửi/chuyển tiếp, không phải khâu đồng bộ hộp thư về thiết bị người dùng.
 
 - Sử dụng để truyền tải thư điện tử từ User agent tới Mail server hoặc giữa các Mail server
 
 - Thiết kế để gửi mail, không phải sử dụng để nhận mail.
 
-- Khi sử dụng giao thức này, Transfer layer sẽ sử dụng TCP để đảm bảo thông tin được gửi tới nơi một cách an toàn, đầy đủ.
+- SMTP thường sử dụng TCP ở Transport layer để truyền byte tin cậy; mã hóa đường truyền cần thêm TLS.
 
-- HTTP là client pull (Client chủ động lấy dữ liệu server về) >< SMTP là client push (Client push mail tới server)
+- **Pull (kéo dữ liệu):** client chủ động yêu cầu lấy dữ liệu. **Push (đẩy dữ liệu):** bên gửi chủ động chuyển dữ liệu tới bên nhận; SMTP là giao thức push giữa các mail server.
 
-- HTTP thì mỗi object (HTML, ảnh, css, js,...) sẽ được trả về trong 1 response riêng biệt (mỗi lần tham chiếu lại tạo 1 request) >< SMTP không gửi nhiều message riêng biệt mà gói toàn bộ object vào 1 mail duy nhất dưới dạng MIME multipart (nội dung text, các file đính kèm vào 1 message)
+- **MIME (Multipurpose Internet Mail Extensions):** chuẩn biểu diễn nội dung email ngoài văn bản ASCII, gồm loại nội dung, encoding, attachment và **multipart (một message chứa nhiều phần)**.
 
-- HTTP, SMTP thì đều sử dụng ASCII
+- **ASCII (American Standard Code for Information Interchange):** bảng mã ký tự 7 bit lịch sử; email hiện đại có thể mang Unicode/nội dung nhị phân nhờ MIME và các mở rộng SMTP.
 
 - SMTP sử dụng TCP persistent connection, giữ nguyên connection sau khi gửi message để tái sử dụng để gửi nhiều email thay vì mở gửi đóng liên tục (VD: khi gửi 1 mail nhưng cho nhiều người dùng thay vì mỗi lần gửi mail cho 1 user thì tạo 1 connection).
 
@@ -1635,9 +1657,9 @@ Các lỗi phổ biến:
 
 ### IMAP và POP3
 
-- IMAP (internet mail access protocol) là 1 giao thức thuộc Application layer sử dụng để User agent truy cập, quản lý mail trên Mail server.
+- **IMAP:** để ứng dụng email đọc và quản lý hộp thư vẫn nằm trên server. Mục đích là giữ thư mục, trạng thái đã đọc và thao tác đồng bộ giữa điện thoại, laptop và webmail.
 
-- POP3 tải toàn bộ mail về máy >< IMAP giữ mail trên server, chỉ lấy về phần nội dung cần thiết
+- **POP3:** cách lấy email đơn giản, truyền thống thường tải thư về một client và ít khả năng đồng bộ trạng thái. Nó phù hợp hơn với mô hình dùng một máy hoặc lưu thư cục bộ.
 
 - **Đồng bộ nhiều device:** do lưu mail trên server, mở ứng dụng thư điện tử trên nhiều thiết bị đều sẽ có chung trạng thái.
 
@@ -1647,29 +1669,29 @@ Các lỗi phổ biến:
 
 - Các thiết bị trong mạng internet có số định danh là IP (định dạng số) + con người thì không giỏi nhớ những con số, mong muốn sử dụng chuỗi có ý nghĩa để dễ nhớ hơn >< các máy tính chỉ hiểu và giao tiếp qua IP.
 
-- DNS (domain name system) là hệ thống phân giải tên miền trên internet (số điện thoại của internet)
+- **DNS:** cơ sở dữ liệu phân tán giúp ứng dụng tìm thông tin từ tên miền. Mục đích là tách tên ổn định, dễ nhớ khỏi IP có thể thay đổi; ngoài IP, DNS còn chỉ ra mail server, alias và nhiều thông tin dịch vụ khác.
 
 - **Sử dụng giao thức DNS ở Application layer:** khi người dùng gõ google.com thì gọi tới DNS để mapping sang IP
 
-- **Distributed database:** hệ thống DNS thì phân tán toàn cầu gồm hàng triệu máy chủ DNS
+- **Distributed database (cơ sở dữ liệu phân tán):** dữ liệu DNS được chia và sao chép trên nhiều server do nhiều tổ chức quản lý, không nằm trong một cơ sở dữ liệu trung tâm duy nhất.
 
 ![Hệ thống DNS phân cấp](assets/image11.png)
 
 *Hệ thống DNS phân cấp*
 
-- **Root DNS server:** máy chủ gốc, là cấp cao nhất trong hệ thống DNS (thực tế có 13 cụm Root server nhưng thực tế lại có ngàn bản sao phân tán trên khắp thế giới)
+- **Root name server:** điểm bắt đầu khi resolver chưa biết phải hỏi ai. Nó không giữ IP của mọi website mà chỉ giới thiệu name server phụ trách TLD như `.com` hoặc `.vn`.
 
-- **Khi browser cần phân giải tên miền (VD:** nyu.edu), nếu chưa có trong cache nó sẽ truy vấn tới Root server + Root server sẽ không trả về IP trực tiếp mà forward tới Top Level Domain của .edu.
+- Thông thường browser hỏi **recursive resolver (máy phân giải đệ quy: server thay client thực hiện chuỗi truy vấn và cache kết quả)**. Resolver mới lần lượt hỏi root, TLD và authoritative server khi cache chưa có dữ liệu.
 
-- Top Level Domain server (TDL DNS server) quản lý các miền cấp cao (VD:. com, .org, .edu, .vn,...) + khi được forward từ Root DNS server, nó tiếp tục forward tới Authoritative server của nyu.edu
+- **TLD name server:** quản lý delegation cho miền cấp cao như `.com`, `.org`, `.edu`, `.vn` và giới thiệu resolver tới authoritative server.
 
-- Authoritative server là nơi chứa IP cho nyu.edu thực sự, sau khi được forward từ TLD server, nó sẽ trả về IP thực sự.
+- **Authoritative name server:** nguồn trả lời chính thức cho record của một zone. Ví dụ khi hỏi IP `www.example.com`, đây là server cuối cùng có quyền trả record do chủ domain cấu hình.
 
-## Video streaming, Content distribution networks
+## Video streaming và Content Delivery Network
 
 ### Video streaming
 
-- Streaming video = encoding (mã hóa thành chất lượng khác nhau, đặt lên DNS khác nhau) + DASH (adaptive, dynamic theo tình trạng) + buffering.
+- **Video streaming:** tải và phát video từng phần thay vì chờ toàn bộ file. Mục đích là giảm thời gian bắt đầu phát và thích nghi với mạng thay đổi; hệ thống dùng nén video, segment, buffer và nhiều mức bitrate.
 
 - Chiếm phần lớn băng thông của internet (80% vào 2020) ⇒ thách thức là làm sao để mở rộng quy mô, tăng số lượng người truy cập đồng thời + sự ổn định khi người dùng ở từng khu vực địa lý, từng cách kết nối mạng (khu vực xa xôi hẻo lánh, 4G, dây,...) ⇒ cần xây dựng hệ thống phân tán trải rộng ra nhiều nơi + người dùng sẽ kết nối tới server gần mình nhất để xem.
 
@@ -1683,19 +1705,19 @@ Các lỗi phổ biến:
 
 - Băng thông sẽ thay đổi liên tục (mức độ tắc nghẽn tùy thời điểm sử dụng) + packet loss, delay do tắc nghẽn dẫn tới video bị vỡ, chậm, xoay tròn.
 
-- **Client-side buffer:** sử dụng để hạn chế vấn đề các packet gửi tới client bị chậm → client sử dụng vùng nhớ tạm buffer, tích trữ lượng dữ liệu tạm thời để client có thể xử lý trơn tru mà không phụ thuộc hoàn toàn vào tốc độ internet (VD: khi xem youtube, không phải cứ nhận packet tới đâu là sẽ phát video tới đó vì nếu đường truyền gặp vấn đề nhỏ cũng sẽ gây lag cho video → sử dụng Client-side buffer thì sẽ tải trước một phần video sau vào buffer, client sẽ phát video đã lưu tạm trong buffer thay vì lấy liên tục từ network nên dù network có vấn đề thì buffer vẫn giữ đoạn video sau đó và phát cho người dùng → lúc nào vào xem cũng hơi chậm lúc đầu một chút, kể cả mất wifi thì một lúc sau mới xảy ra hiện tượng không xem tiếp được video) + buffer cũng hạn chế được việc nếu packet gửi về quá nhanh, video sẽ không chạy nhanh mà phụ thuộc vào tốc độ phát của buffer.
+- **Client-side buffer (bộ đệm phía client):** vùng nhớ giữ trước vài giây video để hấp thụ dao động tốc độ mạng. Buffer cạn gây **rebuffering (video dừng để tải thêm)**.
 
-### DASH
+### DASH (Dynamic Adaptive Streaming over HTTP: truyền video thích ứng qua HTTP)
 
-- DASH (Dynamic Adaptive Streaming over HTTP) là một kỹ thuật quan trọng trong streaming video (Youtube, Netflix đều đang sử dụng).
+- **DASH:** chia video thành các segment ngắn, mỗi segment có nhiều mức bitrate. Client tự chọn bản phù hợp ở từng thời điểm: mạng nhanh thì tải chất lượng cao, mạng chậm hoặc buffer sắp cạn thì hạ chất lượng để tránh đứng hình.
 
-- Thay vì gửi nguyên cả video một lần, server chia video thành các đoạn nhỏ (chunks), mỗi đoạn (2-10s chẳng hạn) được mã hóa ở nhiều chất lượng khác nhau (144p, 360p,...) (VD: video 10p được chia thành 150 chunks với 4s/ chunk + mỗi chunk là 1 file .ts hoặc .m4s)
+- Server chia video thành **chunk/segment (đoạn nhỏ của nội dung)**, mỗi đoạn được mã hóa ở nhiều **bitrate (số bit dữ liệu mỗi giây, thường tương ứng mức chất lượng)**.
 
 ![Hình 75](assets/image5.png)
 
 *Hình 75*
 
-- Client sẽ lựa chọn phiên bản phù hợp nhất theo tốc độ mạng hiện tại (adaptive streaming)
+- **Adaptive bitrate streaming - ABR (phát thích ứng bitrate):** client đổi mức chất lượng giữa các segment dựa trên tốc độ tải, buffer và điều kiện phát.
 
 - Các file nhỏ này được lưu ở nhiều CDN (Content delivery network) → client thường lấy ở server gần client nhất để tải được nhanh + giảm tải cho server gốc. Ví dụ thư mục sẽ nằm trên CDN như:
 
@@ -1703,9 +1725,9 @@ Các lỗi phổ biến:
 
 *Hình 76*
 
-- **Manifest file:** chứa danh sách các phiên bản video ở chất lượng khác nhau
+- **Manifest file (tệp mô tả luồng):** liệt kê các mức chất lượng, codec, URL và segment mà client có thể tải.
 
-- **Master Manifest:** là file Manifest chính được tải về, liệt kê các playlist con cho từng chất lượng
+- **Master manifest (manifest chính):** liệt kê các **variant/representation (phiên bản chất lượng/bitrate khác nhau)**.
 
 ![Hình 77](assets/image68.png)
 
@@ -1715,7 +1737,7 @@ Các lỗi phổ biến:
 
 *Hình 78*
 
-- **Variant Manifest:** chứa các url sử dụng để down chunks
+- **Variant manifest/playlist:** liệt kê URL các segment của một phiên bản chất lượng cụ thể.
 
 ![Hình 79](assets/image17.png)
 
@@ -1727,15 +1749,15 @@ Các lỗi phổ biến:
 
 - Client liên tục đo tốc độ mạng để điều chỉnh adaptive theo thời gian thực + dựa vào buffer để có tiếp tục tải nữa không.
 
-## Network Topology
+## Network Topology (cấu trúc liên kết mạng)
 
-- Network topology (layout) có thể hiểu như khi ta có nhiều nodes và muốn sắp xếp các nodes này để có thể thiết lập liên lạc giữa tất cả các nodes
+- **Network topology:** mô hình mô tả các node nối với nhau ra sao và dữ liệu đi theo cấu trúc nào. Nó giúp đánh giá chi phí dây/cổng, khả năng mở rộng và hậu quả khi một link hoặc node bị lỗi.
 
-- Physical Topology là 1 cấu trúc liên kết tập trung vào việc các nodes được kết nối như thế nào, cách thức đặt các node
+- **Physical topology (cấu trúc vật lý):** mô tả dây, cổng và thiết bị thực sự kết nối thế nào.
 
-- Logical Topology là 1 cấu trúc liên kết tập trung vào cách data được truyền đi như thế nào giữa các nodes
+- **Logical topology (cấu trúc logic):** mô tả dữ liệu hoặc quyền truy cập môi trường truyền di chuyển thế nào, có thể khác cách nối dây vật lý.
 
-### Bus topology
+### Bus topology (cấu trúc đường trục)
 
 ![Bus topology](assets/image23.png)
 
@@ -1745,7 +1767,7 @@ Các lỗi phổ biến:
 
 - Node A muốn send data qua node B thì truyền nhận thông qua transmission medium này (tuy nhiên các nodes trong network này sẽ đều nhận được copy của data này đồng thời với B -> không security)
 
-- Do transmission medium chung này có thể nhận, gửi data nên nó sẽ là bi-directional
+- **Bidirectional (hai chiều):** dữ liệu có thể truyền theo cả hai hướng trên bus, dù không nhất thiết đồng thời.
 
 - Rẻ, chỉ cần 1 wire cho toàn bộ nodes -> phù hợp khi xây dựng 1 mạng tạm thời
 
@@ -1753,7 +1775,7 @@ Các lỗi phổ biến:
 
 - Khó scale khi cable như cũ nhưng số lượng nodes tăng lên
 
-### Ring topology
+### Ring topology (cấu trúc vòng)
 
 ![Ring topology](assets/image47.png)
 
@@ -1765,13 +1787,13 @@ Các lỗi phổ biến:
 
 - Mỗi nodes sẽ có 2 connections đến mỗi node hàng xóm
 
-- Việc communicate là Unidirectional
+- Một số ring truyền **unidirectional (một chiều)** quanh vòng; các thiết kế dual ring có thể có đường dự phòng ngược chiều.
 
 - Ổn định hơn so với Bus + đứt tại 1 nơi thì vẫn có khả năng mạng vẫn work tốt trong 1 số trường hợp (đứt ở C thì A vẫn communicate với B được)
 
 - Giả sử việc node A muốn giao tiếp với node D + thứ tự kim đồng hồ là A -> B -> C -> D -> E -> A và chu kì là chiều kim đồng hồ + giả sử node A muốn communicate với node D thì node A send data tới node B -> node B send data tới node C -> node C send data tới node D và kết thúc quá trình send data
 
-### Star topology
+### Star topology (cấu trúc hình sao)
 
 ![Star topology](assets/image45.png)
 
@@ -1789,7 +1811,7 @@ Các lỗi phổ biến:
 
 - Tuy nhiên có thể gây overload tới Switch/ Hub + chi phí tăng do phải sử dụng Switch/ Hub + việc hỏng central node sẽ gây hỏng toàn bộ hệ thống
 
-### Mess topology
+### Mesh topology (cấu trúc lưới)
 
 ![Mesh topology](assets/image72.png)
 
@@ -1799,15 +1821,15 @@ Các lỗi phổ biến:
 
 - 1 link bị lỗi không ảnh hưởng, hệ thống vẫn làm việc bình thường + giả sử node A và C bị lỗi connection, tuy nhiên chúng vẫn có thể communicate với nhau gián tiếp qua node khác, miễn là có đường đi với nhau
 
-- Broadcasting issue + tốn chi phí với 1 network lớn
+- Full mesh có số link tăng rất nhanh; mesh không đồng nghĩa mọi traffic đều broadcast.
 
-## MAC Addressing
+## MAC Addressing (đánh địa chỉ MAC)
 
-### MAC Address
+### MAC address (địa chỉ tầng liên kết)
 
-- Media Access control (MAC) address là địa chỉ duy nhất được gắn cho mọi thiết bị mạng để nhận diện.
+- **MAC address:** địa chỉ mà Ethernet/Wi-Fi dùng để nhận diện interface trên một link Layer 2. Mục đích là giúp switch chuyển frame tới đúng port trong LAN; MAC không được router dùng làm địa chỉ đích xuyên Internet.
 
-- MAC nằm ở lớp liên kết dữ liệu (Layer 2 của OSI), là unique trên toàn bộ internet, tuy nhiên lại thường được sử dụng ở LAN để có thể routing data từ Switch tới đúng thiết bị cần nhận data (Mọi thiết bị trên LAN đều được xác định bởi MAC address)
+- MAC thường dài 48 bit và được thiết kế để có tính duy nhất, nhưng có thể bị thay đổi/spoof và không phải định danh toàn cục đáng tin cậy. Switch **forward frame**, không routing Internet dựa trên MAC.
 
 - Router cần IP để routing đúng + Switch cần MAC address để forward data đúng tới thiết bị cần nhận data
 
@@ -1817,19 +1839,23 @@ Các lỗi phổ biến:
 
 - Mọi switch đều giữ MAC address table để biết được node nào cần forward data
 
-- MAC được gán vào phần cứng của card mạng (Network Interface Card - NIC) nên dẫn tới mỗi thiết bị đều có 1 MAC unique và có thể thay đổi bằng cách thay đổi phần cứng/ fake được >< còn IP thì có thể thay đổi khi kết nối tới mạng khác.
+- **NIC (Network Interface Card/Controller: card/bộ điều khiển giao tiếp mạng):** phần cứng hoặc interface ảo nối thiết bị với mạng. Một thiết bị có nhiều NIC thì có thể có nhiều MAC; hệ điều hành cũng có thể dùng MAC ngẫu nhiên.
 
-- Để xem được MAC address trên máy tính của mình, vào cmd và ấn “ipconfig/all” và nhìn vào mục physical address
-
-- MAC góp phần bảo mật cho LAN, khi ta có thể chặn quyền access vào 1 network cụ thể dựa trên MAC, giúp ngăn chặn sự truy cập trái phép của 1 thiết bị vào 1 network cụ thể, bảo vệ tài nguyên mạng bởi hoạt động độc hại
+- Lọc theo MAC chỉ là kiểm soát yếu vì MAC có thể bị giả mạo; không nên dùng nó thay cho authentication, certificate hoặc chính sách truy cập mạnh hơn.
 
 - MAC cũng sử dụng để tracking, khắc phục sự cố mạng, khi này dùng MAC để tracking luồng dữ liệu trong mạng, xác định nguồn gốc của sự cố mạng
 
-- Khi thiết bị trong mạng gửi tín hiệu ra internet, trước tiên gửi tới router và router cần biết MAC của thiết bị gửi request để có thể gửi response về + nếu là giao tiếp trong mạng thì khi gửi request thì cũng phải biết MAC đích để có thể gửi đúng thiết bị → MAC khi lưu trên chính thiết bị end user thì dùng để gửi các tín hiệu đến đúng đích khi giao tiếp trong mạng + MAC cần lưu trong router để khi nhận phản hồi từ ngoài mạng có thể chuyển tới đúng thiết bị vừa request đó (chỗ này hơi khó hiểu, tại sao cần lưu MAC table trên thiết bị end user, vì request sẽ đi qua wifi đã lưu MAC table rồi mà?)
+- Cần phân biệt ba bảng:
+
+  - **ARP/neighbor cache trên host hoặc router:** ánh xạ IP on-link → MAC để thiết bị tạo frame tới next hop.
+  - **MAC address table trên switch/access point:** ánh xạ MAC → port để chuyển frame đúng cổng.
+  - **NAT/connection table trên router NAT:** ánh xạ kết nối phía trong ↔ phía ngoài để đưa response về đúng IP/port nội bộ.
+
+  Ví dụ khi laptop gửi packet ra Internet, laptop dùng ARP tìm MAC của default gateway; switch dùng MAC table chuyển frame tới router; khi response quay về, router dùng NAT table tìm laptop rồi dùng ARP cache để tạo frame có MAC đích của laptop.
 
 ### ARP
 
-- ARP (Address Resolution Protocol) là giao thức sử dụng để dịch/ tìm ra địa chỉ MAC tương ứng với IP cụ thể trong mạng LAN
+- **ARP:** giúp IPv4 host biến một IP on-link thành MAC để có thể tạo frame Ethernet. Ví dụ laptop biết gateway là `192.168.1.1` nhưng phải ARP để tìm MAC của router trước khi gửi frame cho gateway.
 
 ![ARP](assets/image10.png)
 
@@ -1837,19 +1863,19 @@ Các lỗi phổ biến:
 
 ## Security
 
-### Packet Sniffing: là cách tấn công nghe lén packet trên đường truyền
+### Packet sniffing (bắt và phân tích packet)
 
 ![Packet sniffing](assets/image71.png)
 
 *Packet sniffing*
 
-- Khi packet được gửi đi, bản chất là nó được chạy trên môi trường mở: các trạm ở trên đường truyền đều có thể bắt được packet
+- **Packet sniffing:** thu packet/frame để xem header, nội dung và trình tự giao tiếp. Quản trị viên dùng nó để tìm lỗi như retransmission hoặc DNS chậm; kẻ tấn công có thể dùng để nghe lén traffic không mã hóa.
 
-- Đúng chuẩn thì card mạng được thiết kế là không nhận các packet không gửi đến cho mình >< hacker sẽ thiết kế lại card mạng, bất kỳ packet nào mà nó nhận được nó sẽ đều được xử lý dù nó không phải là của mình
+- **Promiscuous mode (chế độ hỗn tạp):** NIC chuyển lên hệ điều hành mọi frame mà nó nhận được, nhưng chế độ này không tự khiến switch gửi toàn bộ traffic tới NIC đó.
 
-### IP spoofing
+### IP spoofing (giả mạo IP nguồn)
 
-- **IP spoofing:** là cách tấn công mà hacker giả mạo IP nguồn của packet để che giấu/ đánh lừa hệ thống rằng packet tới từ 1 nguồn đáng tin cậy.
+- **IP spoofing:** ghi source IP giả vào packet. Mục đích thường là che nguồn hoặc khiến hệ thống thứ ba gửi response tới nạn nhân; nó không dễ dùng cho giao tiếp TCP hai chiều vì response không quay lại kẻ gửi.
 
 ![IP spoofing](assets/image70.png)
 
@@ -1859,10 +1885,10 @@ Các lỗi phổ biến:
 
 - Khi gửi tới đích, đích sẽ phản hồi dựa trên IP nguồn được ghi trên packet
 
-- ⇒ Có thể tấn công bằng cách C gửi tới đích nhưng dùng IP B, sau đó khi response đổ lại B thì dùng Packet Sniffing để nghe lén/ gửi quá nhiều request tới đích để nhận được 1 đống response về B (chính là DDoS, che giấu được nguồn gốc tấn công)
+- **Reflection attack (tấn công phản xạ):** kẻ tấn công gửi request mang source IP của nạn nhân để server phản hồi về nạn nhân. **Amplification (khuếch đại):** response lớn hơn request làm tăng lượng traffic đánh vào nạn nhân.
 
 ### DoS
 
-- DoS (Denial of Service) là kiểu tấn công làm ngập hệ thống mạng/ máy chủ bằng lượng lưu lượng giả mạo khiến nó quá tải, không thể phục vụ người dùng hợp pháp
+- **DoS:** làm dịch vụ không còn đủ tài nguyên phục vụ người dùng hợp lệ. Kẻ tấn công có thể làm đầy bandwidth, connection table, thread, CPU hoặc tài nguyên ứng dụng; mục tiêu là phá tính sẵn sàng chứ không nhất thiết đánh cắp dữ liệu.
 
-- Sử dụng lượng lớn máy tính ma liên tục request vào server.
+- **DDoS (Distributed Denial of Service: từ chối dịch vụ phân tán):** DoS phát sinh từ nhiều nguồn. **Botnet (mạng máy bị chiếm quyền)** có thể đồng thời gửi traffic tới mục tiêu, nhưng DDoS còn có các nguồn/kỹ thuật khác.
