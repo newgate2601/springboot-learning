@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">Docker bridge network workflow</title>
+  <desc id="desc">Diagram showing how an api container communicates with a db container on the same Docker bridge network and how the api container reaches the Internet through host routing and NAT.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#047857"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#475569"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .section-title { font: 700 20px Arial, sans-serif; fill: #0f172a; }
+      .label { font: 700 16px Arial, sans-serif; fill: #111827; }
+      .small { font: 400 14px Arial, sans-serif; fill: #334155; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #475569; }
+      .code { font: 700 14px Consolas, "Courier New", monospace; fill: #1e293b; }
+      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 8; }
+      .container { fill: #eef6ff; stroke: #2563eb; stroke-width: 2; rx: 8; }
+      .db { fill: #ecfdf5; stroke: #059669; stroke-width: 2; rx: 8; }
+      .host { fill: #fff7ed; stroke: #ea580c; stroke-width: 2; rx: 8; }
+      .bridge { fill: #fefce8; stroke: #ca8a04; stroke-width: 2; rx: 8; }
+      .internet { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; rx: 8; }
+      .chip-blue { fill: #dbeafe; stroke: #60a5fa; stroke-width: 1.5; rx: 6; }
+      .chip-green { fill: #d1fae5; stroke: #34d399; stroke-width: 1.5; rx: 6; }
+      .chip-orange { fill: #ffedd5; stroke: #fb923c; stroke-width: 1.5; rx: 6; }
+      .line-blue { fill: none; stroke: #1d4ed8; stroke-width: 4; marker-end: url(#arrow-blue); }
+      .line-green { fill: none; stroke: #047857; stroke-width: 4; marker-end: url(#arrow-green); }
+      .line-gray { fill: none; stroke: #475569; stroke-width: 3; marker-end: url(#arrow-gray); stroke-dasharray: 8 8; }
+      .dash { stroke-dasharray: 8 8; }
+      .note { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; rx: 8; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1280" height="760"/>
+  <text class="title" x="60" y="56">Workflow Docker bridge network: container gọi container và gọi Internet</text>
+  <text class="subtitle" x="60" y="84">Ví dụ: api = 172.20.0.2/16, db = 172.20.0.3/16, Docker bridge app-net = 172.20.0.1/16</text>
+
+  <rect class="host" x="40" y="120" width="1200" height="550"/>
+  <text class="section-title" x="66" y="154">Network namespace của host</text>
+  <text class="small" x="66" y="178">Host chứa các đầu veth, Docker bridge, routing/firewall/NAT và interface ra mạng thật.</text>
+
+  <rect class="container" x="80" y="230" width="260" height="250"/>
+  <text class="label" x="108" y="262">Container api</text>
+  <text class="small" x="108" y="286">Network namespace riêng</text>
+  <rect class="chip-blue" x="108" y="312" width="190" height="42"/>
+  <text class="code" x="126" y="338">eth0: 172.20.0.2</text>
+  <rect class="chip-blue" x="108" y="366" width="190" height="42"/>
+  <text class="code" x="126" y="392">gateway: 172.20.0.1</text>
+  <text class="small" x="108" y="438">Process Java/API</text>
+
+  <rect class="bridge" x="500" y="250" width="280" height="210"/>
+  <text class="label" x="554" y="286">Docker bridge</text>
+  <text class="code" x="584" y="312">app-net</text>
+  <text class="code" x="560" y="338">172.20.0.1/16</text>
+  <text class="small" x="548" y="382">Switch ảo nối các</text>
+  <text class="small" x="552" y="404">đầu veth với nhau</text>
+
+  <rect class="db" x="940" y="230" width="260" height="250"/>
+  <text class="label" x="968" y="262">Container db</text>
+  <text class="small" x="968" y="286">Network namespace riêng</text>
+  <rect class="chip-green" x="968" y="312" width="190" height="42"/>
+  <text class="code" x="986" y="338">eth0: 172.20.0.3</text>
+  <rect class="chip-green" x="968" y="366" width="190" height="42"/>
+  <text class="code" x="986" y="392">port: 5432</text>
+  <text class="small" x="968" y="438">PostgreSQL process</text>
+
+  <rect class="chip-orange" x="380" y="300" width="90" height="48"/>
+  <text class="code" x="394" y="329">veth-api</text>
+  <rect class="chip-orange" x="810" y="300" width="90" height="48"/>
+  <text class="code" x="828" y="329">veth-db</text>
+
+  <path class="line-blue" d="M300 326 C340 326, 344 324, 380 324"/>
+  <path class="line-blue" d="M470 324 C488 324, 492 324, 500 324"/>
+  <path class="line-blue" d="M780 324 C792 324, 798 324, 810 324"/>
+  <path class="line-blue" d="M900 324 C914 324, 922 324, 968 324"/>
+
+  <text class="small" x="362" y="284">veth pair</text>
+  <text class="small" x="824" y="284">veth pair</text>
+  <text class="label" x="392" y="220" fill="#1d4ed8">Luồng A: api gọi db:5432 trong cùng network</text>
+  <text class="tiny" x="392" y="240">Docker DNS: db -> 172.20.0.3; bridge forward frame sang veth-db; không cần NAT.</text>
+
+  <rect class="host" x="500" y="530" width="280" height="86"/>
+  <text class="label" x="532" y="562">Routing + NAT</text>
+  <text class="small" x="538" y="588">source NAT/masquerade</text>
+
+  <rect class="internet" x="940" y="525" width="260" height="100"/>
+  <text class="label" x="1010" y="558">Internet</text>
+  <text class="small" x="986" y="586">example.com</text>
+  <text class="code" x="984" y="610">93.184.216.34</text>
+
+  <path class="line-green" d="M210 480 C210 548, 430 572, 500 572"/>
+  <path class="line-green" d="M780 572 C840 572, 874 575, 940 575"/>
+  <path class="line-gray" d="M940 604 C870 690, 410 690, 210 482"/>
+
+  <text class="label" x="80" y="530" fill="#047857">Luồng B: api gọi Internet</text>
+  <text class="tiny" x="80" y="552">Route chọn default gateway 172.20.0.1 qua eth0.</text>
+  <text class="tiny" x="80" y="570">Host NAT source 172.20.0.2 thành IP của host trước khi ra ngoài.</text>
+  <text class="tiny" x="80" y="588">Response quay về host, conntrack/NAT đổi đích lại về 172.20.0.2.</text>
+
+  <rect class="note" x="70" y="695" width="1140" height="42"/>
+  <text class="small" x="92" y="721">Ghi nhớ: veth pair chỉ là dây nối container với host namespace. Routing table quyết định next hop, Docker bridge forward trong local network, NAT xử lý khi container dùng private IP để ra ngoài.</text>
+</svg>

@@ -165,21 +165,53 @@ Network interface có thể hiểu là một cổng mà network stack dùng đ�
 - Trạng thái `UP` hoặc `DOWN`.
 - Các thống kê packet gửi, nhận, lỗi hoặc bị drop.
 
-Trong máy vật lý, tên interface có thể đại diện cho card mạng thật. Trong container dùng bridge network, `eth0` thường không phải card vật lý. Nó thường là một đầu của **virtual Ethernet pair**, gọi tắt là `veth pair`.
+Trong máy vật lý, một interface như `eth0`, `enp0s3` hoặc `wlan0` có thể gắn với card mạng thật. Nhưng trong container dùng bridge network, `eth0` thường chỉ là **card mạng ảo** mà Docker tạo ra cho container.
+
+Điểm dễ nhầm là: `eth0` trong container không đứng một mình. Nó là một đầu của một cặp interface ảo gọi là **virtual Ethernet pair**, viết tắt là `veth pair`.
+
+Hãy hình dung `veth pair` như một sợi dây mạng ảo có đúng hai đầu:
+
+- Một đầu được đưa vào network namespace của container và thường được Docker đặt tên là `eth0`.
+- Đầu còn lại nằm ở network namespace của host, thường có tên tự sinh như `veth8a12...`.
+- Đầu `veth` phía host được cắm vào Docker bridge, ví dụ bridge `docker0` hoặc bridge do Compose tạo.
 
 ```text
 Network namespace của container          Network namespace của host
 
 eth0                                     veth8a12
-172.20.0.2/16  <====== veth pair =====>  gắn vào Docker bridge
+172.20.0.2/16  <====== veth pair =====>  cắm vào Docker bridge
 ```
 
-Hai đầu hoạt động giống một sợi cáp Ethernet ảo:
+Vì vậy, trong mô hình bridge network, đường ra vào của packet thường là:
+
+```text
+Process trong container
+        |
+        v
+eth0 trong container
+        |
+        |  veth pair
+        v
+veth... trên host
+        |
+        v
+Docker bridge
+```
+
+Hai đầu của `veth pair` hoạt động giống hai đầu của một sợi cáp Ethernet ảo:
 
 - Packet được gửi vào `eth0` sẽ xuất hiện ở đầu `veth` trên host.
 - Packet được gửi vào đầu `veth` trên host sẽ xuất hiện ở `eth0` của container.
 
-Docker thường đổi tên đầu nằm trong container thành `eth0` để ứng dụng có một tên interface quen thuộc. Đầu nằm trên host thường có tên sinh tự động như `veth8a12...`.
+Nói ngắn gọn:
+
+| Thành phần | Nằm ở đâu? | Vai trò |
+| --- | --- | --- |
+| `eth0` | Trong network namespace của container | Cổng mạng chính mà process trong container nhìn thấy |
+| `veth8a12...` | Trong network namespace của host | Đầu còn lại của cùng một dây mạng ảo |
+| Docker bridge | Trên host | Switch ảo nối nhiều container cùng network với nhau |
+
+Docker đặt tên đầu nằm trong container thành `eth0` để ứng dụng có một tên interface quen thuộc. Đầu nằm trên host thường có tên sinh tự động như `veth8a12...`.
 
 Ví dụ kiểm tra:
 
@@ -603,6 +635,198 @@ Tóm tắt vai trò:
 | ARP/neighbor table | MAC của destination hoặc next hop trên local link là gì? |
 | `eth0` | Packet rời/đi vào namespace qua interface nào? |
 
+#### Ví dụ tổng hợp: container gọi container khác và gọi Internet
+
+Giả sử có Compose file đơn giản:
+
+```yaml
+services:
+  api:
+    image: my-api
+    networks:
+      - app-net
+
+  db:
+    image: postgres
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    driver: bridge
+```
+
+Docker có thể tạo trạng thái mạng gần giống như sau:
+
+```text
+Docker bridge app-net trên host: 172.20.0.1/16
+
+Container api
+  eth0: 172.20.0.2/16
+  default gateway: 172.20.0.1
+
+Container db
+  eth0: 172.20.0.3/16
+  default gateway: 172.20.0.1
+```
+
+Hình minh họa tổng quan:
+
+![Workflow Docker bridge network](docker-network-workflow.svg)
+
+Trên host, mỗi container có một đầu `veth` riêng cắm vào cùng Docker bridge. Hình trên gom cả hai hướng đi quan trọng: `api` gọi `db` trong cùng network và `api` gọi ra Internet qua routing/NAT của host.
+
+##### Workflow A: `api` gọi `db:5432` trong cùng Docker network
+
+Ví dụ process Java trong container `api` gọi:
+
+```text
+db:5432
+```
+
+Luồng chi tiết:
+
+```text
+1. Process trong api gọi hostname db, port 5432.
+
+2. Docker DNS trong network app-net phân giải:
+   db -> 172.20.0.3
+
+3. Kernel trong namespace api nhìn routing table:
+   172.20.0.0/16 dev eth0
+
+4. Vì 172.20.0.3 cùng subnet với 172.20.0.2/16,
+   api không gửi packet đến default gateway.
+   api cần gửi trực tiếp đến 172.20.0.3 qua eth0.
+
+5. api dùng ARP/neighbor để tìm MAC của 172.20.0.3.
+
+6. api tạo Ethernet frame:
+   source MAC      = MAC của eth0 api
+   destination MAC = MAC của eth0 db
+
+   IP packet bên trong:
+   source IP       = 172.20.0.2
+   destination IP  = 172.20.0.3
+
+7. Frame đi ra eth0 của api.
+
+8. Do eth0 là một đầu veth pair,
+   frame xuất hiện ở veth-api trên host.
+
+9. Docker bridge app-net nhận frame từ veth-api,
+   thấy destination MAC thuộc phía veth-db,
+   rồi forward frame sang veth-db.
+
+10. Frame đi qua veth pair của db,
+    xuất hiện ở eth0 trong namespace db.
+
+11. Kernel trong namespace db thấy packet đến 172.20.0.3:5432
+    và chuyển cho process PostgreSQL đang listen port 5432.
+```
+
+Tóm tắt đường đi:
+
+```text
+api process
+  -> api eth0
+  -> veth-api trên host
+  -> Docker bridge app-net
+  -> veth-db trên host
+  -> db eth0
+  -> PostgreSQL process
+```
+
+Điểm quan trọng:
+
+- `api` gọi `db:5432`, không gọi `localhost:5432`.
+- Packet không cần đi ra card mạng vật lý của host.
+- Packet không cần NAT để đi từ `api` sang `db` trong cùng bridge network.
+- Docker bridge hoạt động giống switch ảo nối các đầu `veth` lại với nhau.
+
+##### Workflow B: `api` gọi Internet, ví dụ `https://example.com`
+
+Ví dụ process trong container `api` gọi:
+
+```text
+https://example.com
+```
+
+Luồng chi tiết:
+
+```text
+1. Process trong api cần phân giải DNS:
+   example.com -> IP public, ví dụ 93.184.216.34
+
+2. Kernel trong namespace api nhìn routing table.
+   Đích 93.184.216.34 không thuộc subnet 172.20.0.0/16.
+
+3. Kernel chọn default route:
+   default via 172.20.0.1 dev eth0
+
+4. api không ARP tìm MAC của 93.184.216.34.
+   Vì đích nằm ngoài subnet local,
+   api ARP tìm MAC của gateway 172.20.0.1.
+
+5. api tạo Ethernet frame:
+   source MAC      = MAC của eth0 api
+   destination MAC = MAC của gateway/bridge 172.20.0.1
+
+   IP packet bên trong:
+   source IP       = 172.20.0.2
+   destination IP  = 93.184.216.34
+
+6. Frame đi ra eth0 của api.
+
+7. Frame xuất hiện ở veth-api trên host,
+   rồi đi vào Docker bridge app-net.
+
+8. Host nhận packet cần đi ra ngoài network Docker.
+   Nếu IP forwarding và firewall cho phép,
+   host route packet ra interface phù hợp, ví dụ card LAN/Wi-Fi của host.
+
+9. Vì 172.20.0.2 là private IP của container,
+   Docker/host thường làm source NAT/masquerade:
+
+   trước NAT:
+   source IP      = 172.20.0.2
+   destination IP = 93.184.216.34
+
+   sau NAT:
+   source IP      = IP của host
+   destination IP = 93.184.216.34
+
+10. Server ngoài Internet thấy request đến từ IP của host/NAT gateway,
+    không thấy trực tiếp IP private 172.20.0.2 của container.
+
+11. Response quay về host.
+    Conntrack/NAT table trên host nhớ connection trước đó,
+    đổi destination từ IP của host về 172.20.0.2,
+    rồi chuyển packet ngược lại qua Docker bridge và veth-api.
+
+12. Packet vào eth0 của api,
+    kernel trong namespace api chuyển response cho process đã mở connection.
+```
+
+Tóm tắt đường đi:
+
+```text
+api process
+  -> api eth0
+  -> veth-api trên host
+  -> Docker bridge app-net
+  -> routing/NAT trên host
+  -> card mạng thật hoặc network interface của host
+  -> Internet
+```
+
+Điểm quan trọng:
+
+- Gọi container cùng network: thường đi qua Docker DNS, `eth0`, `veth`, Docker bridge, rồi sang container đích.
+- Gọi Internet: vẫn đi qua `eth0`, `veth`, Docker bridge, nhưng sau đó host phải route và thường NAT packet ra ngoài.
+- `veth pair` chỉ nối container với host namespace; nó không tự quyết định packet đi đến container khác hay Internet.
+- Routing table quyết định next hop; bridge forward frame trong local Docker network; NAT xử lý khi private IP của container cần đi ra mạng ngoài.
+
 ### 1.9 Ví dụ hai container có cùng port
 
 Giả sử hai container đều chạy ứng dụng trên port `8080`:
@@ -859,38 +1083,493 @@ Network namespace tạo sự cô lập, còn `veth`, bridge, routing và NAT t�
 
 ### 1.14 Namespace không phải Docker network
 
-Hai khái niệm này liên quan nhưng khác nhau:
+Đây là hai khái niệm rất dễ bị nhầm vì khi Docker kết nối một container vào network, Docker đồng thời cấu hình tài nguyên bên trong network namespace của container.
 
-```text
-Network namespace
-  = network stack của một hoặc một nhóm process
+Tuy nhiên, chúng thuộc hai tầng khác nhau:
 
-Docker network
-  = mạng logic kết nối các endpoint/container
+| Khái niệm | Thuộc tầng nào? | Trả lời câu hỏi gì? |
+|---|---|---|
+| Network namespace | Cơ chế cô lập của Linux kernel | Process này nhìn thấy network stack nào? |
+| Docker network | Đối tượng và mô hình kết nối do Docker quản lý | Những endpoint nào được phép kết nối với nhau và kết nối bằng cơ chế nào? |
+
+Nói ngắn gọn:
+
+> Network namespace tạo ra một góc nhìn mạng riêng cho process. Docker network tạo ra một mạng để nối các góc nhìn mạng đó lại với nhau.
+
+#### 1.14.1 Network namespace là gì?
+
+Network namespace là một tính năng của Linux kernel. Nó tồn tại độc lập với Docker.
+
+Ta có thể dùng network namespace mà không cần cài Docker:
+
+```bash
+sudo ip netns add ns-api
+sudo ip netns exec ns-api ip addr
+sudo ip netns exec ns-api ip route
 ```
 
-Một container thường có một network namespace nhưng có thể tham gia nhiều Docker network:
+Khi một process thuộc network namespace `ns-api`, các thao tác mạng của process được thực hiện từ góc nhìn của namespace đó:
 
 ```text
-Container api
-  `- một network namespace
-       |- eth0 -> frontend network
-       `- eth1 -> backend network
+Process gọi socket(), bind(), connect() hoặc send()
+                         |
+                         v
+Linux kernel xác định process thuộc network namespace nào
+                         |
+                         v
+Kernel dùng interface, IP, route, neighbor table và socket
+thuộc network namespace đó
 ```
 
-Ngược lại, nhiều container có nhiều network namespace riêng nhưng cùng tham gia một Docker network:
+Network namespace cô lập các tài nguyên như:
+
+| Tài nguyên | Ý nghĩa |
+|---|---|
+| Interface | Namespace có thể thấy `lo`, `eth0`, `eth1` riêng |
+| Địa chỉ IP | IP được gán lên interface thuộc namespace |
+| Routing table | Quyết định packet đi qua interface nào và next hop là gì |
+| Loopback | `127.0.0.1` chỉ quay về chính namespace hiện tại |
+| ARP/neighbor table | Lưu ánh xạ giữa IP và MAC/neighbor mà namespace biết |
+| Socket và port | Hai namespace khác nhau có thể cùng listen port `8080` |
+| Network sysctl | Một số cấu hình mạng có thể được thiết lập riêng theo namespace |
+| Firewall state | Rule và trạng thái packet có thể phụ thuộc namespace và đường đi |
+
+Điểm quan trọng là network namespace **chỉ tạo sự cô lập**. Một namespace mới không tự có:
+
+- Kết nối với namespace khác.
+- Kết nối với host.
+- Kết nối Internet.
+- Docker DNS.
+- Docker bridge.
+- NAT.
+
+Muốn giao tiếp, namespace cần được cấp interface, IP, route và một đường nối ra bên ngoài, ví dụ `veth pair`.
+
+#### 1.14.2 Docker network là gì?
+
+Docker network là một đối tượng được Docker Engine quản lý.
+
+Ví dụ:
+
+```bash
+docker network create app-net
+docker network inspect app-net
+```
+
+Docker lưu thông tin về network này, chẳng hạn:
+
+- Tên và ID của network.
+- Network driver.
+- Dải subnet.
+- Gateway.
+- Cấu hình IPAM.
+- Các option của driver.
+- Những container endpoint đang tham gia network.
+- Tên, alias và thông tin dùng cho service discovery.
+
+Với lệnh:
+
+```bash
+docker network create \
+  --driver bridge \
+  --subnet 172.20.0.0/16 \
+  --gateway 172.20.0.1 \
+  app-net
+```
+
+Docker hiểu rằng:
 
 ```text
-Docker network backend
-  |- namespace của api
-  |- namespace của db
-  `- namespace của redis
+Tên network: app-net
+Driver:       bridge
+Subnet:       172.20.0.0/16
+Gateway:      172.20.0.1
 ```
 
-Vì vậy:
+Docker network không phải lúc nào cũng là một Linux bridge.
 
-- Namespace xác định góc nhìn network của process.
-- Docker network xác định các endpoint được nối với nhau theo topology nào.
+| Docker network driver | Cách kết nối khái quát |
+|---|---|
+| `bridge` | Dùng bridge trên Docker host để nối các container cục bộ |
+| `overlay` | Tạo mạng nhiều host, thường dùng trong Docker Swarm |
+| `macvlan` | Cho endpoint xuất hiện gần giống một thiết bị có MAC riêng trên mạng vật lý |
+| `ipvlan` | Kết nối endpoint vào mạng bên dưới theo cơ chế IPvlan |
+| `host` | Container dùng network namespace của host |
+| `none` | Container không được Docker thiết lập kết nối mạng thông thường |
+
+Vì vậy, nên hiểu Docker network là **mô hình kết nối logic**. Driver quyết định Docker hiện thực mô hình đó bằng bridge, overlay tunnel, macvlan hay cơ chế khác.
+
+#### 1.14.3 Namespace chứa network stack, Docker network chứa các endpoint
+
+Khi kết nối container vào một Docker network, Docker tạo một **network endpoint** cho container trên network đó.
+
+Có thể hình dung:
+
+```text
+Container
+   |
+   v
+Network namespace của container
+   |
+   v
+Interface, ví dụ eth0
+   |
+   v
+Endpoint của container trên Docker network
+   |
+   v
+Docker network app-net
+```
+
+Trong Docker bridge network, endpoint thường được hiện thực bằng:
+
+1. Một đầu `veth` nằm trong network namespace của container.
+2. Đầu `veth` còn lại nằm ở host.
+3. Đầu trên host được gắn vào Linux bridge tương ứng.
+4. Docker cấp IP và route cho đầu `veth` trong container.
+
+Quan hệ này có thể tóm tắt như sau:
+
+| Thành phần | Vai trò |
+|---|---|
+| Network namespace | Nơi process có network stack riêng |
+| `eth0` trong container | Interface mà process trong namespace nhìn thấy |
+| `veth pair` | Đường nối Layer 2 giữa namespace container và host |
+| Docker endpoint | Đại diện việc container tham gia một Docker network |
+| Linux bridge | Cơ chế thường được driver `bridge` dùng để chuyển frame |
+| Docker network | Đối tượng logic quản lý tập hợp endpoint và chính sách kết nối |
+
+Không nên nói:
+
+```text
+Container nằm bên trong Docker network
+```
+
+Theo nghĩa kỹ thuật chính xác hơn:
+
+```text
+Container có network namespace
+Network namespace có interface
+Interface/endpoint được kết nối vào Docker network
+```
+
+#### 1.14.4 Một container có thể có một namespace nhưng tham gia nhiều Docker network
+
+Ví dụ:
+
+```yaml
+services:
+  api:
+    image: my-api
+    networks:
+      - frontend
+      - backend
+
+  nginx:
+    image: nginx
+    networks:
+      - frontend
+
+  db:
+    image: postgres
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+```
+
+Container `api` thường chỉ có **một network namespace**, nhưng Docker kết nối namespace đó với hai Docker network:
+
+```text
+Process API
+    |
+    v
+Một network namespace của api
+    |
+    |-- interface thứ nhất -> endpoint trên frontend network
+    |
+    `-- interface thứ hai  -> endpoint trên backend network
+```
+
+Tên interface thực tế không nên được hard-code vì thứ tự và cách đặt tên có thể thay đổi. Điều cần quan tâm là namespace của `api` có nhiều interface và route tương ứng.
+
+Kết quả logic:
+
+| Kết nối | Có đường network trực tiếp không? |
+|---|---|
+| `api -> nginx` | Có, cùng tham gia `frontend` |
+| `api -> db` | Có, cùng tham gia `backend` |
+| `nginx -> db` | Không có đường trực tiếp qua hai network trên |
+
+`frontend` và `backend` không phải hai namespace của `api`. Chúng là hai Docker network mà các endpoint trong cùng namespace của `api` được kết nối vào.
+
+#### 1.14.5 Nhiều container có namespace riêng nhưng cùng một Docker network
+
+Ví dụ:
+
+```yaml
+services:
+  api:
+    image: my-api
+    networks:
+      - backend
+
+  db:
+    image: postgres
+    networks:
+      - backend
+
+  redis:
+    image: redis
+    networks:
+      - backend
+
+networks:
+  backend:
+```
+
+Docker tạo topology khái quát:
+
+```text
+Namespace của api    -> endpoint api    \
+Namespace của db     -> endpoint db      > Docker network backend
+Namespace của redis  -> endpoint redis  /
+```
+
+Ba container không dùng chung network namespace:
+
+- Mỗi container có `lo` riêng.
+- Mỗi container có interface và IP riêng.
+- Mỗi container có routing table riêng.
+- Mỗi container có socket và port space riêng.
+
+Nhưng chúng có endpoint trên cùng Docker network, nên network driver tạo đường để các endpoint giao tiếp.
+
+Ví dụ `api` gọi `db:5432`:
+
+```text
+1. Process trong api yêu cầu phân giải tên db.
+2. Docker DNS trả về IP endpoint của db trên network backend.
+3. Kernel tra routing table trong namespace api.
+4. Packet rời namespace api qua interface tương ứng.
+5. Driver bridge chuyển frame qua bridge trên host.
+6. Packet đi vào interface thuộc namespace db.
+7. Kernel trong namespace db chuyển packet đến socket port 5432.
+```
+
+Docker network giúp tạo đường kết nối, còn namespace vẫn giữ network stack của `api` và `db` tách biệt.
+
+#### 1.14.6 So sánh bằng một ví dụ cụ thể
+
+Giả sử có:
+
+```text
+api: 172.20.0.2
+db:  172.20.0.3
+Docker network: app-net, subnet 172.20.0.0/16
+```
+
+Nhìn từ namespace của `api`:
+
+```bash
+docker exec api ip addr
+docker exec api ip route
+docker exec api ss -lnt
+```
+
+Ta đang hỏi:
+
+- Process `api` thấy interface nào?
+- `api` có IP nào?
+- Packet từ `api` sẽ chọn route nào?
+- Socket nào đang listen trong namespace của `api`?
+
+Nhìn từ Docker network:
+
+```bash
+docker network inspect app-net
+```
+
+Ta đang hỏi:
+
+- Network dùng driver nào?
+- Subnet và gateway là gì?
+- Container nào có endpoint trên network?
+- Mỗi endpoint được Docker cấp IP nào?
+- Network có option hoặc label nào?
+
+Hai nhóm lệnh quan sát hai loại đối tượng khác nhau:
+
+| Lệnh | Đối tượng đang quan sát |
+|---|---|
+| `ip addr` trong container | Interface trong network namespace |
+| `ip route` trong container | Routing table của network namespace |
+| `ss -lnt` trong container | Socket TCP của network namespace |
+| `docker network ls` | Danh sách Docker network |
+| `docker network inspect` | Cấu hình network và endpoint Docker quản lý |
+| `docker network connect` | Tạo thêm kết nối endpoint vào network |
+| `docker network disconnect` | Gỡ endpoint khỏi network |
+
+#### 1.14.7 Khi chạy `docker network connect`, chuyện gì thay đổi?
+
+Giả sử container `api` đang chạy và ta thực hiện:
+
+```bash
+docker network connect reporting-net api
+```
+
+Docker không cần tạo thêm một network namespace mới cho `api`.
+
+Luồng khái quát:
+
+```text
+Docker tìm network namespace hiện tại của api
+                         |
+                         v
+Docker tạo endpoint của api trên reporting-net
+                         |
+                         v
+Network driver tạo cơ chế kết nối cần thiết
+                         |
+                         v
+Docker thêm interface vào namespace api
+                         |
+                         v
+Docker cấp IP và cập nhật route/DNS liên quan
+```
+
+Sau thao tác này:
+
+- Số network namespace của `api` thường vẫn là một.
+- Số Docker network mà `api` tham gia tăng thêm một.
+- Namespace của `api` có thể xuất hiện thêm interface, IP và route.
+- `docker network inspect reporting-net` xuất hiện endpoint của `api`.
+
+Khi chạy:
+
+```bash
+docker network disconnect reporting-net api
+```
+
+Docker gỡ endpoint và interface tương ứng, nhưng không nhất thiết xóa network namespace của container vì container vẫn đang chạy.
+
+#### 1.14.8 Lifecycle của hai đối tượng cũng khác nhau
+
+Network namespace thường gắn với sandbox mạng và lifecycle của container/process sử dụng nó.
+
+Docker network có lifecycle riêng:
+
+```bash
+docker network create app-net
+docker run --network app-net ...
+docker rm -f ...
+docker network rm app-net
+```
+
+Network `app-net` có thể:
+
+- Được tạo trước container.
+- Được nhiều container tham gia.
+- Vẫn tồn tại sau khi một container bị xóa.
+- Chỉ bị xóa khi Docker được yêu cầu xóa và không còn endpoint cản trở.
+
+Ngược lại, khi container bị xóa, network namespace riêng của container và các interface chỉ thuộc namespace đó thường được runtime/kernel dọn dẹp.
+
+#### 1.14.9 Khác nhau khi nói về bảo mật và cô lập
+
+Network namespace và Docker network đều liên quan đến cô lập, nhưng cô lập ở hai cấp khác nhau.
+
+| Cấp | Cơ chế | Ý nghĩa |
+|---|---|---|
+| Góc nhìn của process | Network namespace | Process không tự nhìn thấy interface, route và socket của namespace khác |
+| Khả năng kết nối | Docker network + driver + firewall | Quy định endpoint nào có đường giao tiếp với endpoint nào |
+
+Có namespace riêng không đồng nghĩa với không thể giao tiếp:
+
+```text
+Hai namespace riêng
+        +
+có veth, bridge và route nối chúng
+        =
+vẫn giao tiếp được
+```
+
+Cùng Docker network cũng không đồng nghĩa với dùng chung network stack:
+
+```text
+Cùng Docker network
+        +
+mỗi container có namespace riêng
+        =
+giao tiếp được nhưng localhost, interface, route và port vẫn tách biệt
+```
+
+Docker network tạo ra phạm vi kết nối, nhưng không nên được xem là lớp bảo mật duy nhất. Khả năng truy cập thực tế còn phụ thuộc vào:
+
+- Network driver.
+- Route.
+- Firewall trên host.
+- Rule do Docker tạo.
+- Port mà process bind.
+- Chính sách của ứng dụng.
+- Cấu hình publish port.
+
+#### 1.14.10 Các câu dễ nhầm
+
+**"Mỗi Docker network là một network namespace."**
+
+Sai. Một user-defined bridge network thường tương ứng với một bridge và cấu hình mạng trên host, còn các container tham gia network vẫn có namespace riêng.
+
+**"Container tham gia hai Docker network thì có hai network namespace."**
+
+Thông thường sai. Container vẫn có một network namespace nhưng có nhiều endpoint/interface.
+
+**"Hai container cùng Docker network thì dùng chung localhost."**
+
+Sai. Nếu có namespace riêng, mỗi container có `localhost` riêng. Chúng phải gọi nhau bằng IP hoặc tên DNS trên Docker network.
+
+**"Có network namespace thì process đã có mạng."**
+
+Sai. Namespace chỉ cung cấp không gian network stack riêng; vẫn cần interface, IP, route và đường kết nối.
+
+**"Docker network chỉ là subnet."**
+
+Chưa đủ. Subnet là một phần cấu hình. Docker network còn có driver, gateway, IPAM, endpoint, alias, option và hành vi kết nối.
+
+**"Docker bridge network chính là interface `eth0` trong container."**
+
+Sai. `eth0` là interface trong namespace container. Nó chỉ là một đầu kết nối endpoint của container vào network do bridge driver quản lý.
+
+#### 1.14.11 Cách ghi nhớ
+
+Có thể dùng ba câu hỏi:
+
+1. **Process đang nhìn thấy gì?**
+
+   Hãy nghĩ đến network namespace.
+
+2. **Container đang được nối với ai?**
+
+   Hãy nghĩ đến Docker network.
+
+3. **Packet đi bằng cách nào?**
+
+   Hãy kiểm tra interface, `veth`, network driver, bridge, route, firewall và NAT.
+
+Tóm tắt cuối cùng:
+
+| Network namespace | Docker network |
+|---|---|
+| Tính năng của Linux kernel | Đối tượng do Docker Engine quản lý |
+| Gắn với process/network sandbox | Gắn với tập hợp endpoint |
+| Chứa interface, IP, route, socket, `localhost` | Chứa cấu hình driver, subnet, gateway, IPAM và endpoint |
+| Tạo sự cô lập network stack | Tạo topology và khả năng kết nối |
+| Có thể tồn tại không cần Docker | Là khái niệm thuộc Docker |
+| Một namespace có thể nối nhiều Docker network | Một Docker network có thể nối nhiều namespace |
+
+> Namespace trả lời "tôi đang đứng trong network stack nào"; Docker network trả lời "từ đây tôi được nối tới những endpoint nào".
 
 ### 1.15 Nhiều container có thể dùng chung network namespace
 
