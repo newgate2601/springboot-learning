@@ -25,6 +25,35 @@ Nội dung câu chữ và hình ảnh được giữ nguyên; chỉ bổ sung Ma
 
 - **Port vật lý:** cổng trên thiết bị để gắn một đường kết nối, ví dụ port Ethernet trên switch. **Port logic TCP/UDP** lại là con số giúp hệ điều hành chuyển dữ liệu tới đúng ứng dụng; ví dụ cùng một server nhưng port `443` dành cho HTTPS và port `22` dành cho SSH.
 
+## Interface trong ngữ cảnh network
+
+- **Network interface (giao diện mạng):** điểm mà một thiết bị kết nối với một mạng để gửi và nhận dữ liệu. Có thể hiểu interface là “cửa ra/vào mạng” của thiết bị. Hệ điều hành và router chọn một interface đầu ra khi cần chuyển packet tới đích.
+
+- Một thiết bị có thể có nhiều interface và mỗi interface nối thiết bị với một môi trường hoặc mạng khác nhau. Ví dụ laptop có interface Ethernet và Wi-Fi; router gia đình có interface LAN hướng vào mạng nội bộ và interface WAN hướng tới ISP.
+
+### Các loại interface
+
+| Loại | Giải thích | Ví dụ |
+|---|---|---|
+| **Physical interface (interface vật lý)** | Gắn với phần cứng truyền/nhận tín hiệu qua cáp hoặc sóng vô tuyến | Card Ethernet, Wi-Fi; tên thường gặp như `eth0`, `enp0s3`, `wlan0` |
+| **Virtual/logical interface (interface ảo/logic)** | Do hệ điều hành hoặc phần mềm tạo ra, không nhất thiết tương ứng với một card mạng riêng | Loopback `lo`, VPN `tun0`, VLAN subinterface, bridge, Docker interface |
+
+### Interface liên quan tới IP và MAC như thế nào?
+
+- **IP thường được gán cho interface, không phải gán chung chung cho toàn bộ thiết bị.** Vì một thiết bị có nhiều interface nên nó có thể có nhiều IP; ví dụ Wi-Fi dùng `192.168.1.20`, Ethernet dùng `10.0.0.20`.
+- Interface Ethernet/Wi-Fi thường có **MAC address** để giao tiếp trên link Layer 2. Interface ảo có thể có MAC hoặc không, tùy loại và công nghệ.
+- **Routing table** ánh xạ mạng đích tới next hop và interface đầu ra. Khi gửi packet, hệ điều hành chọn route phù hợp nhất, lấy source IP thích hợp của interface đó rồi chuyển packet qua interface.
+- Interface thường có thêm cấu hình như subnet prefix, MTU, trạng thái `up/down` và có thể thuộc một VLAN hoặc security zone.
+
+Ví dụ laptop truy cập Internet qua Wi-Fi:
+
+1. Hệ điều hành thấy route mặc định đi qua interface Wi-Fi.
+2. Packet dùng IP nguồn của interface Wi-Fi.
+3. Interface Wi-Fi tạo frame và gửi tới default gateway qua sóng vô tuyến.
+4. Nếu người dùng bật VPN, route tới một số đích có thể chuyển sang interface ảo như `tun0`; phần mềm VPN tiếp tục đóng gói dữ liệu và gửi packet bên ngoài qua interface Wi-Fi.
+
+> **Không nên nhầm các khái niệm:** network interface là điểm kết nối của thiết bị với mạng; port vật lý là đầu cắm/cổng phần cứng; port TCP/UDP xác định ứng dụng hoặc process; còn API/interface trong lập trình là hợp đồng để các thành phần phần mềm tương tác.
+
 ### Node được chia làm 2 loại:
 
 | Loại node | Nội dung nguyên bản |
@@ -109,6 +138,140 @@ Ví dụ GRE tạo tunnel nhưng không tự mã hóa; IPsec có thể bổ sung
 
 Remote-access và site-to-site là hai mô hình khác nhau, không nên gộp thành một loại.
 
+#### Client-to-server VPN
+
+**Client-to-server VPN** là mô hình nhiều VPN client chủ động kết nối tới một VPN server/gateway trung tâm. Server xác thực client, cấp IP/route/DNS, kết thúc tunnel và chuyển tiếp traffic tới mạng nội bộ hoặc Internet. Mô hình này còn thường được gọi là **client-server VPN**; remote-access VPN và consumer VPN thường được triển khai theo cách này.
+
+```text
+Laptop/điện thoại -- tunnel mã hóa --> VPN server/gateway --> Mạng nội bộ hoặc Internet
+```
+
+**Ví dụ thực tế:**
+
+- Nhân viên làm việc tại nhà chạy Cisco AnyConnect, OpenVPN hoặc WireGuard client để kết nối tới VPN gateway của công ty, sau đó truy cập GitLab, database, file server hoặc máy tính nội bộ.
+- Người dùng điện thoại kết nối tới máy chủ của một consumer VPN. Website trên Internet nhìn thấy public IP thoát của VPN server thay vì public IP của mạng di động.
+- Quản trị viên tự đặt WireGuard server trên VPS để dùng một điểm truy cập bảo mật khi quản trị các hệ thống của mình.
+
+**Use case phù hợp:**
+
+- Tổ chức cần quản lý tập trung người dùng, quyền truy cập, route và nhật ký.
+- Thiết bị client thường nằm sau NAT hoặc đổi mạng liên tục và chỉ cần chủ động kết nối ra một server có địa chỉ ổn định.
+- Muốn tất cả hoặc một phần traffic đi qua một điểm kiểm soát chung như firewall, IDS/IPS hoặc Internet gateway.
+
+| Ưu điểm | Nhược điểm |
+|---|---|
+| Cấu hình, xác thực, thu hồi quyền và logging tập trung | VPN server có thể trở thành điểm lỗi đơn hoặc nút thắt băng thông nếu không có dự phòng/mở rộng |
+| Client chỉ cần biết địa chỉ server; dễ hoạt động qua NAT hơn kết nối trực tiếp giữa các client | Traffic giữa hai client có thể phải đi vòng qua server, làm tăng latency và tải gateway |
+| Dễ áp firewall policy, DNS và route thống nhất | Server có khả năng quan sát traffic sau khi giải mã nên phải được bảo vệ và tin cậy |
+| Phù hợp với số lượng lớn người dùng từ xa | Chi phí vận hành tăng theo số connection, throughput và yêu cầu high availability |
+
+#### Peer-to-peer VPN
+
+**Peer-to-peer VPN (P2P VPN)** là mô hình các đầu tham gia được xem là **peer ngang hàng** và có thể tạo tunnel trực tiếp với nhau, thay vì mọi traffic bắt buộc phải đi qua một VPN server trung tâm. Mỗi peer vừa có thể gửi vừa có thể nhận traffic VPN.
+
+```text
+Peer A <========== tunnel trực tiếp ==========> Peer B
+             \                               /
+              \=========> Peer C <==========/
+```
+
+Thuật ngữ này cần hiểu theo ngữ cảnh:
+
+- Tunnel trực tiếp giữa hai máy là **host-to-host VPN**.
+- Tunnel giữa hai router/gateway để nối hai LAN là **site-to-site VPN**; hai gateway là hai peer.
+- Nhiều peer kết nối trực tiếp hoặc tạo **mesh VPN (VPN dạng lưới)** để các máy/site giao tiếp với nhau mà không luôn đi qua một gateway trung tâm.
+- Hệ thống P2P vẫn có thể dùng một **coordination/control server** để đăng nhập, phân phối public key, policy và giúp các peer tìm nhau. Server này quản lý control plane nhưng traffic dữ liệu có thể truyền trực tiếp giữa các peer. Nếu NAT/firewall không cho kết nối trực tiếp, hệ thống có thể phải dùng relay.
+
+**Ví dụ thực tế:**
+
+- Hai router tại trụ sở và chi nhánh tạo IPsec site-to-site tunnel để hai mạng `10.1.0.0/16` và `10.2.0.0/16` giao tiếp.
+- Hai server tạo WireGuard tunnel trực tiếp để đồng bộ database hoặc backup qua Internet.
+- Các thiết bị trong một mạng Tailscale/ZeroTier tạo kết nối trực tiếp khi có thể; dịch vụ điều phối hỗ trợ nhận diện và phân phối cấu hình, còn relay được dùng khi kết nối trực tiếp thất bại.
+
+**Use case phù hợp:**
+
+- Nối hai hoặc nhiều văn phòng, cloud VPC/VNet hoặc server cần giao tiếp thường xuyên.
+- Cần đường truyền trực tiếp để giảm latency và tránh đưa toàn bộ traffic qua một gateway trung tâm.
+- Xây dựng overlay network giữa nhiều máy ở các vị trí khác nhau.
+
+| Ưu điểm | Nhược điểm |
+|---|---|
+| Đường dữ liệu trực tiếp thường có latency thấp và không tạo nút thắt tại gateway trung tâm | Số tunnel và cấu hình tăng nhanh khi số peer lớn; full mesh có tối đa `n(n-1)/2` kết nối |
+| Một peer/gateway lỗi không nhất thiết làm toàn bộ các peer khác mất kết nối | NAT traversal, firewall và IP động có thể khiến kết nối trực tiếp khó thiết lập |
+| Phân tán tải và có thể giảm chi phí bandwidth của server trung tâm | Quản lý key, policy, route, logging và thu hồi quyền phức tạp nếu không có control plane |
+| Phù hợp với site-to-site, host-to-host và mesh | Peer bị xâm nhập có thể trở thành đường vào các peer/mạng khác nếu phân quyền quá rộng |
+
+> **Điểm khác nhau cốt lõi:** client-to-server tập trung data plane qua một gateway; peer-to-peer ưu tiên tunnel trực tiếp giữa các peer. Tuy nhiên đây không phải ranh giới tuyệt đối: một sản phẩm có thể dùng server để quản lý nhưng vẫn truyền dữ liệu P2P, hoặc dùng P2P trước rồi chuyển sang relay khi không kết nối trực tiếp được.
+
+#### VPN để truy cập nội bộ và VPN để truy cập Internet
+
+VPN không chỉ có một mục đích. Cùng là client-to-server VPN nhưng route và policy khác nhau sẽ tạo ra hai cách sử dụng chính.
+
+##### 1. Truy cập tài nguyên nội bộ
+
+Mục tiêu là cho người dùng ở bên ngoài truy cập các tài nguyên private không được công khai trực tiếp trên Internet, ví dụ:
+
+- Server, database, GitLab, Jenkins, file share, API nội bộ.
+- Máy tính văn phòng qua RDP/SSH.
+- Dịch vụ chỉ có private IP hoặc DNS nội bộ như `app.internal.company`.
+
+Luồng điển hình:
+
+```text
+Laptop ở nhà --> VPN gateway công ty --> Server nội bộ
+YouTube       --> Router/ISP tại nhà --> Internet
+```
+
+VPN client thường được cấp route tới các subnet công ty, ví dụ `10.0.0.0/8`, và có thể nhận DNS nội bộ. Đây thường là **split tunnel**: traffic tới mạng nội bộ đi qua VPN, còn traffic Internet thông thường đi trực tiếp qua router/ISP của người dùng.
+
+**Ưu điểm:**
+
+- Không phải public trực tiếp từng database, SSH hoặc RDP ra Internet.
+- Tiết kiệm bandwidth và tải cho VPN gateway vì traffic Internet không phải đi vòng qua công ty.
+- Truy cập Internet công cộng thường có latency thấp hơn.
+
+**Nhược điểm/rủi ro:**
+
+- Thiết bị client đồng thời nối Internet và mạng công ty, nên máy bị malware có thể trở thành cầu nối tấn công nếu endpoint security và firewall yếu.
+- Công ty không quan sát hoặc áp policy lên phần traffic Internet đi trực tiếp.
+- Route, DNS hoặc subnet trùng nhau có thể làm tài nguyên nội bộ không truy cập được.
+- Kết nối VPN chỉ tạo đường tới mạng; firewall/ACL vẫn phải giới hạn người dùng được vào đúng dịch vụ cần thiết.
+
+##### 2. Truy cập Internet thông qua VPN
+
+Mục tiêu là đưa traffic Internet của client tới VPN gateway trước, sau đó gateway NAT và chuyển tiếp traffic ra Internet:
+
+```text
+Laptop/điện thoại --> tunnel VPN --> VPN gateway/exit node --> Website Internet
+```
+
+Đây thường là **full tunnel** hoặc cấu hình **exit node**. Website nhìn thấy public IP của VPN gateway; ISP hoặc Wi-Fi cục bộ chủ yếu thấy client đang kết nối tới VPN gateway nhưng vẫn thấy metadata như thời gian và dung lượng.
+
+**Use case thực tế:**
+
+- Consumer VPN đưa traffic ra Internet qua máy chủ ở một vị trí khác.
+- Công ty bắt buộc máy nhân viên từ xa truy cập Internet qua firewall/proxy công ty để lọc malware, URL và ghi log.
+- Người dùng tự vận hành VPN tại nhà/VPS để bảo vệ đoạn kết nối trên Wi-Fi không tin cậy.
+
+**Ưu điểm:**
+
+- Bảo vệ traffic trên đoạn client tới VPN gateway khỏi mạng Wi-Fi/ISP cục bộ; HTTPS vẫn cần thiết để bảo vệ và xác thực tới website cuối.
+- Có thể áp chính sách Internet tập trung tại gateway.
+- Website thường thấy IP của gateway thay vì IP mạng hiện tại của client.
+
+**Nhược điểm/rủi ro:**
+
+- Traffic đi vòng qua gateway nên có thể tăng latency, giảm throughput và tốn bandwidth.
+- VPN gateway/provider trở thành bên có khả năng quan sát metadata và một số traffic chưa được mã hóa; người dùng phải tin cậy đơn vị vận hành.
+- Gateway lỗi có thể làm mất cả truy cập Internet nếu không có failover hoặc policy phù hợp.
+- VPN không tạo ẩn danh tuyệt đối và không tự chống phishing, malware, cookie hoặc browser fingerprint.
+
+| Mục đích | Route thường dùng | Điểm thoát traffic | Ví dụ |
+|---|---|---|---|
+| **Truy cập nội bộ** | Chỉ các subnet private đi qua VPN | Traffic nội bộ kết thúc tại mạng công ty; Internet thường thoát tại mạng nhà | Nhân viên truy cập database `10.0.1.20` |
+| **Truy cập Internet qua VPN** | Default route `0.0.0.0/0` và/hoặc `::/0` đi qua VPN | VPN gateway/exit node | Consumer VPN hoặc Internet filtering của công ty |
+| **Kết hợp cả hai** | Subnet nội bộ và default route đều qua VPN | Mạng công ty xử lý nội bộ và đưa Internet ra ngoài | Công ty yêu cầu full tunnel cho máy làm việc từ xa |
+
 #### Full tunnel (đường hầm toàn phần) và split tunnel (đường hầm phân tách)
 
 | Chế độ | Lưu lượng đi qua VPN | Đặc điểm |
@@ -123,7 +286,7 @@ Vì vậy, bật VPN công ty không nhất thiết làm mọi truy cập Intern
 1. **Kết nối và xác thực:** client liên hệ VPN gateway. Certificate liên kết danh tính với public key để client kiểm tra đúng server; MFA yêu cầu nhiều bằng chứng đăng nhập; session key là khóa ngắn hạn dùng mã hóa traffic của riêng phiên đó.
 2. **Cấp cấu hình:** client có thể nhận một IP ảo, DNS và các route được phép. IP ảo này không nhất thiết thuộc cùng subnet Layer 2 với máy công ty; VPN gateway có thể định tuyến giữa subnet VPN và các subnet nội bộ.
 3. **Đóng gói:** hệ điều hành chọn interface VPN theo routing table. VPN client mã hóa packet gốc rồi đóng nó trong một packet ngoài có đích là VPN gateway.
-4. **Truyền qua Internet:** trước **NAT (Network Address Translation: biên dịch địa chỉ mạng)**, IP nguồn ngoài có thể là IP private của laptop; router nhà đổi nó thành public IP. ISP thấy **metadata (dữ liệu mô tả như địa chỉ, thời gian và dung lượng)** nhưng không đọc được **payload (phần nội dung packet mang theo)** đã mã hóa.
+4. **Truyền qua Internet:** packet ngoài rời laptop với source IP của interface mạng laptop. Nếu đó là private IPv4, router nhà thực hiện NAT/PAT và thay source IP:port bằng IP:port phía WAN. IP WAN có thể là public IPv4 hoặc có thể tiếp tục bị ISP dịch qua CGNAT. ISP thấy **metadata (dữ liệu mô tả như địa chỉ, thời gian và dung lượng)** nhưng không đọc được **payload (phần nội dung packet mang theo)** đã mã hóa.
 5. **Tháo gói và kiểm soát truy cập:** gateway giải mã packet. Firewall/ACL áp rule để quyết định user hoặc IP đó được truy cập đúng dịch vụ nào; kết nối được VPN không có nghĩa được phép vào toàn bộ mạng.
 6. **Phản hồi:** packet trả về được gateway mã hóa và đóng gói ngược về client.
 
@@ -132,7 +295,7 @@ Packet có hai lớp địa chỉ khi nằm trong tunnel:
 | Lớp packet | IP nguồn | IP đích | Ý nghĩa |
 |---|---|---|---|
 | **Packet trong (inner)** | IP ảo của VPN client, ví dụ `10.0.5.100` | Máy nội bộ, ví dụ `10.0.1.20` | Giao tiếp logic mà ứng dụng muốn thực hiện |
-| **Packet ngoài (outer), sau NAT nhà** | Public IP của mạng nhà | Public IP của VPN gateway | Vận chuyển phần dữ liệu đã mã hóa qua Internet |
+| **Packet ngoài (outer), sau NAT nhà** | IP WAN của router nhà; trên Internet cuối cùng là public IP sau lớp NAT cuối | Public IP của VPN gateway | Vận chuyển phần dữ liệu đã mã hóa qua Internet |
 
 #### Truy cập Remote Desktop qua VPN
 
@@ -446,11 +609,11 @@ IP của người dùng chủ yếu dùng packet switching, nhưng hạ tầng b
 
 - **LAN port:** thường có 2-4 cổng dùng để kết nối có dây tới các thiết bị trong mạng nội bộ
 
-- **Port logic:** là số từ 0 - 65535 hoạt động như cổng dịch vụ để xác định xem khi dữ liệu đến router sẽ dành cho thiết bị nào trong mạng, cho process nào trong thiết bị đó.
+- **Port logic:** là số từ `0` đến `65535` nằm trong header TCP hoặc UDP. Port giúp hệ điều hành chuyển dữ liệu tới đúng socket/process. Router thông thường không dùng port để định tuyến packet; router NAT/PAT mới đọc và có thể thay đổi port để quản lý các ánh xạ.
 
-- Khi ta request tới 1 website, nhưng khi nhận phản hồi với header là Public IP của router thì ta không chỉ dựa vào đó mà có thể biết được rằng thiết bị nào, chương trình nào trong mạng nội bộ cần nhận phản hồi đó → sử dụng NAT table
+- Khi một máy nội bộ truy cập website, phản hồi từ website được gửi tới public IP và port phía ngoài của router. Chỉ public IP chưa đủ để router biết máy nội bộ nào cần nhận. Router tra ánh xạ NAT/PAT, xác định IP và port nội bộ tương ứng, sửa packet rồi chuyển nó vào LAN.
 
-- NAT table hoạt động như nhật ký kết nối, ghi lại toàn bộ kết nối từ mạng nội bộ ra ngoài internet, đặc biệt là ánh xạ IP:port nội bộ và IP:port công cộng mà router sử dụng
+- **Bảng NAT/PAT** không phải nhật ký lưu vĩnh viễn “toàn bộ kết nối”. Nó chứa các ánh xạ đang còn hiệu lực, thường gồm protocol, IP:port nội bộ, IP:port phía ngoài và đôi khi cả IP:port đích. Ánh xạ động bị xóa khi kết nối kết thúc hoặc hết thời gian chờ. Nhật ký hệ thống có thể ghi lại một phần sự kiện NAT nếu router được cấu hình logging, nhưng đó là dữ liệu khác với bảng NAT đang hoạt động.
 
 ![Hình 28](assets/image19.png)
 
@@ -837,29 +1000,164 @@ Các lỗi phổ biến:
 
 ### NAT (Network Address Translation)
 
-- **NAT:** thay đổi địa chỉ IP khi packet đi qua thiết bị biên. NAT thường dùng để nối một miền địa chỉ với miền khác; trong gia đình, nó cho phép private IPv4 giao tiếp với Internet qua public IPv4.
+#### NAT là gì?
 
-- **PAT/NAPT:** thay đổi cả IP và port để phân biệt nhiều kết nối cùng dùng một public IPv4. Ví dụ hai laptop cùng truy cập Google sẽ được router gán hai source port public khác nhau để response quay về đúng máy.
+**NAT** là chức năng sửa địa chỉ IP nguồn hoặc địa chỉ IP đích trong header của packet khi packet đi qua một thiết bị, thường là router hoặc firewall. Thiết bị NAT phải sửa thêm các trường kiểm tra liên quan để packet sau khi thay đổi vẫn hợp lệ.
 
-- NAT/PAT làm suy giảm mô hình **end-to-end (hai endpoint có thể giao tiếp trực tiếp mà không cần dịch địa chỉ giữa đường)** và làm kết nối inbound phức tạp hơn.
+NAT không tự mã hóa dữ liệu, không tự xác thực người dùng và không tự quyết định packet an toàn hay độc hại. Đây là chức năng dịch địa chỉ. Firewall là chức năng áp rule để cho phép hoặc chặn traffic. Router gia đình thường thực hiện cả NAT và firewall nên hai chức năng này dễ bị nhầm là một.
 
-- **Port forwarding:** tạo ánh xạ tĩnh cho kết nối đi vào, ví dụ traffic tới `198.51.100.10:80` được chuyển tới web server nội bộ `192.168.1.10:8080`. Port forwarding chỉ hoạt động khi phía ngoài thực sự có địa chỉ/route nhận traffic; nó thường không tự hoạt động qua CGNAT của ISP.
+Trong mạng gia đình dùng IPv4:
 
-1. **B1:** Thiết bị nội bộ có địa chỉ `192.168.1.5` muốn kết nối tới một web server.
+- Máy trong LAN có private IP, ví dụ `192.168.1.5`.
+- Router có một IP ở phía LAN, ví dụ `192.168.1.1`.
+- Interface WAN của router có một địa chỉ do ISP cấp. Địa chỉ này có thể là public IPv4, hoặc có thể là địa chỉ nằm sau CGNAT của ISP.
+- Private IPv4 không được định tuyến trực tiếp trên Internet công cộng. Router phải thay địa chỉ nguồn private bằng địa chỉ có thể sử dụng ở phía WAN.
 
-1. **B2:** Thiết bị gửi packet với nguồn `192.168.1.5:54321`, đích `203.0.113.20:443`.
+#### Phân biệt NAT và PAT/NAPT
 
-1. **B3:** Packet được gửi tới router và router thực hiện PAT:
+| Cơ chế | Trường bị thay đổi | Mục đích |
+|---|---|---|
+| **NAT thuần** | Địa chỉ IP | Dịch một địa chỉ hoặc một dải địa chỉ sang địa chỉ/dải khác |
+| **PAT/NAPT** | Địa chỉ IP và port TCP/UDP | Cho nhiều máy và nhiều kết nối dùng chung một public IPv4 |
 
-   - Router thay đổi nguồn thành địa chỉ public/port phía ngoài `198.51.100.10:62345`.
+Trong cách nói hằng ngày, “NAT của router gia đình” thường thực sự là **PAT/NAPT**. Router không chỉ thay private IP bằng public IP mà còn có thể thay source port để mỗi luồng có một ánh xạ riêng.
 
-   - NAT table ghi nhớ mapping `192.168.1.5:54321` ↔ `198.51.100.10:62345` cùng protocol và trạng thái cần thiết.
+Ví dụ:
 
-   - Packet phía ngoài có nguồn `198.51.100.10:62345`, đích `203.0.113.20:443`.
+```text
+Laptop A: 192.168.1.5:54321  \
+                                  Router PAT: 198.51.100.10:62001 --> Web server
+Laptop B: 192.168.1.6:54321  /
+                                  Router PAT: 198.51.100.10:62002 --> Web server
+```
 
-1. **B4:** Server xử lý và gửi phản hồi về `198.51.100.10:62345`.
+Hai laptop có thể tình cờ dùng cùng source port `54321`. Router vẫn phân biệt được vì nó cấp hai port phía ngoài khác nhau là `62001` và `62002`.
 
-1. **B5:** Router tra NAT table, đổi đích về `192.168.1.5:54321` rồi chuyển packet tới thiết bị nội bộ.
+#### Một kết nối đi ra Internet qua PAT
+
+Giả sử:
+
+| Thành phần | Địa chỉ |
+|---|---|
+| Laptop | `192.168.1.5` |
+| Router phía LAN | `192.168.1.1` |
+| Router phía WAN | `198.51.100.10` |
+| Web server | `203.0.113.20:443` |
+
+1. Ứng dụng trên laptop tạo kết nối TCP từ `192.168.1.5:54321` tới `203.0.113.20:443`.
+2. Laptop thấy server không nằm trong subnet LAN nên gửi packet tới default gateway `192.168.1.1`. IP đích trong packet vẫn là `203.0.113.20`; chỉ frame Ethernet của chặng LAN có MAC đích là MAC của router.
+3. Router nhận packet và tạo một ánh xạ PAT, ví dụ:
+
+   ```text
+   TCP 192.168.1.5:54321 <-> 198.51.100.10:62345
+       đích từ xa: 203.0.113.20:443
+   ```
+
+4. Router sửa source IP và source port:
+
+   ```text
+   Trước PAT: 192.168.1.5:54321  -> 203.0.113.20:443
+   Sau PAT:   198.51.100.10:62345 -> 203.0.113.20:443
+   ```
+
+5. Web server chỉ thấy kết nối đến từ `198.51.100.10:62345`. Server không biết private IP `192.168.1.5` chỉ bằng packet này.
+6. Server gửi phản hồi tới `198.51.100.10:62345`.
+7. Router tìm thấy ánh xạ, sửa destination IP và destination port:
+
+   ```text
+   Trước dịch ngược: 203.0.113.20:443 -> 198.51.100.10:62345
+   Sau dịch ngược:   203.0.113.20:443 -> 192.168.1.5:54321
+   ```
+
+8. Router dùng ARP/neighbor cache để tìm MAC của laptop, tạo frame mới và gửi packet vào LAN.
+
+Địa chỉ IP và port của server không bị thay đổi trong ví dụ này. Router chủ yếu sửa phía nguồn khi packet đi ra và sửa phía đích khi packet phản hồi đi vào.
+
+#### Bảng NAT/PAT lưu gì?
+
+Một entry có thể chứa:
+
+```text
+protocol
+IP:port phía trong trước khi dịch
+IP:port phía ngoài sau khi dịch
+IP:port của máy từ xa
+thời điểm hết hạn hoặc trạng thái liên quan
+```
+
+Chi tiết chính xác tùy hệ điều hành và thiết bị. TCP thường được theo dõi theo trạng thái kết nối; UDP không có handshake nên thiết bị thường giữ ánh xạ trong một khoảng timeout sau packet cuối. ICMP không có TCP/UDP port, vì vậy thiết bị có thể dùng các trường như ICMP identifier để phân biệt luồng.
+
+Bảng NAT/PAT có dung lượng hữu hạn. Nếu có quá nhiều ánh xạ đồng thời hoặc hết port phía ngoài khả dụng, router có thể không tạo được kết nối mới dù đường truyền Internet vẫn đang hoạt động.
+
+#### Các kiểu NAT thường gặp
+
+| Kiểu | Thay đổi chính | Trường hợp dùng |
+|---|---|---|
+| **SNAT (Source NAT)** | Sửa source IP | Packet đi từ mạng trong sang mạng ngoài |
+| **DNAT (Destination NAT)** | Sửa destination IP | Chuyển traffic đi vào tới một máy/dịch vụ khác |
+| **Static NAT** | Ánh xạ cố định một địa chỉ với một địa chỉ | Công bố một máy bằng một public IP riêng |
+| **Dynamic NAT** | Chọn địa chỉ từ một pool khi cần | Nhiều máy dùng một nhóm public IP |
+| **PAT/NAPT** | Sửa IP và port | Nhiều kết nối dùng chung một public IP |
+
+**Masquerade** thường là một dạng SNAT lấy địa chỉ hiện tại của interface WAN, phù hợp khi IP WAN được cấp động. Tên và cách cấu hình cụ thể phụ thuộc hệ điều hành/router.
+
+#### Port forwarding hoạt động thế nào?
+
+**Port forwarding** thường là DNAT có rule cấu hình trước. Ví dụ:
+
+```text
+198.51.100.10:8080/TCP -> 192.168.1.10:80/TCP
+```
+
+Khi packet từ Internet tới `198.51.100.10:8080`, router đổi đích thành `192.168.1.10:80` và chuyển vào LAN. Khi server nội bộ phản hồi, router thực hiện phép dịch ngược để phía client Internet tiếp tục thấy đầu bên kia là `198.51.100.10:8080`.
+
+Port forwarding không tự bảo đảm dịch vụ truy cập được. Cần đồng thời thỏa mãn:
+
+- Traffic Internet thực sự được định tuyến tới địa chỉ WAN đó.
+- Không bị CGNAT phía ISP chặn trước khi tới router nhà.
+- Firewall cho phép protocol/port tương ứng.
+- Dịch vụ nội bộ đang chạy và listen đúng IP/port.
+- Máy nội bộ có route phản hồi phù hợp, thường qua chính router NAT.
+
+Mở port forwarding làm dịch vụ nội bộ nhận traffic từ Internet. Chỉ nên mở port cần thiết, cập nhật phần mềm và áp authentication phù hợp.
+
+#### CGNAT: hai lần dịch địa chỉ
+
+Nếu ISP dùng CGNAT, đường đi có thể là:
+
+```text
+192.168.1.5
+  -> router nhà dịch thành 100.64.10.20
+  -> router CGNAT của ISP dịch thành 203.0.113.50
+  -> Internet
+```
+
+Trong trường hợp này, `100.64.10.20` không phải public IPv4 trực tiếp của gia đình. Rule port forwarding trên router nhà chỉ điều khiển lớp NAT thứ nhất; người dùng thường không điều khiển được lớp CGNAT của ISP. Vì vậy kết nối chủ động từ Internet vào nhà thường không hoạt động nếu ISP không cung cấp public IP, cơ chế mở port, hoặc giải pháp thay thế.
+
+Dải `100.64.0.0/10` được dành cho shared address space của nhà mạng. Tuy nhiên ISP cũng có thể triển khai theo cách khác, nên chỉ nhìn một địa chỉ không phải lúc nào cũng đủ để kết luận toàn bộ kiến trúc.
+
+#### NAT không phải firewall
+
+- NAT sửa header để dịch địa chỉ hoặc port.
+- Firewall kiểm tra rule và quyết định cho phép/chặn.
+- Một packet có thể được NAT nhưng vẫn bị firewall chặn.
+- Một packet có thể được firewall cho phép mà không cần NAT, ví dụ traffic được định tuyến giữa hai subnet private.
+- Việc kết nối mới từ Internet thường không vào được router gia đình là kết quả của cả việc không có ánh xạ NAT phù hợp và policy firewall, không nên gọi chung là “NAT bảo vệ mạng”.
+
+#### Hạn chế của NAT/PAT
+
+- Kết nối từ ngoài vào cần rule hoặc cơ chế NAT traversal phù hợp.
+- Một số giao thức ghi IP/port bên trong payload có thể cần xử lý bổ sung và dễ gặp lỗi.
+- P2P, VoIP, game online và VPN có thể cần STUN, TURN, ICE, UDP hole punching, relay hoặc cấu hình riêng.
+- Log chỉ có public IP thường chưa đủ xác định máy nội bộ; cần thêm port, protocol, thời gian chính xác và log ánh xạ NAT.
+- NAT làm packet bị thay đổi giữa hai endpoint, khiến việc phân tích packet và xử lý sự cố phức tạp hơn.
+- NAT không thay thế TLS, VPN, authentication, cập nhật phần mềm hoặc firewall.
+
+#### NAT và IPv6
+
+IPv6 có không gian địa chỉ lớn nên thiết bị có thể dùng global IPv6 riêng; cách triển khai phổ biến không cần PAT để tiết kiệm địa chỉ như IPv4. Điều này không có nghĩa máy IPv6 phải mở ra Internet. Firewall vẫn có thể chặn kết nối đi vào và chỉ cho phép traffic phản hồi của kết nối đã được cho phép.
+
+NAT66 tồn tại nhưng không phải yêu cầu mặc định của IPv6. Không nên coi “không dùng NAT” là “không có bảo mật”; bảo mật truy cập do firewall, policy, phân đoạn mạng và cấu hình dịch vụ quyết định.
 
 ### Default gateway
 
@@ -875,19 +1173,57 @@ Các lỗi phổ biến:
 
 *Hình 34*
 
-### Subnet, subnet mask và CIDR (Classless Inter-Domain Routing: định tuyến không phân lớp)
+### Subnet, subnet mask và CIDR (Classless Inter-Domain Routing: định tuyến liên miền không phân lớp)
 
-- **Subnet:** một nhóm địa chỉ IP dùng chung prefix và thường được coi là cùng mạng on-link. Subnet giúp quyết định host nào có thể gửi trực tiếp cho nhau, chia broadcast domain và tổ chức route; ví dụ `192.168.1.0/24`.
+#### Subnet là gì?
 
-- **Broadcast (một-đến-tất-cả trong miền cục bộ)** không được router chuyển tiếp thông thường giữa subnet. IPv6 dùng **multicast (một-đến-một nhóm đã tham gia)** thay broadcast.
+**Subnet (mạng con)** là một tập địa chỉ IP có chung một số bit đầu, gọi là **network prefix**. Prefix xác định mạng; các bit còn lại dùng để tạo địa chỉ cho các interface trong mạng đó.
 
-- **Hỗ trợ phân đoạn mạng:** có thể đặt server và máy người dùng ở các subnet/VLAN khác nhau rồi dùng firewall hoặc ACL để kiểm soát traffic giữa chúng. Việc chia subnet tự nó không tạo ra bảo mật nếu không có chính sách lọc phù hợp.
+Ví dụ `192.168.1.0/24`:
 
-- **Phân bổ địa chỉ linh hoạt:** Internet hiện dùng CIDR thay cho mô hình class A/B/C cũ. Prefix có thể được chia theo nhu cầu thực tế và có thể được tổng hợp để giảm số route.
+- IPv4 có tổng cộng 32 bit.
+- `/24` cho biết 24 bit đầu là phần prefix.
+- 8 bit còn lại là phần host.
+- Dải địa chỉ của subnet là `192.168.1.0` đến `192.168.1.255`.
 
-- **Subnet mask:** là dãy 32 bit đối với IPv4, dùng để xác định phần prefix và phần host trong một địa chỉ.
+Một địa chỉ đầy đủ nên được viết kèm prefix, ví dụ `192.168.1.20/24`. Chỉ viết `192.168.1.20` chưa đủ để xác định subnet của interface, vì cùng địa chỉ đó có thể được cấu hình với `/24`, `/25`, `/26` hoặc prefix khác.
 
-- Các bit prefix được đặt là `1`, các bit phần host được đặt là `0`.
+Subnet được dùng để:
+
+- Xác định một route tới một nhóm địa chỉ thay vì tạo route cho từng địa chỉ.
+- Cho host biết địa chỉ nào được coi là on-link theo cấu hình routing.
+- Chia một khối địa chỉ lớn thành nhiều khối nhỏ phù hợp với từng mạng.
+- Tách user, server, thiết bị quản trị hoặc môi trường khác nhau để có thể áp routing, firewall và ACL giữa chúng.
+
+Subnet là khái niệm Layer 3. **VLAN/broadcast domain** là khái niệm Layer 2. Thiết kế thông thường ánh xạ một IPv4 subnet với một VLAN, nhưng chúng không phải cùng một thứ. Một VLAN về kỹ thuật có thể chứa nhiều IP subnet, dù cách này thường làm thiết kế và xử lý sự cố khó hơn.
+
+Việc chia subnet không tự tạo ra bảo mật. Muốn ngăn hoặc giới hạn traffic giữa các subnet phải có router, firewall, ACL hoặc policy tương ứng.
+
+#### Subnet mask là gì?
+
+**Subnet mask** là cách IPv4 đánh dấu bit nào thuộc network prefix và bit nào thuộc phần host:
+
+- Bit prefix là `1`.
+- Bit host là `0`.
+- Với subnet mask thông thường, các bit `1` phải liên tiếp từ trái sang phải, sau đó mới đến các bit `0`.
+
+Ví dụ `/24`:
+
+```text
+Prefix length:  /24
+Binary mask:    11111111.11111111.11111111.00000000
+Decimal mask:   255.255.255.0
+```
+
+Ví dụ `/26`:
+
+```text
+Prefix length:  /26
+Binary mask:    11111111.11111111.11111111.11000000
+Decimal mask:   255.255.255.192
+```
+
+`255.255.255.192` có 26 bit `1`: ba octet đầu có 24 bit `1`, octet cuối `11000000` có thêm 2 bit `1`.
 
 ![Hình 35](assets/image83.png)
 
@@ -897,7 +1233,30 @@ Các lỗi phổ biến:
 
 *Hình 36*
 
-- **CIDR:** cách biểu diễn và cấp phát mạng bằng prefix dài tùy ý thay vì class A/B/C cố định. Mục đích là dùng địa chỉ hiệu quả và tổng hợp route; `/24` nghĩa 24 bit đầu xác định prefix.
+#### CIDR là gì?
+
+**CIDR** là phương pháp biểu diễn, cấp phát và định tuyến địa chỉ bằng độ dài prefix thay đổi. Cú pháp:
+
+```text
+địa-chỉ/prefix-length
+```
+
+Ví dụ:
+
+```text
+192.168.1.0/24
+10.10.8.0/21
+2001:db8:1234::/48
+```
+
+Trong IPv4, prefix length nằm từ `/0` đến `/32`. Trong IPv6, nó nằm từ `/0` đến `/128`.
+
+- Prefix càng nhỏ thì khối địa chỉ càng lớn. `/16` chứa nhiều địa chỉ hơn `/24`.
+- Prefix càng lớn thì khối địa chỉ càng nhỏ. `/28` chứa ít địa chỉ hơn `/24`.
+- `/0` không cố định bit nào và khớp mọi địa chỉ; route `0.0.0.0/0` thường là default route IPv4.
+- `/32` cố định cả 32 bit và chỉ biểu diễn đúng một địa chỉ IPv4; nó thường được dùng làm host route.
+
+Trước CIDR, IPv4 được cấp phát và định tuyến chủ yếu theo class A, B, C với các kích thước cố định. CIDR cho phép dùng prefix như `/20`, `/23`, `/27`, nhờ đó cấp phát sát nhu cầu hơn và tổng hợp nhiều route khi các prefix phù hợp.
 
 ![Hình 37](assets/image48.png)
 
@@ -907,15 +1266,199 @@ Các lỗi phổ biến:
 
 *Hình 38*
 
-- Với IPv4 truyền thống, trừ **network address (địa chỉ đại diện subnet)** và **directed broadcast address (địa chỉ gửi tới mọi host trong subnet)**. **Point-to-point (link chỉ có hai đầu)** `/31`, host route `/32` và IPv6 là ngoại lệ.
+#### Cách tìm network address bằng phép AND
 
-- Khi gửi packet, hệ điều hành tra bảng định tuyến và chọn route khớp dài nhất. Subnet mask/prefix của interface tạo ra một route on-link, nhưng còn có thể tồn tại các route cụ thể khác.
+Network address được tính bằng:
 
-- Cách minh họa đơn giản để kiểm tra IPv4 đích có thuộc prefix on-link của interface nguồn:
+```text
+IPv4 address AND subnet mask = network address
+```
 
-  `IP nguồn AND subnet mask của interface == IP đích AND subnet mask của interface`
+Ví dụ với `192.168.1.70/26`:
 
-- Nếu thuộc cùng prefix on-link, máy gửi trực tiếp ở Layer 2. Nếu không, máy gửi packet cho next hop của route phù hợp hoặc default gateway. Next hop đó có thể dẫn tới một mạng nội bộ khác, không nhất thiết là Internet.
+```text
+IP:       192.168.1.70  = 11000000.10101000.00000001.01000110
+Mask:     255.255.255.192
+                         = 11111111.11111111.11111111.11000000
+AND result:
+          192.168.1.64  = 11000000.10101000.00000001.01000000
+```
+
+Vì vậy `192.168.1.70/26` thuộc subnet `192.168.1.64/26`, không thuộc `192.168.1.0/26`.
+
+Với `/26`, 6 bit cuối là phần host. Mỗi subnet chứa:
+
+```text
+2^(32 - 26) = 2^6 = 64 địa chỉ
+```
+
+Các subnet `/26` nằm trong `192.168.1.0/24` bắt đầu tại:
+
+| Subnet | Toàn bộ dải |
+|---|---|
+| `192.168.1.0/26` | `.0` – `.63` |
+| `192.168.1.64/26` | `.64` – `.127` |
+| `192.168.1.128/26` | `.128` – `.191` |
+| `192.168.1.192/26` | `.192` – `.255` |
+
+Khoảng cách giữa hai network address liên tiếp là 64. Con số này thường được gọi là **block size**.
+
+#### Network address, broadcast address và địa chỉ host
+
+Trong một IPv4 subnet thông thường:
+
+- **Network address:** tất cả bit host bằng `0`; dùng để biểu diễn subnet trong routing.
+- **Directed broadcast address:** tất cả bit host bằng `1`; biểu diễn việc gửi tới toàn bộ host trong subnet đó.
+- Các địa chỉ nằm giữa hai địa chỉ trên có thể được gán cho interface.
+
+Với `192.168.1.64/26`:
+
+| Loại | Địa chỉ |
+|---|---|
+| Network address | `192.168.1.64` |
+| Host đầu tiên | `192.168.1.65` |
+| Host cuối cùng | `192.168.1.126` |
+| Broadcast address | `192.168.1.127` |
+
+Số địa chỉ có thể gán cho host trong IPv4 subnet thông thường:
+
+```text
+2^(số bit host) - 2
+```
+
+Với `/26`, kết quả là `64 - 2 = 62` địa chỉ host.
+
+Công thức trừ 2 không áp dụng máy móc cho mọi trường hợp:
+
+- `/31` có 2 địa chỉ và được phép dùng cả hai đầu trên link point-to-point theo RFC 3021; không dùng network/broadcast theo cách subnet truyền thống.
+- `/32` biểu diễn một địa chỉ duy nhất, thường dùng cho host route hoặc loopback; không phải một LAN có số host bằng `2^0 - 2`.
+- IPv6 không có broadcast address và không dùng công thức “trừ network và broadcast” như IPv4.
+
+Router thường không chuyển tiếp directed broadcast mặc định vì nó có thể bị lạm dụng. IPv6 dùng multicast cho các chức năng cần gửi tới một nhóm node.
+
+#### Bảng quy đổi prefix IPv4 thường gặp
+
+| Prefix | Subnet mask | Tổng địa chỉ | Host dùng được theo cách truyền thống |
+|---|---|---:|---:|
+| `/16` | `255.255.0.0` | 65,536 | 65,534 |
+| `/20` | `255.255.240.0` | 4,096 | 4,094 |
+| `/24` | `255.255.255.0` | 256 | 254 |
+| `/25` | `255.255.255.128` | 128 | 126 |
+| `/26` | `255.255.255.192` | 64 | 62 |
+| `/27` | `255.255.255.224` | 32 | 30 |
+| `/28` | `255.255.255.240` | 16 | 14 |
+| `/29` | `255.255.255.248` | 8 | 6 |
+| `/30` | `255.255.255.252` | 4 | 2 |
+| `/31` | `255.255.255.254` | 2 | 2 trên point-to-point |
+| `/32` | `255.255.255.255` | 1 | 1 địa chỉ/host route |
+
+#### Host quyết định gửi trực tiếp hay qua router
+
+Quyết định thực tế dựa trên **routing table**, không chỉ dựa vào việc người học nhìn hai IP và thấy chúng có vẻ giống nhau.
+
+Khi cấu hình `192.168.1.70/26` trên interface, hệ điều hành thường tạo connected/on-link route cho `192.168.1.64/26`. Khi gửi packet, hệ điều hành:
+
+1. Tìm tất cả route khớp destination IP.
+2. Chọn route có prefix dài nhất.
+3. Nếu route được đánh dấu on-link, tìm địa chỉ Layer 2 của destination bằng ARP rồi gửi trực tiếp.
+4. Nếu route chỉ định next hop, tìm địa chỉ Layer 2 của next hop rồi gửi frame cho next hop. IP đích của packet vẫn là IP đích cuối cùng.
+
+Cách kiểm tra đơn giản xem hai IPv4 address có nằm trong cùng một prefix:
+
+```text
+IP A AND mask == IP B AND mask
+```
+
+Ví dụ với mask `/26`:
+
+```text
+192.168.1.70  AND /26 = 192.168.1.64
+192.168.1.100 AND /26 = 192.168.1.64  -> cùng prefix
+192.168.1.130 AND /26 = 192.168.1.128 -> khác prefix
+```
+
+Phép tính này giúp xác định cùng prefix, nhưng route cụ thể hơn, policy routing, proxy ARP hoặc cấu hình đặc biệt vẫn có thể làm hành vi thực tế khác với mô hình cơ bản.
+
+#### Longest prefix match
+
+Nếu nhiều route cùng khớp destination IP, router hoặc host chọn route có prefix dài nhất vì route đó mô tả tập địa chỉ cụ thể hơn.
+
+Ví dụ routing table:
+
+| Route | Next hop |
+|---|---|
+| `0.0.0.0/0` | Router A |
+| `10.0.0.0/8` | Router B |
+| `10.20.0.0/16` | Router C |
+| `10.20.30.0/24` | Router D |
+
+Packet tới `10.20.30.40` khớp cả bốn route, nhưng `/24` dài nhất nên được gửi tới Router D. Packet tới `10.50.1.2` chỉ khớp `/8` và `/0`, vì vậy `/8` qua Router B được chọn.
+
+“Dài nhất” nói về số bit prefix, không nói về khoảng cách vật lý, số router phải đi qua hoặc latency.
+
+#### Chia một subnet lớn thành các subnet nhỏ
+
+Muốn chia `192.168.1.0/24` thành 4 subnet có kích thước bằng nhau:
+
+1. Cần 4 subnet, tức `2^2`; mượn 2 bit từ phần host.
+2. Prefix mới là `/24 + 2 = /26`.
+3. Mỗi `/26` có 64 địa chỉ, trong trường hợp truyền thống có 62 địa chỉ host.
+4. Kết quả là:
+
+   ```text
+   192.168.1.0/26
+   192.168.1.64/26
+   192.168.1.128/26
+   192.168.1.192/26
+   ```
+
+Không bắt buộc mọi subnet phải có kích thước bằng nhau. **VLSM (Variable Length Subnet Mask)** cho phép dùng các prefix khác nhau, ví dụ cấp `/25` cho mạng cần khoảng 100 host, `/27` cho mạng cần khoảng 20 host và `/30` hoặc `/31` cho link nhỏ. Các khối phải không chồng lấn và network address phải nằm đúng biên của kích thước khối.
+
+#### Tổng hợp route
+
+CIDR còn cho phép gộp nhiều prefix liên tiếp thành một route ngắn hơn nếu chúng:
+
+- Có kích thước phù hợp.
+- Liên tiếp.
+- Cùng chia sẻ đủ bit prefix đầu.
+- Bắt đầu đúng ranh giới của prefix tổng hợp.
+
+Ví dụ:
+
+```text
+192.168.0.0/24
+192.168.1.0/24
+```
+
+có thể được tổng hợp thành:
+
+```text
+192.168.0.0/23
+```
+
+Nhưng `192.168.1.0/24` và `192.168.2.0/24` không thể gộp chính xác thành một `/23`, vì một khối `/23` phải bắt đầu ở octet thứ ba là số chẵn: `.0`, `.2`, `.4`, ...
+
+Tổng hợp route làm routing table nhỏ hơn, nhưng route tổng hợp chỉ nên được quảng bá khi router thực sự có đường tới toàn bộ dải được tổng hợp hoặc có cách xử lý phần không tồn tại để tránh chuyển packet sai hướng.
+
+#### Các lỗi cấu hình và cách hiểu thường gặp
+
+- **Hai IP có ba octet đầu giống nhau nên cùng subnet:** sai nếu chưa biết prefix. `192.168.1.70/26` và `192.168.1.100/26` cùng thuộc `192.168.1.64/26`, nhưng `192.168.1.10/26` thuộc subnet khác là `192.168.1.0/26`.
+- **Mọi địa chỉ kết thúc bằng `.0` là network address:** sai. Với `192.168.0.0/16`, địa chỉ `192.168.1.0` là một địa chỉ nằm trong subnet và về mặt subnet có thể gán cho host. Vai trò của địa chỉ phụ thuộc prefix, không phụ thuộc riêng octet cuối.
+- **Mọi địa chỉ kết thúc bằng `.255` là broadcast:** sai vì cùng lý do. Ví dụ broadcast của `192.168.1.0/23` là `192.168.1.255`, nhưng `192.168.0.255` chỉ là một địa chỉ nằm giữa dải `/23`.
+- **Hai máy cấu hình mask khác nhau vẫn luôn giao tiếp bình thường:** không đúng. Một máy có thể cho rằng đích là on-link và ARP trực tiếp, trong khi máy kia cho rằng phải gửi qua gateway. Kết quả có thể là giao tiếp một chiều hoặc phụ thuộc proxy ARP.
+- **Default gateway có thể đặt tùy ý:** trong cấu hình Ethernet IPv4 thông thường, gateway phải reachable qua một route on-link để host có thể ARP lấy MAC của gateway. Cấu hình gateway ngoài subnet cần cơ chế hoặc route đặc biệt.
+- **Chia subnet đồng nghĩa đã chặn traffic:** sai. Nếu router/firewall cho phép, các subnet vẫn giao tiếp được với nhau.
+- **Một prefix dài hơn luôn là route tốt hơn:** prefix dài hơn chỉ được ưu tiên khi cùng khớp destination. Nó cụ thể hơn, nhưng không bảo đảm đường truyền nhanh hơn hoặc ổn định hơn.
+
+#### IPv6 prefix
+
+IPv6 dùng prefix length nhưng không dùng subnet mask dạng thập phân như `255.255.255.0`. Ví dụ:
+
+```text
+2001:db8:1234:10::/64
+```
+
+Trong thiết kế IPv6 thông thường, một LAN được cấp `/64`. 64 bit đầu là subnet prefix và 64 bit cuối là interface identifier. Không nên áp dụng công thức đếm host IPv4 hay tự ý dùng subnet nhỏ hơn `/64` cho LAN nếu chưa hiểu ảnh hưởng tới SLAAC, Neighbor Discovery và các cơ chế IPv6 liên quan.
 
 ![Hình 39](assets/image35.png)
 
@@ -1065,13 +1608,39 @@ Các lỗi phổ biến:
 
 ### Multiplexing (ghép kênh)
 
-- **Multiplexing:** cho nhiều luồng dùng chung một tài nguyên nhưng vẫn phân biệt được nhau. Mục đích là không phải cấp một đường vật lý riêng cho từng kết nối; ví dụ hàng trăm TCP connection cùng dùng một card mạng và được phân biệt bằng IP/port.
+#### Multiplexing là gì?
 
-- Thường xảy ra ở phía nguồn phát
+**Multiplexing** là việc nhận dữ liệu từ nhiều nguồn hoặc nhiều luồng, thêm thông tin để phân biệt chúng, rồi cho chúng dùng chung một tài nguyên truyền hoặc một giao thức bên dưới.
 
-- Mục đích là để tiết kiệm chi phí xây dựng nhiều Channel vật lý, tận dụng tối đa băng thông của phương tiện truyền dẫn
+Multiplexing không chỉ có một dạng. Thông tin dùng để phân biệt phụ thuộc tầng:
 
-- Mỗi Channel logic được gán dấu hiệu nhận dạng (tần số, thời gian, mã,...) trước khi trộn lại và đẩy vào Channel vật lý.
+| Phạm vi | Nhiều thành phần dùng chung | Thông tin phân biệt |
+|---|---|---|
+| Ghép kênh vật lý | Một đường truyền hoặc dải tần | Tần số, khe thời gian, bước sóng hoặc mã |
+| Ethernet | Một Ethernet link | Trường EtherType, VLAN tag và địa chỉ MAC |
+| IP | Một IP interface/đường truyền | Source/destination IP và trường protocol/next header |
+| TCP/UDP | Một network stack và interface | Protocol, source/destination IP và source/destination port |
+| HTTP/2 | Một TCP connection | Stream ID trong HTTP/2 frame |
+
+Các cơ chế trong bảng cùng có tên “multiplexing” vì đều cho nhiều luồng dùng chung tài nguyên, nhưng chúng hoạt động ở các tầng khác nhau và dùng bộ định danh khác nhau. Không nên dùng tần số hoặc khe thời gian để giải thích trực tiếp cách TCP phân biệt application.
+
+#### Transport-layer multiplexing
+
+Ở tầng transport, hệ điều hành nhận dữ liệu từ nhiều socket/process và tạo TCP segment hoặc UDP datagram. Mỗi segment/datagram có source port và destination port để phía nhận có thể giao dữ liệu tới socket phù hợp.
+
+Ví dụ laptop đồng thời chạy:
+
+```text
+Trình duyệt 1: 192.168.1.20:51000 -> 203.0.113.10:443 TCP
+Trình duyệt 2: 192.168.1.20:51001 -> 203.0.113.10:443 TCP
+Ứng dụng DNS: 192.168.1.20:53000 -> 192.168.1.1:53 UDP
+```
+
+Ba luồng dùng chung card mạng và IP của laptop nhưng vẫn khác nhau nhờ protocol, địa chỉ IP và port.
+
+Source port của client thường là **ephemeral port (port tạm thời)** do hệ điều hành chọn từ một dải cấu hình. Hai kết nối tới cùng server và cùng destination port phải có bộ định danh khác nhau; trong ví dụ trên, `51000` và `51001` giúp phân biệt hai TCP connection.
+
+Multiplexing xảy ra mỗi khi một host gửi dữ liệu của nhiều socket xuống network stack. Một thiết bị có thể đồng thời multiplex dữ liệu gửi đi và demultiplex dữ liệu nhận về; đây không phải hai vai trò cố định dành riêng cho client và server.
 
 ![Hình 48](assets/image13.png)
 
@@ -1087,11 +1656,74 @@ Các lỗi phổ biến:
 
 ### Demultiplexing (tách kênh)
 
-- **Demultiplexing:** quá trình ngược lại ở phía nhận: đọc thông tin định danh để giao dữ liệu tới đúng luồng. Ví dụ hệ điều hành đọc destination port `8080` và đưa segment tới socket của ứng dụng đang listen port đó.
+#### Demultiplexing là gì?
 
-- Thường xảy ra ở phía nhận tín hiệu
+**Demultiplexing** là việc phía nhận đọc các trường trong header để chuyển dữ liệu lên đúng giao thức, socket hoặc luồng ứng dụng.
 
-- Mục đích để phân phối dữ liệu tới đúng đích cuối cùng (dựa trên dấu hiệu lúc multiplexing, để phân loại lại packet và định tuyến chúng đến đúng đích)
+Quá trình nhận có nhiều bước demultiplexing:
+
+1. Card mạng và Ethernet xử lý frame dành cho interface/VLAN phù hợp.
+2. Trường EtherType cho biết payload là IPv4, IPv6, ARP hoặc giao thức khác.
+3. IP kiểm tra destination IP và đọc trường protocol/next header để giao payload cho TCP, UDP, ICMP hoặc giao thức tương ứng.
+4. TCP/UDP dùng địa chỉ và port để tìm socket nhận.
+5. Ứng dụng có thể tiếp tục tách dữ liệu thành request, session hoặc stream riêng, ví dụ HTTP/2 dùng stream ID.
+
+Demultiplexing không phải routing. **Routing/forwarding** quyết định packet cần đi qua interface hoặc next hop nào. **Demultiplexing** trên máy nhận quyết định thành phần nào trong máy sẽ xử lý dữ liệu.
+
+#### TCP demultiplexing
+
+Một TCP connection thường được nhận diện bằng:
+
+```text
+source IP
+source port
+destination IP
+destination port
+transport protocol = TCP
+```
+
+Bốn giá trị địa chỉ/port thường được gọi là **4-tuple**. Nếu tính cả protocol thì đó là **5-tuple**.
+
+Ví dụ web server `10.0.0.10:443` phục vụ hai client:
+
+```text
+198.51.100.20:51000 -> 10.0.0.10:443 TCP
+203.0.113.30:52000  -> 10.0.0.10:443 TCP
+```
+
+Cả hai segment có destination port `443`, nhưng chúng thuộc hai connection khác nhau vì source IP và source port khác nhau. Vì vậy câu “TCP chỉ nhìn destination port để giao dữ liệu” là không đầy đủ.
+
+Ở server:
+
+- **Listening socket** được bind vào local IP/port, ví dụ `0.0.0.0:443`, để nhận yêu cầu mở connection mới.
+- Khi handshake thành công, hệ điều hành tạo trạng thái/connected socket cho connection cụ thể.
+- Listening socket tiếp tục nhận connection mới; các connected socket xử lý dữ liệu của từng connection.
+- Nhiều connected socket có thể cùng local port `443` vì remote IP/port của chúng khác nhau.
+
+`0.0.0.0:443` thường có nghĩa socket lắng nghe trên mọi IPv4 local address phù hợp, không phải server có địa chỉ IP thật là `0.0.0.0`.
+
+#### UDP demultiplexing
+
+UDP không thiết lập connection bằng handshake như TCP. Một UDP server thường bind một socket vào local IP/port, ví dụ `10.0.0.10:53`, và nhận datagram từ nhiều client trên cùng socket.
+
+Mỗi lần nhận, hệ điều hành cung cấp cả payload và địa chỉ nguồn để ứng dụng biết cần phản hồi cho client nào:
+
+```text
+Client A: 198.51.100.20:53000 -> 10.0.0.10:53 UDP
+Client B: 203.0.113.30:54000  -> 10.0.0.10:53 UDP
+```
+
+Cả hai datagram có thể được giao vào cùng UDP socket `10.0.0.10:53`. Ứng dụng đọc source IP:port đi kèm từng datagram và gửi response về đúng nguồn.
+
+UDP cũng có thao tác `connect()` ở nhiều hệ điều hành, nhưng thao tác này không tạo handshake hay biến UDP thành TCP. Nó có thể đặt remote peer mặc định và khiến kernel chỉ giao datagram từ peer phù hợp cho socket đó.
+
+Quy tắc chọn socket chính xác còn phụ thuộc hệ điều hành và các tùy chọn như bind vào wildcard address, `SO_REUSEPORT`, connected UDP hoặc nhiều địa chỉ local. Mô hình cơ bản cần nhớ là TCP demultiplex theo từng connection, còn UDP server thường có thể dùng một socket để nhận datagram từ nhiều nguồn.
+
+#### Nếu không tìm thấy socket phù hợp
+
+- Với UDP, host thường loại datagram và có thể gửi ICMP Destination Unreachable/Port Unreachable, nếu policy cho phép.
+- Với TCP, packet SYN tới port không có listener thường nhận TCP RST, nếu firewall không âm thầm loại packet.
+- Firewall có thể drop packet trước khi transport layer thực hiện demultiplexing, nên phía gửi có thể chỉ thấy timeout.
 
 ![Hình 51](assets/image25.png)
 
@@ -1107,7 +1739,131 @@ Các lỗi phổ biến:
 
 *Hình 53*
 
-- Một endpoint socket thường được mô tả bằng IP + port + transport protocol. Một kết nối TCP được phân biệt bởi bộ 5: source IP, source port, destination IP, destination port và protocol.
+#### Các khái niệm cần phân biệt
+
+| Khái niệm | Nội dung |
+|---|---|
+| **Process** | Chương trình đang chạy, ví dụ trình duyệt hoặc web server |
+| **Socket** | Đối tượng/API để process gửi và nhận dữ liệu qua network stack |
+| **Port** | Số 16 bit trong TCP/UDP header, từ `0` đến `65535` |
+| **Socket endpoint** | Một đầu giao tiếp, thường mô tả bằng protocol + local IP + local port |
+| **TCP connection** | Quan hệ giữa hai endpoint TCP, nhận diện bằng 4-tuple; thêm protocol thành 5-tuple |
+| **Flow** | Nhóm packet có chung bộ thuộc tính; cách định nghĩa có thể tùy thiết bị và mục đích |
+
+Port không trực tiếp định danh vĩnh viễn một process. Process phải tạo socket và bind socket vào port. Khi process đóng socket hoặc kết thúc, port có thể được process khác sử dụng nếu không còn ràng buộc hoặc trạng thái hệ điều hành ngăn cản.
+
+#### Workflow TCP: client gửi request tới server
+
+Giả sử:
+
+```text
+Client IP:   192.168.1.20
+Client port: 51000
+Server IP:   203.0.113.10
+Server port: 443
+Protocol:    TCP
+```
+
+1. Server tạo socket, bind vào local port `443`, gọi `listen()` và chờ connection.
+2. Client tạo socket và gọi `connect(203.0.113.10, 443)`.
+3. Nếu client chưa bind source port cụ thể, hệ điều hành chọn ephemeral port, ví dụ `51000`.
+4. TCP thực hiện three-way handshake cho connection:
+
+   ```text
+   192.168.1.20:51000 -> 203.0.113.10:443  SYN
+   203.0.113.10:443   -> 192.168.1.20:51000 SYN-ACK
+   192.168.1.20:51000 -> 203.0.113.10:443  ACK
+   ```
+
+5. Server `accept()` connection và nhận một connected socket. Listening socket vẫn tồn tại để nhận client khác.
+6. Application client đưa dữ liệu vào socket. TCP chia byte stream thành segment phù hợp; mỗi segment có source/destination port.
+7. IP bọc TCP segment trong IP packet có source/destination IP.
+8. Link layer bọc IP packet trong frame cho chặng hiện tại. MAC source/destination có thể thay đổi qua mỗi chặng Layer 2; IP và TCP endpoint thường giữ nguyên nếu không có NAT hoặc cơ chế sửa packet.
+9. Trên server, Ethernet/IP/TCP lần lượt demultiplex frame, packet và segment.
+10. TCP dùng connection tuple để đưa byte vào receive buffer của đúng connected socket.
+11. Process server đọc dữ liệu từ socket, xử lý request và gửi response qua cùng TCP connection.
+
+Với nhiều client, server có thể có:
+
+```text
+Listening socket:
+local 203.0.113.10:443
+
+Connected socket 1:
+192.168.1.20:51000 <-> 203.0.113.10:443 TCP
+
+Connected socket 2:
+198.51.100.30:52000 <-> 203.0.113.10:443 TCP
+```
+
+Hai connected socket dùng cùng server port `443` nhưng không bị nhầm vì remote endpoint khác nhau.
+
+#### Workflow UDP: nhiều client dùng một server socket
+
+Giả sử DNS server bind UDP socket tại `203.0.113.53:53`:
+
+1. Client tạo UDP socket; hệ điều hành chọn source port, ví dụ `53000`.
+2. Client gọi `sendto()` để gửi một datagram:
+
+   ```text
+   192.168.1.20:53000 -> 203.0.113.53:53 UDP
+   ```
+
+3. UDP không thực hiện handshake và không chờ tạo connected socket ở server.
+4. IP và link layer đóng gói rồi chuyển datagram tới server.
+5. Server demultiplex theo protocol/local address/local port và đưa datagram vào receive queue của UDP socket phù hợp.
+6. Process server gọi `recvfrom()`, nhận payload cùng source `192.168.1.20:53000`.
+7. Server gọi `sendto()` để gửi response tới source đó.
+
+Nếu datagram bị mất, UDP không tự truyền lại. DNS hoặc ứng dụng phía trên có thể đặt timeout, gửi lại hoặc thử server khác.
+
+#### Multiplexing và demultiplexing trên hai chiều
+
+Luồng request:
+
+```text
+Nhiều client socket
+    -> multiplexing ở các client
+    -> mạng
+    -> demultiplexing ở server
+    -> đúng server socket/connection
+```
+
+Luồng response:
+
+```text
+Nhiều server socket/connection
+    -> multiplexing ở server
+    -> mạng
+    -> demultiplexing ở các client
+    -> đúng client socket
+```
+
+Vì traffic thường đi hai chiều, client và server đều thực hiện cả multiplexing lẫn demultiplexing.
+
+#### NAT ảnh hưởng thế nào?
+
+Nếu client nằm sau NAT/PAT, bộ địa chỉ/port quan sát ở hai phía có thể khác nhau:
+
+```text
+Phía LAN:
+192.168.1.20:51000 -> 203.0.113.10:443 TCP
+
+Phía Internet sau PAT:
+198.51.100.5:62000 -> 203.0.113.10:443 TCP
+```
+
+Client vẫn demultiplex response vào socket local `192.168.1.20:51000`. Server lại thấy remote endpoint là `198.51.100.5:62000`. Router PAT dùng bảng ánh xạ để dịch giữa hai cách biểu diễn.
+
+#### Những cách hiểu sai thường gặp
+
+- **Destination port đủ để nhận diện một TCP connection:** sai; nhiều connection cùng dùng server port `443`. Cần xét cả hai endpoint và protocol.
+- **Mỗi client TCP cần một server port riêng:** sai; các client có thể cùng kết nối tới một server port.
+- **UDP server phải tạo socket mới cho từng client:** thường không cần; một socket có thể nhận datagram từ nhiều source.
+- **Một port luôn thuộc cố định một application:** sai; quyền sử dụng phụ thuộc socket đang bind, địa chỉ bind, protocol, namespace mạng và trạng thái hệ điều hành.
+- **TCP port `53` và UDP port `53` là cùng một endpoint:** sai; TCP và UDP là hai transport protocol khác nhau và có không gian socket riêng.
+- **Demultiplexing là tìm đường qua Internet:** sai; đó là nhiệm vụ routing/forwarding. Demultiplexing giao dữ liệu tới đúng thành phần sau khi dữ liệu tới thiết bị.
+- **Multiplexing luôn là trộn tín hiệu vật lý:** sai; transport layer, HTTP/2 và nhiều tầng khác cũng multiplex nhưng dùng header/identifier thay vì tần số.
 
 ![Hình 54](assets/image58.png)
 
@@ -1833,7 +2589,7 @@ Các lỗi phổ biến:
 
 - Router cần IP để routing đúng + Switch cần MAC address để forward data đúng tới thiết bị cần nhận data
 
-- Nếu khi request ra ngoài mạng, MAC đích của packet sẽ mà MAC của router → khi router nhận phản hồi, nó sẽ dựa vào NAT table để xác định private IP của thiết bị gửi request + có private IP thì tiếp tục tra ARP table để lấy MAC của thiết bị gửi request, đóng thêm MAC đích sẽ là của thiết bị gửi request → switch nhận packet và thấy MAC đích là của thiết bị nào và sẽ gửi tới thiết bị đó.
+- Khi gửi dữ liệu ra ngoài subnet, IP packet giữ IP đích cuối cùng, còn Ethernet frame trên chặng LAN có MAC đích là MAC của default gateway. Khi phản hồi quay về, router NAT/PAT tra ánh xạ để tìm private IP và port nội bộ, tra ARP cache để tìm MAC của máy đó, rồi tạo một frame mới có MAC đích là MAC của máy nội bộ. Switch đọc MAC đích của frame để chuyển frame tới đúng port.
 
 - Nếu request trong mạng, tìm private IP, MAC address của máy đích (nếu chưa cache) → gán IP đích, MAC đích vừa tìm được vào packet → gửi tới switch, switch tra MAC address table để biết port nào của switch kết nối tới thiết bị đích → truyền packet trực tiếp tới đúng port của thiết bị đích.
 
@@ -1851,7 +2607,7 @@ Các lỗi phổ biến:
   - **MAC address table trên switch/access point:** ánh xạ MAC → port để chuyển frame đúng cổng.
   - **NAT/connection table trên router NAT:** ánh xạ kết nối phía trong ↔ phía ngoài để đưa response về đúng IP/port nội bộ.
 
-  Ví dụ khi laptop gửi packet ra Internet, laptop dùng ARP tìm MAC của default gateway; switch dùng MAC table chuyển frame tới router; khi response quay về, router dùng NAT table tìm laptop rồi dùng ARP cache để tạo frame có MAC đích của laptop.
+  Ví dụ khi laptop gửi packet ra Internet, laptop dùng ARP tìm MAC của default gateway; switch dùng MAC table chuyển frame tới router; khi response quay về, router dùng bảng NAT/PAT tìm IP và port của laptop rồi dùng ARP cache để tạo frame có MAC đích của laptop.
 
 ### ARP
 
