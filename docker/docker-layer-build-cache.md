@@ -1,7 +1,3 @@
-mục 32 hãy giải thích chi tiết nếu ko dùng, có dùng sẽ chạy thế nào, đoạn này viết cũng hơi sơ sài, chi tiết thêm, lợi ích cũng cần chi tiết hơn so với ko dùng
-
-36, 37, 41, 45, 46, 47, 48, 49, 50, 51 cần chi tiết hơn, quá sơ sài
-
 # Docker Layer và Build Cache: từ cơ bản đến nâng cao
 
 Tài liệu này giải thích **layer** và **build cache** trong Docker theo cách dễ hiểu, đi từ kiến thức nền tảng đến các kỹ thuật tối ưu Dockerfile trong dự án thực tế.
@@ -16,6 +12,16 @@ Mục tiêu sau khi đọc:
 - Biết sử dụng `.dockerignore`, multi-stage build và BuildKit cache mount.
 - Tối ưu build cho ứng dụng Spring Boot sử dụng Maven.
 - Biết kiểm tra và xử lý các lỗi cache thường gặp.
+
+## Cách đọc tài liệu này
+
+Tài liệu này không chỉ trả lời "lệnh Docker viết thế nào", mà tập trung giải thích **vì sao Docker chạy như vậy**. Khi đọc từng phần, hãy để ý ba câu hỏi:
+
+1. Bước này tạo ra layer hay chỉ thay đổi metadata?
+2. Nếu file hoặc instruction thay đổi, cache của bước nào bị mất?
+3. Nếu không tối ưu, Docker sẽ phải làm lại việc gì và image cuối sẽ mang theo thứ gì không cần thiết?
+
+Khi hiểu ba câu hỏi này, bạn sẽ biết cách đọc log build, biết vì sao CI chậm hơn local, và biết sửa Dockerfile theo nguyên nhân thay vì thử ngẫu nhiên.
 
 ---
 
@@ -53,6 +59,10 @@ Layer 1: các layer của eclipse-temurin:21-jre
 ```
 
 Các layer được xếp chồng lên nhau để tạo ra file system và cấu hình cuối cùng của image.
+
+Điểm quan trọng là image cuối cùng nhìn giống một file system hoàn chỉnh, nhưng Docker lưu nó dưới dạng nhiều phần. Khi bạn pull image, Docker không nhất thiết tải lại mọi thứ. Nếu máy đã có một vài layer giống hệt, Docker chỉ cần tải phần còn thiếu. Khi bạn build image, Docker cũng tận dụng đặc điểm này để không phải chạy lại những bước có đầu vào không đổi.
+
+Vì vậy, khi tối ưu Dockerfile, ta không chỉ tối ưu câu lệnh. Ta đang tối ưu cách Docker chia công việc thành các lớp có thể tái sử dụng.
 
 ---
 
@@ -94,6 +104,13 @@ Layer thường có các đặc điểm:
 - Image layer là bất biến sau khi được tạo.
 - Nhiều image có thể chia sẻ cùng một layer.
 
+Cần phân biệt hai ý:
+
+- Layer là kết quả đã được lưu sau một bước build.
+- Instruction là dòng lệnh trong Dockerfile tạo ra hoặc cấu hình layer đó.
+
+Hai Dockerfile có instruction nhìn gần giống nhau vẫn có thể tạo cache khác nhau nếu đầu vào khác nhau. Ví dụ `COPY src/ /app/src/` phụ thuộc vào nội dung thư mục `src`; chỉ cần một file trong `src` đổi, kết quả của instruction đó đã khác.
+
 ## 3. Vì sao Docker sử dụng layer?
 
 Layer giúp Docker:
@@ -119,6 +136,15 @@ service-b:1.0
 ```
 
 Nếu hai image dùng cùng base image, Docker có thể lưu các layer của `eclipse-temurin:21-jre` một lần và dùng chung.
+
+Trong thực tế, lợi ích này xuất hiện ở nhiều chỗ:
+
+- Máy developer build nhiều lần: các bước cài package hoặc tải dependency có thể được dùng lại.
+- CI/CD push image: nếu chỉ layer chứa application thay đổi, registry không cần nhận lại toàn bộ base image.
+- Server deploy: nếu server đã có base image, lần pull bản mới chỉ cần kéo layer ứng dụng mới.
+- Nhiều service cùng nền tảng: các service Spring Boot cùng dùng JRE có thể chia sẻ phần runtime giống nhau.
+
+Không có layer, mỗi lần image thay đổi Docker sẽ phải xem image như một khối lớn. Chỉ sửa một class nhỏ cũng có thể kéo theo việc lưu, push, pull lại cả khối lớn đó.
 
 ## 4. Layer là bất biến
 
@@ -428,6 +454,24 @@ Kết quả:
 - Không lặp lại thao tác tải dependency hoặc biên dịch không cần thiết.
 - Giảm tài nguyên CPU, disk và network.
 
+Cần hiểu build cache như một chuỗi kết quả trung gian. Mỗi bước trong Dockerfile không đứng độc lập hoàn toàn; nó dựa trên trạng thái do bước trước tạo ra. Vì vậy, cache của bước sau chỉ có ý nghĩa nếu chuỗi phía trước vẫn giống như lần build cũ.
+
+Ví dụ, hai instruction `RUN echo hello` giống nhau nhưng đứng sau hai base image khác nhau thì không thể xem là cùng một kết quả:
+
+```dockerfile
+FROM alpine:3.22
+RUN echo hello
+```
+
+khác với:
+
+```dockerfile
+FROM ubuntu:24.04
+RUN echo hello
+```
+
+Câu lệnh giống nhau, nhưng filesystem đầu vào khác nhau. Docker phải xem cả "bước này làm gì" và "bước này chạy trên trạng thái nào".
+
 ## 14. Cache không chỉ là “instruction giống nhau”
 
 Docker không đơn giản nhìn thấy cùng một dòng rồi luôn dùng cache.
@@ -454,6 +498,19 @@ instruction hiện tại
 ```
 
 Nếu cache key khớp với kết quả đã lưu, Docker có thể dùng cache.
+
+Điều này giải thích vì sao chỉ sửa một dòng ở gần đầu Dockerfile có thể làm nhiều bước phía sau chạy lại. Không phải vì Docker "quên cache", mà vì chuỗi đầu vào đã đổi. Cache cũ của các bước sau được tạo trên trạng thái cũ, nên không còn chắc chắn đúng cho trạng thái mới.
+
+Ví dụ:
+
+```dockerfile
+FROM alpine:3.22
+RUN apk add --no-cache curl
+COPY app.sh /app.sh
+RUN chmod +x /app.sh
+```
+
+Nếu đổi base image từ `alpine:3.22` sang `alpine:3.23`, bước `RUN apk add` không thể mặc nhiên dùng kết quả cũ. Cùng một lệnh `apk add` nhưng chạy trên base image khác, package index khác, thư viện nền khác. Các bước sau cũng phải được đánh giá lại theo chuỗi mới.
 
 ## 15. Cache invalidation là gì?
 
@@ -492,6 +549,15 @@ Bước 3: đầu vào thay đổi
            |
            +--> bước 4 không thể dùng chuỗi cache cũ
 ```
+
+Không phải lúc nào mất cache cũng là xấu. Nếu dependency thật sự thay đổi, build lại là đúng. Vấn đề cần tránh là mất cache vì lý do không liên quan, ví dụ:
+
+- File log thay đổi nhưng bị `COPY . .` kéo vào image.
+- `.git` thay đổi làm build context đổi.
+- Copy toàn bộ source trước khi tải dependency.
+- Dùng build arg thay đổi liên tục dù không cần.
+
+Tối ưu cache không phải là cố làm mọi thứ luôn `CACHED`. Mục tiêu là: phần nào thật sự thay đổi thì build lại, phần nào không liên quan thì được giữ lại.
 
 ## 16. Vì sao thứ tự Dockerfile rất quan trọng?
 
@@ -547,6 +613,24 @@ Quy tắc:
 Ít thay đổi  -> đặt trước
 Hay thay đổi -> đặt sau
 ```
+
+Một cách nghĩ thực tế là chia Dockerfile thành các vùng:
+
+```text
+Vùng nền tảng:
+    FROM, package hệ thống, user, thư mục làm việc
+
+Vùng dependency:
+    pom.xml, package-lock.json, requirements.txt, go.mod
+
+Vùng source:
+    src, static asset, template
+
+Vùng runtime:
+    command, entrypoint, healthcheck, cấu hình mặc định
+```
+
+Vùng dependency thường đắt nhất vì phải tải nhiều thứ từ mạng. Nếu đặt source code trước dependency, mỗi lần sửa code sẽ kéo theo tải dependency lại. Nếu đặt dependency trước source, Docker có cơ hội giữ lại phần đắt tiền đó.
 
 ---
 
@@ -759,6 +843,8 @@ Build context lớn có thể:
 - Có nguy cơ đưa secret vào quá trình build.
 - Làm `COPY . .` mất cache thường xuyên.
 
+Build context lớn ảnh hưởng cả khi Dockerfile không copy toàn bộ. Trước khi builder xử lý `COPY`, Docker vẫn cần xác định những file nào thuộc context và truyền chúng cho builder tùy môi trường build. Với remote builder hoặc CI, chi phí truyền context có thể đáng kể.
+
 Kiểm tra log build:
 
 ```text
@@ -774,6 +860,8 @@ Nếu project nhỏ nhưng context hàng trăm MB, thường có file không c�
 - File backup.
 - Dữ liệu database local.
 - File IDE.
+
+Một dấu hiệu khác là log `transferring context` thay đổi liên tục dù bạn chỉ sửa một file nhỏ. Khi đó hãy kiểm tra xem output build, log, cache local hoặc thư mục tool có đang bị đưa vào context hay không.
 
 ## 25. `.dockerignore`
 
@@ -807,6 +895,8 @@ COPY target/app.jar app.jar
 ```
 
 thì không được ignore toàn bộ `target`.
+
+`.dockerignore` là một phần của thiết kế cache. Nó không chỉ giúp context nhỏ hơn, mà còn giúp cache ổn định hơn vì loại bỏ những file thay đổi thường xuyên nhưng không liên quan đến image.
 
 ## 26. Mẫu `.dockerignore` khi build Maven bên trong Docker
 
@@ -1046,6 +1136,28 @@ Lợi ích:
 - Stage build vẫn được cache, nên lợi ích cache của Docker không mất đi. Khi `pom.xml` không đổi, các bước tải dependency ở stage build vẫn có thể được dùng lại.
 - Dễ debug từng giai đoạn bằng `docker build --target build .`, ví dụ kiểm tra JAR được tạo ra trước khi sang runtime stage.
 
+So sánh nhanh:
+
+| Tiêu chí | Không dùng multi-stage | Có dùng multi-stage |
+|---|---|---|
+| Image cuối | Chứa cả tool build và runtime | Chỉ chứa phần cần chạy |
+| Dung lượng | Thường lớn hơn | Thường nhỏ hơn |
+| Bảo mật | Nhiều package, nhiều binary hơn | Ít bề mặt tấn công hơn |
+| Tái tạo build | Có thể tái tạo nhưng runtime bị trộn với build | Tách rõ build và runtime |
+| Debug | Dễ thấy mọi thứ trong một image nhưng dễ lẫn lộn | Debug theo stage bằng `--target` |
+| Cache | Vẫn có cache, nhưng artifact và tool build nằm trong image cuối | Stage build vẫn cache, image cuối vẫn gọn |
+
+Điểm dễ nhầm: multi-stage không làm bước Maven tự nhiên nhanh hơn ở lần đầu. Lần build đầu vẫn phải tải dependency và package. Lợi ích chính là image cuối sạch hơn, nhỏ hơn, an toàn hơn. Tốc độ build tốt hơn đến từ cách sắp xếp instruction và cache mount; multi-stage giúp các tối ưu đó không làm bẩn runtime image.
+
+Trong dự án production, multi-stage thường là mặc định tốt vì nó phản ánh đúng vòng đời ứng dụng:
+
+```text
+Source code + tool build -> artifact
+Artifact + runtime       -> container chạy thật
+```
+
+Hai việc này khác nhau, nên nên nằm ở hai stage khác nhau.
+
 ## 33. Cache giữa các stage
 
 Mỗi stage có chuỗi dependency riêng.
@@ -1199,6 +1311,18 @@ RUN mvn package phải chạy lại
 
 Hai loại cache bổ sung cho nhau.
 
+Một cách nhớ ngắn:
+
+```text
+Instruction cache trả lời câu hỏi:
+"Có cần chạy lại bước này không?"
+
+Cache mount trả lời câu hỏi:
+"Nếu phải chạy lại, có dữ liệu trung gian nào dùng lại được không?"
+```
+
+Vì vậy cache mount đặc biệt hữu ích cho package manager và compiler, nơi một bước có thể phải chạy lại nhưng không nhất thiết phải tải hoặc tính toán lại mọi thứ từ đầu.
+
 ## 37. Cache mount cho Maven
 
 Dockerfile:
@@ -1267,6 +1391,31 @@ Lợi ích:
 - Build ổn định hơn trong môi trường mạng chậm hoặc registry Maven không ổn định, vì nhiều artifact đã có local.
 - CI có thể build nhanh hơn nếu cache BuildKit được giữ trên runner hoặc được import từ cache backend.
 - Tách được cache build khỏi image runtime: image chạy thật vẫn gọn, nhưng build vẫn nhanh.
+
+Một luồng thường gặp trong vòng đời Maven:
+
+```text
+Lần đầu:
+    mvn dependency:go-offline
+    -> tải dependency vào cache mount
+    mvn package
+    -> dùng dependency đã có, compile source
+
+Sửa 1 class Java:
+    dependency:go-offline
+    -> thường CACHED vì pom.xml không đổi
+    mvn package
+    -> chạy lại, nhưng đọc dependency từ cache mount
+
+Thêm dependency vào pom.xml:
+    dependency:go-offline
+    -> chạy lại
+    -> dependency cũ dùng lại, dependency mới tải thêm
+    mvn package
+    -> chạy lại theo dependency mới
+```
+
+Nếu project có nhiều module Maven, cần copy các file `pom.xml` theo cấu trúc module trước khi chạy `dependency:go-offline`; nếu chỉ copy root `pom.xml`, Maven có thể thiếu thông tin module và cache dependency không đạt hiệu quả mong muốn.
 
 ## 38. Chọn ID cho cache mount
 
@@ -1379,12 +1528,24 @@ Với Gradle, `/root/.gradle` có thể chứa dependency cache, wrapper distrib
 
 Nguyên tắc chọn cache package manager:
 
-- Mount đúng thư mục cache của công cụ, không mount nhầm thư mục source/output.
-- Không giả định mọi cache đều an toàn khi nhiều build ghi cùng lúc; dùng `sharing=locked` khi công cụ có lock file hoặc metadata dễ hỏng.
-- Cache package giúp giảm tải network, nhưng không thay thế lock file. Vẫn cần `package-lock.json`, `pom.xml`/lock tương ứng hoặc Gradle lock để build có thể tái tạo.
-- Cache mount không tự làm package mới nhất xuất hiện nếu instruction vẫn dùng cache cũ. Khi cần cập nhật package chủ động, phải thay đổi input, dùng `--no-cache`, hoặc có chiến lược cache-busting có kiểm soát.
+- Cache đúng thư mục package manager thật sự dùng.
+- Không cache thư mục output cuối nếu output đó cần nằm trong image theo cách rõ ràng.
+- Dùng `sharing=locked` cho tool dễ bị lỗi khi nhiều build cùng ghi metadata.
+- Tách cache theo project nếu dependency hoặc quyền truy cập khác nhau.
+- Không đặt secret vào thư mục cache.
 
-Mỗi package manager có hành vi riêng. Cần chọn đúng thư mục cache và xem xét truy cập đồng thời.
+Một số ví dụ thường gặp:
+
+| Tool | Thư mục cache hay dùng | Ghi chú |
+|---|---|---|
+| Maven | `/root/.m2` | Chứa artifact dependency và metadata Maven |
+| Gradle | `/root/.gradle` | Có thể chứa wrapper, dependency, build cache |
+| npm | `/root/.npm` | Cache tarball package, không thay thế `node_modules` |
+| pnpm | `/root/.local/share/pnpm/store` hoặc store đã cấu hình | Nên khớp với cấu hình `pnpm store path` |
+| pip | `/root/.cache/pip` | Cache wheel/download, vẫn nên pin dependency |
+| apt | `/var/cache/apt`, `/var/lib/apt` | Cần cấu hình giữ package cache trong image Ubuntu/Debian |
+
+Cache package manager làm build nhanh hơn, nhưng không thay thế lock file. Nếu không có lock file hoặc version rõ ràng, build có thể nhanh nhưng vẫn khó tái tạo.
 
 ---
 
@@ -1547,6 +1708,23 @@ Lợi ích so với không dùng:
 
 Cần lưu ý quyền ghi registry. Không nên để mọi branch hoặc fork không tin cậy ghi đè cache chính của `main`.
 
+Khi dùng registry cache, nên tách hai loại tag:
+
+```text
+registry.example.com/team/app:1.0.0       -> image dùng để deploy
+registry.example.com/team/app:buildcache  -> cache phục vụ build
+```
+
+Không nên deploy từ tag cache. Cache reference có thể chứa metadata và layer phục vụ build, không phải hợp đồng runtime ổn định cho môi trường production.
+
+Một số lưu ý vận hành:
+
+- Registry phải hỗ trợ kiểu cache mà buildx dùng.
+- Cache có thể lớn, cần retention policy.
+- Build từ fork hoặc branch không tin cậy chỉ nên đọc cache chính, không nên ghi cache chính.
+- Nếu build multi-platform, cache nên phân biệt hoặc hỗ trợ đúng platform.
+- Khi cache bị nghi ngờ hỏng hoặc nhiễu, có thể đổi cache ref hoặc prune cache thay vì tắt cache vĩnh viễn.
+
 ## 46. Inline cache
 
 ```bash
@@ -1589,6 +1767,20 @@ Hạn chế:
 - Nếu image reference bị xóa theo retention policy, metadata cache cũng mất theo.
 
 So với không dùng cache export/import, inline cache vẫn giúp CI runner mới có điểm bắt đầu để reuse cache. So với registry cache riêng, nó đơn giản hơn nhưng ít linh hoạt hơn.
+
+Inline cache phù hợp nhất khi:
+
+- Project nhỏ hoặc vừa.
+- Pipeline chỉ build một target chính.
+- Bạn đã luôn push image sau mỗi build.
+- Không muốn quản lý thêm tag cache.
+
+Registry cache riêng phù hợp hơn khi:
+
+- Có nhiều stage hoặc nhiều target.
+- Muốn cache nhiều hơn phần image cuối.
+- Muốn retention của cache khác retention của image deploy.
+- Muốn cache theo branch, service hoặc platform.
 
 ## 47. Local cache
 
@@ -1642,6 +1834,13 @@ So với registry cache:
 - Nhưng khó chia sẻ giữa nhiều runner nếu CI không hỗ trợ lưu/restore thư mục tốt.
 - Dọn dẹp thủ công hơn, dễ phình dung lượng nếu không có retention.
 
+Local cache không nên đặt trong build context nếu Dockerfile có `COPY . .`, vì chính thư mục cache đó có thể bị gửi vào context, làm build chậm và làm cache mất hiệu lực. Nếu bắt buộc lưu trong workspace, hãy thêm nó vào `.dockerignore`:
+
+```dockerignore
+build-cache
+build-cache-new
+```
+
 ## 48. Cache theo nhánh trong CI
 
 Một chiến lược phổ biến:
@@ -1689,6 +1888,17 @@ Lợi ích so với không chia cache theo nhánh:
 - Dễ dọn cache cũ theo branch đã đóng hoặc PR đã merge.
 
 Trong repo có nhiều service, nên thêm tên service vào cache key/reference để tránh cache của service này ghi đè service khác.
+
+Ví dụ reference rõ ràng hơn:
+
+```text
+app-a:cache-main
+app-a:cache-feature-login
+app-b:cache-main
+app-b:cache-feature-payment
+```
+
+Cache tốt là cache có phạm vi rõ ràng. Phạm vi quá rộng dễ nhiễu; phạm vi quá hẹp thì cache hit thấp. Với CI, thường bắt đầu từ `service + branch`, sau đó fallback về `service + main`.
 
 ---
 
@@ -1748,6 +1958,28 @@ docker build
 ```
 
 So với build Maven trong Docker, cách này nhanh và đơn giản nếu CI đã cache Maven tốt. Đổi lại, tính nhất quán phụ thuộc vào môi trường bên ngoài Docker.
+
+Khi dùng cách này, pipeline thường nên có thứ tự rõ ràng:
+
+```text
+1. Checkout source
+2. Restore cache Maven của CI
+3. Chạy test
+4. Chạy mvn package
+5. Build Docker image chỉ từ JAR đã tạo
+6. Push image
+```
+
+Nếu bước 4 chưa chạy mà đã chạy `docker build`, Docker sẽ báo không tìm thấy JAR. Vì Dockerfile không mô tả cách tạo JAR, trách nhiệm đó nằm ở pipeline.
+
+Nên dùng cách build JAR ngoài Docker khi:
+
+- Team đã có CI Maven chuẩn, cache `~/.m2` tốt và test report đầy đủ.
+- Muốn Dockerfile runtime thật ngắn, dễ đọc.
+- Không cần build image từ source ở mọi môi trường.
+- Build image chỉ là bước đóng gói artifact đã được kiểm thử.
+
+Không nên dùng cách này nếu mục tiêu là "clone repo rồi chỉ cần `docker build` là ra image", vì Dockerfile không tự build artifact.
 
 ## 50. Cách 2: Build Maven trong Docker
 
@@ -1811,6 +2043,22 @@ So với build JAR ngoài Docker:
 
 Nếu CI có registry cache hoặc local cache cho BuildKit, cách này thường cân bằng tốt giữa tính tái tạo và tốc độ.
 
+Khi dùng cách này, Dockerfile trở thành tài liệu build đầy đủ hơn:
+
+```text
+Input:  source code + pom.xml
+Output: runtime image chạy được
+```
+
+Người khác không cần biết máy host có Maven hay không. CI runner cũng không cần cài JDK/Maven ngoài Docker. Điều cần chuẩn bị là Docker/BuildKit và quyền pull base image.
+
+Đổi lại, cần chú ý:
+
+- Lần build đầu có thể chậm vì phải tải base image Maven và dependency.
+- Nếu CI runner luôn mới, nên dùng registry cache hoặc local cache cho BuildKit.
+- Nếu project cần Maven settings private repository, nên dùng BuildKit secret mount thay vì copy `settings.xml`.
+- Nếu build cần test integration phụ thuộc service ngoài, nên cân nhắc tách stage test hoặc chạy test ngoài Docker tùy pipeline.
+
 ## 51. Vấn đề với wildcard JAR
 
 Instruction:
@@ -1862,6 +2110,14 @@ Lợi ích:
 - CI fail sớm và dễ hiểu nếu artifact chính không được tạo.
 - Dễ kết hợp với Spring Boot layered JAR vì các bước sau có đường dẫn artifact cố định.
 
+Một lựa chọn khác là copy theo tên artifact Maven đã biết:
+
+```dockerfile
+COPY --from=build /workspace/target/springboot-learning-0.0.1-SNAPSHOT.jar app.jar
+```
+
+Cách này rõ ràng, nhưng mỗi lần đổi version trong Maven có thể phải sửa Dockerfile. Vì vậy với dự án học tập hoặc service nội bộ, cấu hình `<finalName>app</finalName>` thường dễ vận hành hơn.
+
 ## 52. Spring Boot layered JAR
 
 Spring Boot executable JAR thường chứa nhiều loại nội dung:
@@ -1904,6 +2160,27 @@ application           -> thay đổi
 - Push image nhanh hơn.
 - Pull image cập nhật nhanh hơn.
 - Registry lưu ít dữ liệu trùng lặp hơn.
+
+Nếu không dùng layered JAR:
+
+```text
+Sửa một class
+-> Maven tạo lại app.jar
+-> Docker thấy app.jar đổi
+-> layer chứa app.jar đổi toàn bộ
+-> push/pull lại layer JAR lớn
+```
+
+Nếu dùng layered JAR:
+
+```text
+Sửa một class
+-> layer application đổi
+-> layer dependencies có thể giữ nguyên
+-> registry và server deploy chỉ cần xử lý phần thay đổi
+```
+
+Layered JAR không nhất thiết làm thời gian compile nhanh hơn. Nó chủ yếu tối ưu cách Docker lưu, push và pull nội dung ứng dụng sau khi JAR đã được tạo.
 
 ## 53. Ví dụ Dockerfile cho Spring Boot layered JAR
 
@@ -1953,6 +2230,13 @@ ENTRYPOINT ["java", "-jar", "application.jar"]
 
 Điểm chính của ví dụ là mỗi nhóm nội dung được `COPY` riêng để tạo ranh giới cache tốt hơn.
 
+Khi áp dụng thật, cần kiểm tra hai thứ:
+
+1. JAR có bật layer metadata không.
+2. Cách chạy sau khi extract có đúng với phiên bản Spring Boot đang dùng không.
+
+Một số phiên bản Spring Boot dùng `jarmode=layertools`, một số phiên bản mới có cơ chế tools khác. Vì vậy không nên copy nguyên mẫu mà không chạy thử `java -jar app.jar list` hoặc lệnh tương ứng để xem các layer thực tế.
+
 ## 54. Có nên luôn tách Spring Boot JAR thành layer?
 
 Không nhất thiết.
@@ -1971,6 +2255,21 @@ Có thể không cần khi:
 - Build và deploy ít.
 - Dockerfile đơn giản quan trọng hơn vài giây tối ưu.
 - Nền tảng đã dùng buildpack và tự tối ưu layer.
+
+Quyết định thực tế:
+
+```text
+Nếu bottleneck là compile/test Maven:
+    Ưu tiên cache mount, tách dependency, CI cache.
+
+Nếu bottleneck là push/pull image:
+    Cân nhắc Spring Boot layered JAR.
+
+Nếu bottleneck là image quá lớn:
+    Ưu tiên multi-stage, runtime image nhỏ, bỏ file thừa.
+```
+
+Không nên dùng layered JAR chỉ vì "nghe tối ưu". Hãy dùng khi nó giải quyết đúng vấn đề: layer JAR lớn thay đổi quá thường xuyên làm registry/deploy chậm.
 
 ---
 
@@ -2002,6 +2301,18 @@ Image đủ nhỏ
 + Dockerfile dễ hiểu
 + build có thể tái tạo
 ```
+
+Ví dụ, hai instruction này không nhất thiết tốt hơn chỉ vì ít layer:
+
+```dockerfile
+RUN apt-get update \
+    && apt-get install -y curl \
+    && mvn dependency:go-offline \
+    && mvn package \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+Nó trộn package hệ thống, dependency Maven và build ứng dụng vào một bước. Sửa source có thể làm nhiều việc không liên quan phải chạy lại. Tốt hơn là ghép những việc cần chung layer, nhưng vẫn tách theo ranh giới cache hợp lý.
 
 ## 56. “Xóa file ở instruction sau sẽ giảm image”
 
@@ -2125,6 +2436,18 @@ Chỉ nên dùng khi:
 
 Không nên dùng `--no-cache` cho mọi build hằng ngày vì làm mất lợi ích lớn nhất của Docker build.
 
+Khi nghi cache sai, hãy dùng `--no-cache` như công cụ kiểm chứng:
+
+```text
+Build có cache lỗi, build --no-cache thành công:
+    Có thể Dockerfile phụ thuộc dữ liệu bên ngoài nhưng cache không biết.
+
+Build --no-cache cũng lỗi:
+    Vấn đề có thể nằm ở Dockerfile, dependency, network hoặc source hiện tại.
+```
+
+Sau khi tìm được nguyên nhân, nên sửa Dockerfile hoặc chiến lược cache thay vì giữ `--no-cache` vĩnh viễn.
+
 ## 62. Xóa build cache
 
 Xem dung lượng:
@@ -2167,6 +2490,19 @@ Kiểm tra:
 8. Cache có còn tồn tại trên builder hiện tại không?
 9. CI có chạy trên runner mới không?
 10. Cache từ registry có được import đúng không?
+
+Cách debug có hệ thống:
+
+```text
+1. Chạy build với --progress=plain.
+2. Tìm bước đầu tiên không CACHED ngoài dự kiến.
+3. Nhìn các instruction trước bước đó.
+4. Kiểm tra file nào được COPY vào trước đó.
+5. Kiểm tra .dockerignore.
+6. Nếu ở CI, kiểm tra cache-from/cache-to có thật sự chạy không.
+```
+
+Đừng bắt đầu từ bước cuối bị chậm. Hãy tìm bước đầu tiên mất cache, vì các bước sau thường chỉ là hậu quả.
 
 ## 64. Vì sao cache cũ vẫn được dùng dù package bên ngoài đã cập nhật?
 
@@ -2311,6 +2647,18 @@ Nên:
 - Có quy trình cập nhật dependency và bản vá.
 
 Cache giúp build nhanh. Pin version giúp build có thể dự đoán. Hai việc này khác nhau.
+
+Một build tốt cần cả hai:
+
+```text
+Cache tốt:
+    Lặp lại công việc ít hơn.
+
+Pin tốt:
+    Khi phải lặp lại, kết quả vẫn dự đoán được.
+```
+
+Nếu chỉ có cache mà không pin version, build hôm nay có thể dùng cache và thành công, nhưng build sạch tuần sau có thể lấy dependency khác. Nếu chỉ pin mà không cache, build có thể đúng nhưng chậm. Hai mục tiêu này bổ sung cho nhau.
 
 ---
 

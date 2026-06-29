@@ -1,0 +1,1822 @@
+﻿HALOPESA MINIAPP PLATFORM
+HALOPESA MINI APP PLATFORM
+
+
+________________
+
+
+
+
+TABLE OF CONTENT
+HALOPESA MINI APP PLATFORM        1
+TABLE OF CONTENT        1
+1. Executive Summary        4
+2. System Context        4
+2.1 Context Diagram        4
+2.2 Component Description        4
+3. Architecture Overview        5
+3.1 High-Level Architecture        5
+3.2 Architecture Principles        7
+4. Partner Responsibilities        7
+4.1 MiniApp Registration        7
+4.2 Authentication Integration        7
+4.2.1 Backend to Backend        7
+4.2.2 HostApp to MiniApp - Seamless Login Integration (LinkToken-based Auto Login)        8
+Purpose        8
+Flow Overview        8
+Responsibilities        9
+Launch Context Example        9
+Sequence Diagram        9
+Failure Handling        9
+API Detailed Design        10
+4.3 Payment Integration        11
+4.4 Payment Process & Transaction Handling        18
+Partner Payment Result Callback API (IPN)        18
+Purpose        18
+Security Model        18
+API Definition        19
+Endpoint        19
+Request Headers        19
+Signature Generation        19
+Algorithm        19
+Example        19
+Request Body        20
+Request Fields        20
+Partner Validation Requirements        21
+Recommended Validation Flow        21
+Timestamp Validation        21
+Replay Protection        21
+Response Body        22
+Retry Policy        22
+Retry Schedule        22
+Idempotency Requirements        23
+4.5 Timeout & Inquiry Handling        23
+Halopesa Transaction Inquiry API        23
+Purpose        23
+API Definition        23
+Endpoint        23
+Headers        24
+Request Body        24
+Request Fields        24
+Response Body        24
+Transaction Status        25
+Error Response Example        25
+Recommended Retry Policy        25
+Timeout Handling Recommendation        25
+Security Requirements        25
+4.6 Fulfillment Failure & Refund Handling        26
+Refund Handling Responsibilities        26
+4.7 SDK Payment Callback Handling        26
+Recommended UI Handling        26
+4.8 SDK Interaction        27
+Integration Flow        27
+MiniApp Runtime Capabilities        27
+List of Permission        29
+Format Request & Response        30
+Event Status Codes        31
+5. MiniApp Lifecycle        32
+5.1 Main Payment Flow        32
+Overview        32
+Purpose        33
+Flow        33
+Injected Runtime Context        33
+Purpose        33
+Flow        33
+Failure Handling        33
+5.1.3 OAuth Authentication        34
+Purpose        34
+Flow        34
+Token Lifecycle Management        35
+5.1.4 Payment Initialization        35
+Purpose        35
+Flow        35
+Failure Cases        36
+5.1.5 Payment Verification        36
+Purpose        36
+Flow        36
+Failure Cases        36
+5.1.6 Payment Confirmation        36
+Purpose        36
+Flow        37
+Possible Transaction States        37
+Payment Confirmation Failure Handling        37
+Failure Cases        37
+5.1.7 Asynchronous Payment Notification        38
+Purpose        38
+Flow        38
+IPN Timeout Handling        38
+Failure Cases        39
+5.1.8 Partner Fulfillment Processing        39
+Purpose        39
+Fulfillment Failure Compensation Flow        40
+5.1.9 Transaction Inquiry Handling        40
+Purpose        41
+Flow        41
+Inquiry Retry Flow        41
+Failure Cases        41
+5.1.10 API Summary        42
+5.2 Transaction Status Model        42
+5.3 Important Transaction Semantics        43
+6. Timeout & Recovery Handling        44
+6.1 Confirm Timeout Recovery Flow        44
+6.2 Inquiry Retry Policy        44
+6.3 IPN Retry Policy        45
+7. Security Architecture        45
+7.1 Trust Boundary        45
+7.2 Security Controls        46
+7.3 Network Security        46
+7.4 Transport Security        46
+7.5 Idempotency        47
+7.6 Replay Protection        47
+8. Error Handling Matrix        47
+9. Data Flow        50
+10. Non-Functional Requirements        50
+11. Risks & Mitigation        50
+12. Conclusion        50
+
+
+
+
+________________
+
+
+1. Executive Summary
+The Halopesa MiniApp Platform enables third-party partners to seamlessly integrate their MiniApps into the Halopesa ecosystem.
+Through this integration model:
+* MiniApps are embedded within the Halopesa mobile application via a secure SDK container
+* Partner backend systems integrate directly with Halopesa backend services for authentication, payment initialization, and transaction management
+* Payments are executed through the Halopesa Wallet using a secure, token-based mechanism
+* Transaction results are synchronized via backend callbacks and partner-initiated notifications
+This architecture ensures:
+* Secure and controlled payment execution through backend orchestration
+* Clear separation of responsibilities between platform and partner systems
+* High reliability via verification, callback, and reconciliation mechanisms
+________________
+
+
+2. System Context
+2.1 Context Diagram
+  
+
+________________
+
+
+2.2 Component Description
+Component
+	Description
+	User
+	End user interacting with the Halopesa mobile application
+	Halopesa App
+	Host application responsible for session management and payment UI rendering
+	MiniApp SDK
+	Secure bridge enabling communication between MiniApp frontend and Halopesa native capabilities
+	MiniApp Frontend
+	Partner-provided UI running within the SDK container
+	Partner Backend
+	Partner backend responsible for business logic, order management, and API integration
+	Halopesa Backend
+	Core services including authentication, payment processing, wallet, and transaction management
+	________________
+3. Architecture Overview
+3.1 High-Level Architecture
+  
+
+________________
+
+
+3.2 Architecture Principles
+* Backend-driven payment orchestration
+* Zero-trust frontend model
+* Direct backend-to-backend integration
+* Token-based secure payment flow
+* Callback and reconciliation for consistency
+________________
+
+
+4. Partner Responsibilities
+Partners integrating MiniApps into the Halopesa ecosystem MUST implement the following capabilities and operational handling.:
+4.1 MiniApp Registration
+* Provide MiniApp Frontend URL for embedding into Halopesa SDK
+* MiniApp Frontend receives initialization information from the SDK and performs the necessary processing.
+________________
+
+
+4.2 Authentication Integration
+4.2.1 Backend to Backend
+Partners MUST implement OAuth2 Client Credentials authentication.
+Halopesa will provide:
+* client_id
+* client_secret
+* POST API path : /ewallet3/client-gateway/oauth/client-login
+   * Request Body : 
+
+
+{
+  "grantType": "CLIENT_CREDENTIALS",
+  "clientId": "string",
+  "clientSecret": "string"
+}
+	
+
+   * Response : 
+{
+  "accessToken": "string",
+  "tokenType": "string",
+  "expiresIn": 0,
+  "scopes": [
+    "string"
+  ],
+  "jti": "string"
+}
+	
+
+Partners MUST:
+* securely store OAuth credentials
+* securely cache access tokens
+* monitor token expiration
+* renew access tokens before expiration
+* prevent credential leakage
+* use accessToken to call other API
+Refresh tokens are NOT required for server-to-server integration.
+________________
+
+
+
+
+4.2.2 HostApp to MiniApp - Seamless Login Integration (LinkToken-based Auto Login)
+Purpose
+To provide a seamless user experience, MiniApps may implement LinkToken-based Auto Login, allowing users to access the MiniApp without repeated authentication.
+Flow Overview
+1. User logs in to MiniApp for the first time.
+2. Partner Backend generates a LinkToken.
+3. Partner Backend IPN the LinkToken to Halopesa Backend.
+4. Halopesa Backend securely stores the LinkToken.
+5. On subsequent launches, Halopesa App passes the LinkToken to MiniApp.
+6. MiniApp validates the LinkToken with Partner Backend.
+7. If validation succeeds, the user is automatically authenticated.
+8. If validation fails or expires, MiniApp falls back to the standard login flow.
+Responsibilities
+Component
+	Responsibility
+	Partner Backend
+	Generate, validate, revoke and manage LinkToken lifecycle
+	MiniApp
+	Perform auto-login validation
+	Halopesa Backend
+	Securely store LinkToken and pass it to MiniApp during launch
+	Launch Context Example
+{
+  "msisdn": "123456",
+  "linkToken": "eyJhbGciOiJIUzI1NiIs..."
+}
+Sequence Diagram
+  
+
+Failure Handling
+MiniApp MUST fall back to the standard login flow if:
+* LinkToken is expired.
+* LinkToken is revoked.
+* LinkToken validation fails.
+* Partner authentication service is unavailable.
+API Detailed Design
+POST /ewallet3/ewallet-business-adapter/api/v1/miniapp/oauth/client-link-token
+Request Headers
+Header
+	Required
+	Description
+	Authorization
+	Yes
+	Bearer access token obtained via OAuth2 Client Credentials
+	Content-Type
+	Yes
+	application/json
+	Request Body
+{
+  "msisdn": "123456789",
+  "linkToken": "eyJhbGciOiJIUzI1NiIs...",
+  "expiredAt": "2026-12-31T23:59:59Z"
+}
+Field
+	Type
+	Required
+	Description
+	msisdn
+	String
+	Yes
+	Partner user identifier
+	linkToken
+	String
+	Yes
+	Auto-login token generated by Partner Backend
+	expiredAt
+	ISO8601
+	No
+	LinkToken expiration timestamp
+	Success Response
+{
+  "code": "SUCCESS",
+  "message": "LinkToken registered successfully"
+}
+Notes
+* LinkToken MUST uniquely identify a user within a MiniApp.
+* LinkToken MUST contain iss field for identifying the principal created and digitally signed the token 
+* LinkToken SHOULD be transmitted only through HTTPS.
+* Halopesa stores LinkToken as an opaque value and does not validate its content.
+* Partner Backend remains the source of truth for LinkToken validation.
+* LinkToken expiration and revocation are managed by Partner Backend.
+________________
+
+
+4.3 Payment Integration
+Partners MUST:
+* create order internally
+* generate unique orderId
+* maintain transaction mapping
+* securely store transaction records
+* support idempotent initialization handling
+* initialize payment with Halopesa
+   * Call /ewallet3/ewallet-business-adapter/api/v1/miniapp/transfer/w2w/init
+      * Request Body : 
+{
+  "fromPhoneNumber": "string",
+  "partnerServiceCode": "string",
+  "orderId": "string",
+  "amount": 0,
+}
+	
+
+      * Response : 
+{
+  "currency": "string",
+  "originalTransId": "string",
+  "fromPhoneNumber": "string",
+  "fromInfo": "string",
+  "fromInfoType": "MSISDN",
+  "fromName": "string",
+  "fromUserId": 0,
+  "fromWalletId": 0,
+  "fromWalletTypeId": 0,
+  "fromWalletTypeCode": "string",
+  "fromWalletTierId": 0,
+  "fromWalletTierCode": "string",
+  "fromClientId": "string",
+  "fromTierCode": "string",
+  "fromRoleTypeCode": "string",
+  "fromFspId": "string",
+  "fromIdType": "string",
+  "fromIdNumber": "string",
+  "fromEmail": "string",
+  "fromAccount": {
+    "createdAt": "string",
+    "updatedAt": "string",
+    "createdBy": 0,
+    "updatedBy": 0,
+    "id": 0,
+    "customerId": "string",
+    "userId": 0,
+    "walletId": 0,
+    "walletIds": [
+      0
+    ],
+    "profileId": 0,
+    "systemId": 0,
+    "phoneNumber": "string",
+    "tierCode": "string",
+    "tierName": "string",
+    "roleTypeCode": "string",
+    "tier": 0,
+    "roleId": 0,
+    "status": 0,
+    "groupPermission": "string",
+    "wrongPinCount": 0,
+    "tillNumber": "string",
+    "fullName": "string",
+    "lipaNumber": "string",
+    "tipLipaNumber": "string",
+    "vip": 0,
+    "profileDTO": {
+      "id": 0,
+      "phoneNumber": "string",
+      "idNumber": "string",
+      "idType": "string",
+      "issuedDate": "2026-05-08",
+      "issuedPlace": "string",
+      "tinNumber": "string",
+      "address": "string",
+      "precinct": 0,
+      "precinctStr": "string",
+      "district": 0,
+      "districtStr": "string",
+      "region": 0,
+      "regionStr": "string",
+      "firstName": "string",
+      "lastName": "string",
+      "status": 0,
+      "gender": 0,
+      "fspid": "string",
+      "accountType": "string",
+      "accountCategory": "string",
+      "identifierType": "string",
+      "identify": "string",
+      "type": "string",
+      "value": "string",
+      "sex": "string",
+      "regProvinceCode": "string",
+      "imsi": "string",
+      "dob": "2026-05-08"
+    },
+    "ownerProfileDTO": {
+      "ownerName": "string",
+      "ownerPhone": "string",
+      "ownerPaperType": "string",
+      "ownerPaperNumber": "string",
+      "ownerEmail": "string",
+      "ownerIssuedDate": "string",
+      "ownerIssuedPlace": "string",
+      "ownerExpiredDate": "string",
+      "gender": "string",
+      "dob": "string",
+      "country": "string",
+      "province": "string",
+      "district": "string",
+      "ward": "string",
+      "address": "string"
+    },
+    "walletUsers": [
+      {
+        "walletId": 0,
+        "requestStatus": "string",
+        "errorCode": "string",
+        "errorMessage": "string",
+        "groupWalletTypeCode": "string",
+        "groupWalletTypeName": "string",
+        "walletTypeCode": "string",
+        "walletTypeName": "string",
+        "walletTierCode": "string",
+        "bankCode": "string",
+        "walletCode": "string",
+        "walletName": "string",
+        "currency": "string",
+        "tier": "string",
+        "description": "string",
+        "walletState": "string",
+        "activeAt": "string",
+        "terminatedAt": "string",
+        "walletTierId": 0,
+        "walletTypeId": 0
+      }
+    ],
+    "userInfoResponse": {
+      "id": 0,
+      "status": "string",
+      "firstName": "string",
+      "lastName": "string",
+      "email": "string",
+      "phoneNumber": "string",
+      "username": "string",
+      "imageUrl": "string",
+      "lang": "string",
+      "country": "string",
+      "birthDate": "string",
+      "birthday": "string",
+      "timeZone": "string",
+      "sex": "string",
+      "createdAt": "2026-05-08T08:05:53.785Z",
+      "roleTypes": [
+        {
+          "roleTypeId": 0,
+          "tierId": 0,
+          "roleTypeCode": "string",
+          "roleTypeName": "string",
+          "tierCode": "string",
+          "tierName": "string",
+          "systemId": 0,
+          "systemCode": "string",
+          "walletId": 0,
+          "clientId": "string",
+          "walletIds": [
+            0
+          ],
+          "status": "string",
+          "statusPin": true,
+          "createdAt": "2026-05-08T08:05:53.785Z"
+        }
+      ]
+    },
+    "savingStatus": "string",
+    "activeAt": "string",
+    "partnerCode": "string",
+    "taxCode": "string",
+    "reasonType": "string",
+    "clientId": "string",
+    "sender": true
+  },
+  "toUserId": 0,
+  "toInfo": "string",
+  "toInfoType": "MSISDN",
+  "toPhoneNumber": "string",
+  "toName": "string",
+  "toClientId": "string",
+  "toWalletId": 0,
+  "toWalletTypeId": 0,
+  "toWalletTypeCode": "string",
+  "toWalletTierId": 0,
+  "toWalletTierCode": "string",
+  "toTierCode": "string",
+  "toRoleTypeCode": "string",
+  "toFspId": "string",
+  "toIdType": "string",
+  "toIdNumber": "string",
+  "toEmail": "string",
+  "toAccount": {
+    "createdAt": "string",
+    "updatedAt": "string",
+    "createdBy": 0,
+    "updatedBy": 0,
+    "id": 0,
+    "customerId": "string",
+    "userId": 0,
+    "walletId": 0,
+    "walletIds": [
+      0
+    ],
+    "profileId": 0,
+    "systemId": 0,
+    "phoneNumber": "string",
+    "tierCode": "string",
+    "tierName": "string",
+    "roleTypeCode": "string",
+    "tier": 0,
+    "roleId": 0,
+    "status": 0,
+    "groupPermission": "string",
+    "wrongPinCount": 0,
+    "tillNumber": "string",
+    "fullName": "string",
+    "lipaNumber": "string",
+    "tipLipaNumber": "string",
+    "vip": 0,
+    "profileDTO": {
+      "id": 0,
+      "phoneNumber": "string",
+      "idNumber": "string",
+      "idType": "string",
+      "issuedDate": "2026-05-08",
+      "issuedPlace": "string",
+      "tinNumber": "string",
+      "address": "string",
+      "precinct": 0,
+      "precinctStr": "string",
+      "district": 0,
+      "districtStr": "string",
+      "region": 0,
+      "regionStr": "string",
+      "firstName": "string",
+      "lastName": "string",
+      "status": 0,
+      "gender": 0,
+      "fspid": "string",
+      "accountType": "string",
+      "accountCategory": "string",
+      "identifierType": "string",
+      "identify": "string",
+      "type": "string",
+      "value": "string",
+      "sex": "string",
+      "regProvinceCode": "string",
+      "imsi": "string",
+      "dob": "2026-05-08"
+    },
+    "ownerProfileDTO": {
+      "ownerName": "string",
+      "ownerPhone": "string",
+      "ownerPaperType": "string",
+      "ownerPaperNumber": "string",
+      "ownerEmail": "string",
+      "ownerIssuedDate": "string",
+      "ownerIssuedPlace": "string",
+      "ownerExpiredDate": "string",
+      "gender": "string",
+      "dob": "string",
+      "country": "string",
+      "province": "string",
+      "district": "string",
+      "ward": "string",
+      "address": "string"
+    },
+    "walletUsers": [
+      {
+        "walletId": 0,
+        "requestStatus": "string",
+        "errorCode": "string",
+        "errorMessage": "string",
+        "groupWalletTypeCode": "string",
+        "groupWalletTypeName": "string",
+        "walletTypeCode": "string",
+        "walletTypeName": "string",
+        "walletTierCode": "string",
+        "bankCode": "string",
+        "walletCode": "string",
+        "walletName": "string",
+        "currency": "string",
+        "tier": "string",
+        "description": "string",
+        "walletState": "string",
+        "activeAt": "string",
+        "terminatedAt": "string",
+        "walletTierId": 0,
+        "walletTypeId": 0
+      }
+    ],
+    "userInfoResponse": {
+      "id": 0,
+      "status": "string",
+      "firstName": "string",
+      "lastName": "string",
+      "email": "string",
+      "phoneNumber": "string",
+      "username": "string",
+      "imageUrl": "string",
+      "lang": "string",
+      "country": "string",
+      "birthDate": "string",
+      "birthday": "string",
+      "timeZone": "string",
+      "sex": "string",
+      "createdAt": "2026-05-08T08:05:53.785Z",
+      "roleTypes": [
+        {
+          "roleTypeId": 0,
+          "tierId": 0,
+          "roleTypeCode": "string",
+          "roleTypeName": "string",
+          "tierCode": "string",
+          "tierName": "string",
+          "systemId": 0,
+          "systemCode": "string",
+          "walletId": 0,
+          "clientId": "string",
+          "walletIds": [
+            0
+          ],
+          "status": "string",
+          "statusPin": true,
+          "createdAt": "2026-05-08T08:05:53.785Z"
+        }
+      ]
+    },
+    "savingStatus": "string",
+    "activeAt": "string",
+    "partnerCode": "string",
+    "taxCode": "string",
+    "reasonType": "string",
+    "clientId": "string",
+    "sender": true
+  },
+  "referencePhoneNumber": "string",
+  "referenceNumber": "string",
+  "referenceName": "string",
+  "packageCode": "string",
+  "amount": 0,
+  "amountRev": 0,
+  "totalAmount": 0,
+  "fee": 0,
+  "tax": 0,
+  "discount": 0,
+  "commission": 0,
+  "revShare": 0,
+  "accessChannel": "string",
+  "partnerServiceCode": "string",
+  "partnerServiceName": "string",
+  "partnerCode": "string",
+  "subPartnerCode": "string",
+  "serviceCode": "string",
+  "isSelfService": true,
+  "partnerServiceCodeAccounting": "string",
+  "partnerName": "string",
+  "subPartnerName": "string",
+  "serviceName": "string",
+  "originalServiceCode": "string",
+  "originServiceName": "string",
+  "transType": "string",
+  "requestId": "string",
+  "referRequestId": "string",
+  "orderId": "string",
+  "orderStatus": "string",
+  "transactionId": "string",
+  "accountNumb": "string",
+  "toAccountCategory": "string",
+  "toIdentifierValue": "string",
+  "toAccountType": "string",
+  "toIdentifierType": "string",
+  "toIdentifyType": "string",
+  "toIdentify": "string",
+  "fromAccountCategory": "string",
+  "fromIdentifierValue": "string",
+  "fromAccountType": "string",
+  "fromIdentifierType": "string",
+  "fromIdentifyType": "string",
+  "fromIdentify": "string",
+  "payerRequestId": "string",
+  "isPassPin": true,
+  "paymentStatus": "string",
+  "paymentMessage": "string",
+  "status": "string",
+  "secretCode": "string",
+  "createdAt": "2026-05-08T08:05:53.785Z",
+  "fromDob": "2026-05-08",
+  "kycNameToken": "string",
+  "requestToken": "string",
+  "description": "string",
+  "fromTime": "string",
+  "toTime": "string",
+  "actionType": "string",
+  "reason": "string",
+  "requiredOtp": 0,
+  "mockPic": "string",
+  "needOtp": true,
+  "refundFee": 0,
+  "refundTax": 0,
+  "sessionOtp": "string",
+  "isInternal": true,
+  "paymentMethod": true,
+  "isPromotion": true,
+  "promotionCode": "DEFAULT",
+  "promotionContent": "string",
+  "type": "string",
+  "value": "string",
+  "expiredTimeOtp": 0,
+  "identifyType": "string",
+  "id": 0,
+  "isIntermediary": true,
+  "vdResponseId": "string",
+  "minAmount": 0,
+  "paymentOption": "string",
+  "billDesc": "string",
+  "billExprDt": "string",
+  "passPin": true
+}
+
+
+	
+
+* receive requestToken
+* return requestToken to MiniApp Frontend
+________________
+
+
+4.4 Payment Process & Transaction Handling 
+After the customer confirms payment:
+* Halopesa processes the transaction asynchronously
+* Halopesa sends payment result via IPN callback
+* partner backend performs fulfillment processing
+Partners MUST:
+* implement IPN callback endpoint
+* support idempotent IPN processing
+* avoid duplicate fulfillment
+* support asynchronous transaction handling
+* support transaction reconciliation
+Partner Payment Result Callback API (IPN)
+Purpose
+Halopesa uses this API to asynchronously notify partner systems about the final payment processing result.
+This API is designed for:
+* asynchronous transaction handling
+* eventual consistency
+* retry-safe delivery
+* idempotent fulfillment processing
+Security Model
+This API uses:
+* HTTPS/TLS
+* IP whitelist validation
+* HMAC signature authentication
+OAuth2 authentication is NOT required for inbound callback APIs.
+API Definition
+Endpoint
+POST /partner/payment/ipn
+Request Headers
+Header
+	Required
+	Description
+	Content-Type
+	Yes
+	application/json
+	X-Request-Id
+	Yes
+	Unique callback request ID
+	X-Timestamp
+	Yes
+	Unix timestamp
+	X-Signature
+	Yes
+	HMAC SHA256 signature
+	Signature Generation
+Algorithm
+HMAC_SHA256(secret, rawRequestBody)
+Example 
+-Shared Secret
+partner_callback_secret
+-Signature Source
+1710000000 + raw_request_body
+-Generated Signature
+a1b2c3d4e5f6...
+Request Body
+{
+ "requestId": "REQ_20260501_00001",
+ "transactionId": "TXN_20260501_00001",
+ "orderId": "ORDER_10001",
+ "requestToken": "REQ_TOKEN_ABC123",
+ "status": "SUCCESS",
+ "amount": 150000,
+ "currency": "TZS",
+ "paymentTime": "2026-05-01T10:00:00Z",
+ "message": "Payment completed successfully"
+}
+Request Fields
+Field
+	Type
+	Required
+	Description
+	requestId
+	string
+	Yes
+	Unique callback request ID
+	transactionId
+	string
+	Yes
+	Halopesa transaction ID
+	orderId
+	string
+	Yes
+	Partner order ID
+	status
+	string
+	Yes
+	SUCCESS / FAILED
+	amount
+	number
+	Yes
+	Transaction amount
+	currency
+	string
+	Yes
+	Currency code
+	paymentTime
+	string
+	Yes
+	Payment completion timestamp
+	message
+	string
+	No
+	Additional transaction message
+	Partner Validation Requirements
+Partner systems MUST validate:
+* request signature
+* timestamp freshness
+* requestId uniqueness
+* payload integrity
+Recommended Validation Flow
+1. Validate source IP
+2. Validate timestamp
+3. Validate HMAC signature
+4. Validate replay request
+5. Process transaction
+Timestamp Validation
+Recommended maximum timestamp skew:
+5 minutes
+Requests exceeding the allowed timestamp window SHOULD be rejected.
+Replay Protection
+Partner systems SHOULD:
+* store processed requestId
+* reject duplicate requestId within replay protection window
+Response Body
+* Success Response
+{
+ "code": "00",
+ "message": "SUCCESS"
+}
+* Failure Response
+{
+ "code": "99",
+ "message": "INVALID_SIGNATURE"
+}
+Retry Policy
+Halopesa retries callback delivery if:
+* timeout occurs
+* network error occurs
+* non-success response returned
+Retry Schedule
+Retry
+	Delay
+	1
+	Immediate
+	2
+	5 seconds
+	3
+	30 seconds
+	4
+	5 minutes
+	5
+	30 minutes
+	Idempotency Requirements
+Partner systems MUST support idempotent processing.
+Recommended idempotency keys:
+* transactionId
+* orderId
+Duplicate callbacks MUST NOT trigger duplicate fulfillment.
+4.5 Timeout & Inquiry Handling
+If:
+* IPN is delayed
+* IPN is lost
+* confirm request times out
+* final transaction result is unavailable
+The partner system MUST initiate transaction inquiry handling.
+Halopesa Transaction Inquiry API
+Purpose
+Used by partner systems to retrieve latest transaction status when:
+* IPN is delayed
+* timeout occurs
+* transaction result is uncertain
+* reconciliation is required
+API Definition
+Endpoint
+POST /ewallet3/ewallet-business-adapter/api/v1/miniapp/transaction/inquiry
+Headers
+Header
+	Required
+	Description
+	Authorization
+	Yes
+	OAuth2 Bearer Token
+	Content-Type
+	Yes
+	application/json
+	X-Request-Id
+	Yes
+	Unique request ID
+	Request Body
+{
+ "transactionId": "TXN_20260501_00001",
+ "orderId": "ORDER_10001"
+}
+Request Fields
+Field
+	Type
+	Required
+	Description
+	transactionId
+	string
+	Required
+	Halopesa transaction ID
+	orderId
+	string
+	Required
+	Partner order ID
+	Response Body
+{
+ "code": "00",
+ "message": "SUCCESS",
+ "data": {
+   "transactionId": "TXN_20260501_00001",
+   "orderId": "ORDER_10001",
+   "status": "SUCCESS",
+   "amount": 150000,
+   "paymentTime": "2026-05-01T10:00:00Z",
+   "lastUpdatedTime": "2026-05-01T10:00:05Z"
+ }
+}
+
+
+Transaction Status
+Status
+	Description
+	PROCESSING
+	Transaction still processing
+	SUCCESS
+	Transaction completed successfully
+	FAILED
+	Transaction failed
+	PENDING_RECONCILIATION
+	Awaiting reconciliation
+	Error Response Example
+{
+ "code": "404",
+ "message": "TRANSACTION_NOT_FOUND"
+}
+
+
+Recommended Retry Policy
+Attempt
+	Delay
+	1
+	2 seconds
+	2
+	3 seconds
+	3
+	5 seconds
+	4
+	10 seconds
+	5
+	15 seconds
+	Maximum retry duration: 35 seconds
+Timeout Handling Recommendation
+If inquiry still returns PROCESSING, after maximum retry duration: transaction SHOULD be marked as PENDING_RECONCILIATION
+Security Requirements
+Both APIs MUST support:
+* HTTPS/TLS
+* OAuth2 Bearer Token
+* idempotent processing
+* request validation
+* timestamp validation
+* secure logging
+________________
+
+
+4.6 Fulfillment Failure & Refund Handling
+If partner fulfillment fails after successful payment processing:
+* Partner Backend MUST trigger refund processing through Halopesa refund APIs
+Refund Handling Responsibilities
+Partners MUST:
+* support idempotent refund requests
+* maintain refund transaction tracking
+* retry refund inquiry in case of timeout
+* avoid duplicate compensation processing
+________________
+
+
+4.7 SDK Payment Callback Handling
+The MiniApp Frontend MUST handle SDK payment callbacks.
+After receiving paymentNotify() from SDK, the MiniApp Frontend SHOULD:
+1. call Partner Backend transaction inquiry API
+2. retrieve latest transaction status
+3. update UI state accordingly
+Recommended UI Handling
+Status
+	Recommended UI
+	PROCESSING
+	Processing transaction
+	SUCCESS
+	Payment completed successfully
+	FAILED
+	Payment failed
+	PENDING_RECONCILIATION
+	Transaction processing in background
+	
+
+________________
+
+
+4.8 SDK Interaction
+Integration Flow
+  
+
+MiniApp Runtime Capabilities 
+The SDK exposes built-in capability methods that enable MiniApps to request user consent and access authorized runtime information. 
+
+
+
+
+Example of CGV’s user consent request : 
+  
+
+
+
+List of Permission
+
+
+
+
+No.
+	Permission
+	Type
+	Description
+	1
+	USER_AGE_PERMISSION
+	UserData
+	User’s age permission
+	2
+	USER_NAME_PERMISSION
+	UserData
+	User’s name permission
+	3
+	USER_FULL_NAME_PERMISSION
+	UserData
+	User’s full name permission
+	4
+	USER_PHONE_NUMBER_PERMISSION
+	UserData
+	User’s phone number permission
+	5
+	USER_AVATAR_PERMISSION
+	UserData
+	User’s avatar permission
+	6
+	RECORD_AUDIO_PERMISSION
+	Device
+	User’s record permission
+	7
+	PHONE_CALL_PERMISSION
+	Device
+	User’s call permission
+	8
+	CAMERA_PERMISSION
+	Device
+	User’s camera permission
+	9
+	LOCATION_PERMISSION
+	Device
+	User’s location permission
+	10
+	VIDEOS_PERMISSION
+	Device
+	User’s file permission
+	11
+	AUDIO_PERMISSION
+	Device
+	User’s file permission
+	12
+	PHOTOS_PERMISSION
+	Device
+	User’s file permission
+	13
+	DOCUMENT_PERMISSION
+	Device
+	User’s file permission
+	14
+	LOCAL_AUTHENTICATION_PERMISSION
+	Sdk
+	User’s local authentication permission (on-device)
+	15
+	CONTACT_PERMISSION
+	Device
+	User’s contact permission
+	16
+	LOGIN_PERMISSION
+	Sdk
+	Login permission
+	17
+	USER_BIRTH_DATE_PERMISSION
+	UserData
+	User’s DoB permission
+	18
+	USER_GENDER_PERMISSION
+	UserData
+	User’s gender permission
+	19
+	USER_NATIONAL_ID_PERMISSION
+	UserData
+	User’s national ID permission
+	20
+	INIT_PAYMENT
+	UserData
+	Request init payment from MiniApp
+	21
+	NOTIFY_PAYMENT
+	UserData
+	Notify payment result for MiniApp
+	Format Request & Response
+Request Format
+{
+ "event": "string",        // Tên event
+ "sender": "string",       // Nguồn gửi request
+ "request_id": "string",   // ID để map với response
+ "data": {}                // Dữ liệu của request
+}
+Response Format
+{
+ "event": "string",
+ "sender": "MINIAPP_SDK",
+ "response_id": "string",
+ "request_id": "string",   // ID từ request
+ "data": {},               // Dữ liệu response
+ "token": "string",        // Access token (nếu có)
+ "eventStatus": {
+   "errorCode": "SDK000", // SDK000 = thành công
+   "errorMessageVN": "string",
+   "errorMessageEN": "string",
+   "realMsg": "string"
+ },
+ "errorData": "string",
+ "message": "string"
+}
+Event Status Codes
+Code
+	Mô tả
+	
+
+	SDK000
+	Success
+	
+
+	SDK001
+	General error
+	
+
+	SDK002
+	Permission denied
+	
+
+	SDK003
+	Invalid request
+	
+
+	
+
+________________
+
+
+5. MiniApp Lifecycle
+5.1 Main Payment Flow 
+Overview
+This section describes the end-to-end payment orchestration flow between:
+* Halopesa App
+* Halopesa SDK
+* MiniApp Frontend
+* Partner Backend
+* Halopesa Backend
+The sequence diagram illustrates the primary successful transaction flow.
+
+
+  
+
+Timeout handling, retry strategy, asynchronous processing, refund compensation, and reconciliation handling are described in the subsections below.
+________________
+
+
+
+
+5.1.1 MiniApp Initialization
+Purpose
+Initialize the MiniApp runtime environment inside the Halopesa application.
+Flow
+1. Customer selects a MiniApp service icon within Halopesa App
+2. Halopesa App passes these information to the SDK initialization layer:
+   * serviceCode
+   * partnerCode
+3. SDK validates and resolves the configured MiniApp information
+4. SDK retrieves corresponding MiniApp configuration:
+   * MiniApp URL
+   * runtime configuration
+   * capability configuration
+   * permission policies
+5. If MiniApp configuration exists:
+   * SDK opens the corresponding MiniApp
+   * SDK initializes runtime environment
+   * SDK injects trusted runtime context into MiniApp Frontend
+6. If configuration does not exist:
+   * SDK displays service unavailable message
+Injected Runtime Context
+The SDK may inject:
+* user context
+* runtime configuration
+* permission-based capabilities
+* locale information
+* communication bridge APIs
+________________
+
+
+
+
+5.1.2 Order Creation
+Purpose
+Create business order within partner backend before payment initialization.
+Flow
+1. Customer performs order creation flow within the partner’s MiniApp
+2. MiniApp Frontend requests order creation
+3. Partner backend creates order internally
+4. Partner backend returns unique orderId
+Failure Handling
+Scenario
+	Recommended Handling
+	Order creation timeout
+	Retry order creation
+	Duplicate order request
+	Return existing order
+	Internal order processing failure
+	Return business error
+	
+
+________________
+
+
+5.1.3 OAuth Authentication
+Purpose
+Authenticate partner backend with Halopesa backend APIs.
+Flow
+Partners MUST authenticate using OAuth2 Client Credentials flow before invoking protected APIs.
+The partner backend system is responsible for:
+* securely storing access tokens
+* monitoring token expiration
+* renewing tokens before expiration
+* preventing token leakage
+Refresh tokens are NOT required for server-to-server integration.
+  
+
+Token Lifecycle Management 
+Item
+	Recommendation 
+	OAuth Flow 
+	Client Credentials 
+	Access Token Expiry 
+	5 minutes 
+	Renewal Threshold 
+	1 minute before expiration 
+	Token Storage 
+	In-memory or secure cache 
+	Refresh Strategy 
+	Re-request access token 
+	
+
+________________
+
+
+5.1.4 Payment Initialization
+Purpose
+Initialize transaction within Halopesa payment system.
+Flow
+1. Partner backend calls payment initialization API
+2. Halopesa validates request
+3. Halopesa creates internal transaction record
+4. requestToken returned
+Failure Cases
+Scenario
+	Recommended Handling
+	transfer/w2w/init failed
+	Show message popup in MiniApp
+	Duplicate initialization
+	Return existing transaction, show message popup in MiniApp
+	Invalid request payload
+	Reject request, show message popup in MiniApp
+	5.1.5 Payment Verification
+Purpose
+Validate requestToken before opening payment confirmation UI.
+Flow
+1. MiniApp Frontend calls: sdk.pay(requestToken)
+2. SDK verifies transaction detail with Halopesa backend
+3. Halopesa validates requestToken and transaction state
+4. Payment UI opened if valid
+Failure Cases
+Scenario
+	Recommended Handling
+	Invalid requestToken
+	Reject payment
+	SDK validation failed
+	Stop payment flow
+	Transaction expired
+	Recreate payment
+	
+
+________________
+
+
+5.1.6 Payment Confirmation
+Purpose
+Execute payment processing after customer confirmation.
+Flow
+1. Customer confirms payment
+2. Halopesa validates transaction state
+3. Wallet deduction processing executed
+4. Transaction state updated
+Possible Transaction States
+Status
+	Description
+	SUCCESS
+	Payment completed
+	FAILED
+	Payment rejected
+	PROCESSING
+	Final state not yet available
+	
+
+Payment Confirmation Failure Handling
+Confirm Timeout Flow
+  
+
+Failure Cases
+Scenario
+	Recommended Handling
+	transfer/w2w/confirm timeout
+	Trigger inquiry retry flow
+	transfer/w2w/confirm network error
+	Show PROCESSING UI
+	Insufficient wallet balance
+	Return FAILED
+	Wallet deduction failed
+	Return FAILED
+	Internal processing error
+	Return PROCESSING or FAILED
+	
+
+________________
+
+
+5.1.7 Asynchronous Payment Notification
+Purpose
+Synchronize transaction result between Halopesa and partner systems.
+Flow
+1. Halopesa sends IPN callback to partner backend
+2. SDK triggers paymentNotify callback
+3. MiniApp initiates inquiry flow if needed
+IPN Timeout Handling
+  
+
+Failure Cases
+Scenario
+	Recommended Handling
+	IPN callback timeout
+	Retry callback
+	IPN callback network failure
+	Retry delivery
+	Duplicate IPN callback
+	Ignore duplicate
+	Invalid callback signature
+	Reject callback
+	
+
+________________
+
+
+5.1.8 Partner Fulfillment Processing
+Purpose
+Execute partner business fulfillment after successful payment.
+Fulfillment Failure Compensation Flow
+  
+Failure Cases
+Scenario
+	Recommended Handling
+	Partner fulfillment failed
+	Trigger refund
+	Fulfillment timeout
+	Retry fulfillment internally
+	Duplicate fulfillment request
+	Ignore duplicate
+	
+
+________________
+
+
+5.1.9 Transaction Inquiry Handling
+Purpose
+Retrieve latest transaction status asynchronously.
+Flow
+1. MiniApp Frontend calls partner inquiry API
+2. Partner backend queries Halopesa inquiry API if needed
+3. Latest transaction status returned
+Inquiry Retry Flow 
+  
+
+Failure Cases
+Scenario
+	Recommended Handling
+	Inquiry timeout
+	Retry inquiry
+	Inquiry returns PROCESSING
+	Continue polling
+	Inquiry exceeds retry duration
+	Mark PENDING_RECONCILIATION
+	Cross-node replication delay
+	Retry inquiry with backoff
+	
+
+________________
+
+
+5.1.10 API Summary
+Halopesa Backend APIs
+API
+	Purpose
+	/oauth/client-login
+	OAuth authentication
+	/transfer/w2w/init
+	Initialize payment
+	/transfer/w2w/detail
+	Verify requestToken
+	/transfer/w2w/confirm
+	Execute payment
+	/transaction/inquiry
+	Retrieve transaction status
+	/refund/request
+	Trigger refund processing
+	
+
+Partner APIs
+API
+	Purpose
+	/partner/payment/ipn
+	Receive payment callback
+	/partner/transaction/inquiry
+	Query partner transaction status
+	
+
+SDK APIs
+SDK API
+	Purpose
+	sdk.init()
+	Get MiniApp config and Initialize SDK runtime
+	sdk.requestPermission()
+	Request user permission
+	sdk.pay(requestToken)
+	Trigger payment flow
+	sdk.paymentNotify()
+	Receive payment callback
+	
+
+________________
+
+
+5.2 Transaction Status Model
+  
+
+________________
+
+
+5.3 Important Transaction Semantics 
+A successful response from:
+/ewallet3/ewallet-business-customer/api/v1/app/transfer/w2w/confirm
+DOES NOT indicate final transaction success.
+It only indicates that the payment request has been accepted for asynchronous processing.
+Final transaction status MUST be determined via:
+* IPN callback
+* transaction inquiry API
+If partner fulfillment fails after successful payment processing, the partner system is responsible for triggering refund processing through Halopesa refund APIs. 
+________________
+
+
+6. Timeout & Recovery Handling
+6.1 Confirm Timeout Recovery Flow
+  
+
+________________
+
+
+6.2 Inquiry Retry Policy
+
+
+Attempt
+	Delay
+	1
+	2 seconds
+	2
+	3 seconds
+	3
+	5 seconds
+	4
+	10 seconds
+	5
+	15 seconds
+	Maximum inquiry duration:
+35 seconds
+If the final transaction result is still unavailable after the maximum retry duration, the transaction MUST be marked as:
+PENDING_RECONCILIATION
+________________
+
+
+6.3 IPN Retry Policy
+Retry
+	Delay
+	1
+	Immediate
+	2
+	5 seconds
+	3
+	30 seconds
+	4
+	5 minutes
+	5
+	30 minutes
+	If all retries fail, the transaction MUST be escalated to reconciliation handling.
+All IPN callbacks MUST support idempotent processing.
+________________
+
+
+7. Security Architecture
+7.1 Trust Boundary
+  
+
+________________
+
+
+7.2 Security Controls
+* OAuth2 authentication
+* Short-lived payment token
+* Idempotent transaction handling
+
+
+________________
+
+
+7.3 Network Security 
+Partner backend systems MUST connect to Halopesa backend systems through:
+* private network connectivity
+* approved IP whitelist configuration
+________________
+
+
+7.4 Transport Security 
+Item
+	Requirement
+	Protocol
+	HTTPS only
+	TLS Version
+	TLS 1.2+
+	Authentication
+	OAuth2 Bearer Token
+	
+
+________________
+
+
+7.5 Idempotency
+All payment-related APIs and IPN callbacks MUST support idempotent processing.
+Recommended unique identifiers:
+* transactionId
+* orderId
+* requestId
+Idempotent processing is required to prevent:
+* duplicate fulfillment
+* duplicate transaction handling
+* duplicate payment processing
+________________
+
+
+7.6 Replay Protection
+Recommended security mechanisms:
+* timestamp validation
+* request expiration
+* nonce/requestId validation
+________________
+
+
+8. Error Handling Matrix 
+
+
+Scenario
+	Halopesa Action
+	Partner Action
+	OAuth authentication failed
+	Reject API request
+	Re-authenticate and request new access token
+	OAuth access token expired
+	Return unauthorized response
+	Renew access token before retry
+	Invalid OAuth credentials
+	Reject authentication request
+	Verify client credentials configuration
+	transfer/w2w/init failed
+	Reject payment initialization
+	Recreate payment request
+	Invalid requestToken
+	Reject payment request
+	Re-init payment transaction
+	transfer/w2w/detail validation failed
+	Reject payment UI opening
+	Recreate transaction
+	SDK validation failed
+	Stop payment flow
+	Show validation error UI
+	User cancels payment
+	Mark transaction as CANCELLED
+	Cancel or expire order
+	transfer/w2w/confirm timeout
+	Mark transaction as PROCESSING
+	Start inquiry retry flow
+	transfer/w2w/confirm network error
+	Mark transaction as UNKNOWN
+	Retry inquiry process
+	Payment processing timeout
+	Continue asynchronous processing
+	Wait for IPN or inquiry result
+	Insufficient wallet balance
+	Return FAILED
+	Show insufficient balance UI
+	Wallet deduction failed
+	Return FAILED
+	Show payment failure UI
+	Internal payment processing error
+	Mark FAILED
+	Show payment failure UI
+	IPN callback timeout
+	Retry IPN callback
+	Ensure idempotent handling
+	IPN callback network failure
+	Retry callback using retry policy
+	Ensure callback endpoint availability
+	Duplicate IPN callback
+	Resend safely
+	Ignore duplicate transaction
+	Invalid IPN payload
+	Reject callback
+	Validate request payload
+	Partner fulfillment failed
+	Await compensation request
+	Trigger refund API
+	Partner fulfillment timeout
+	Wait for final fulfillment result
+	Retry fulfillment process
+	Refund request timeout
+	Continue refund processing
+	Retry refund inquiry
+	Refund processing failed
+	Return refund failure result
+	Retry refund request
+	Duplicate refund request 
+	Return latest refund state 
+	Avoid duplicate compensation 
+	Inquiry returns PROCESSING
+	Continue processing
+	Retry inquiry later
+	Inquiry timeout
+	Retry inquiry
+	Show PROCESSING UI
+	Inquiry returns SUCCESS
+	Return final status
+	Update final UI state
+	Inquiry returns FAILED
+	Return final status
+	Show failure UI
+	Customer closes MiniApp during processing 
+	Continue backend transaction processing 
+	Restore latest transaction state after reopening 
+	Inquiry exceeds maximum retry duration
+	Mark PENDING_RECONCILIATION
+	Show pending processing UI
+	Duplicate fulfillment request
+	Ignore duplicate processing
+	Ensure idempotent business handling
+	Duplicate confirm request
+	Return latest transaction state
+	Prevent duplicate payment processing
+	Partner Backend unavailable
+	Retry IPN delivery
+	Recover backend service
+	Halopesa Backend temporary unavailable
+	Return temporary failure
+	Retry with exponential backoff
+	Network partition between systems
+	Maintain async retry flow
+	Continue inquiry and reconciliation process
+	
+
+________________
+
+
+
+
+________________
+
+
+9. Data Flow
+  
+
+________________
+
+
+10. Non-Functional Requirements
+Category
+	Requirement
+	Performance
+	Payment latency < 3 seconds
+	Availability
+	≥ 99.9%
+	API Timeout 
+	5 seconds 
+	Inquiry SLA 
+	<2 seconds 
+	Access Token Expiry 
+	5 minutes 
+	Max Callback Retry 
+	5
+	Clock Skew Tolerance 
+	30 seconds 
+	
+
+________________
+
+
+11. Risks & Mitigation
+Risk
+	Mitigation
+	Fraudulent payment
+	Backend verification
+	Token misuse
+	Expiry + verification
+	Double charge
+	Idempotency
+	State inconsistency
+	Callback + IPN
+	
+
+________________
+
+
+12. Conclusion
+This architecture provides:
+* secure MiniApp integration
+* asynchronous payment orchestration
+* resilient transaction processing
+* eventual consistency handling
+* scalable partner onboarding capability
+The integration model is designed to support:
+* high transaction throughput
+* distributed system reliability
+* asynchronous payment confirmation
+* enterprise-grade partner integrations
