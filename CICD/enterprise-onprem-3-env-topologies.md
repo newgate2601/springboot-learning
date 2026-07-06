@@ -198,6 +198,113 @@ Nếu thuê hạ tầng tốn kém, nên bắt đầu thực hành bằng topolo
 
 ---
 
+## 2.1. Ba keyword cần hiểu trước: namespace, control-plane, worker
+
+Đọc tài liệu Kubernetes rất dễ bị ngợp vì nhiều tên mới.
+Ở đây chỉ cần hiểu theo cách đơn giản trước.
+Hãy tưởng tượng một Kubernetes cluster giống một tòa nhà văn phòng.
+
+### Namespace
+
+`namespace` giống như một phòng hoặc một khu riêng trong cùng tòa nhà.
+Tòa nhà vẫn là một, nhưng mỗi phòng có tên riêng, đồ đạc riêng, người được vào riêng.
+
+Ví dụ trong cùng một cluster:
+
+```text
+namespace staging
+namespace uat
+namespace production
+```
+
+Trong mỗi namespace có thể có app và config riêng:
+
+```text
+gateway
+uaa-service
+post-service
+configmap
+secret
+ingress
+```
+
+Điểm cần nhớ:
+
+- `deployment/gateway` trong `staging` khác với `deployment/gateway` trong `production`.
+- Có thể cho dev chỉ được đụng vào `staging`, còn production chỉ team vận hành được đụng.
+- Có thể giới hạn staging chỉ được dùng một lượng CPU/RAM nhất định.
+- Có thể chặn app ở staging gọi nhầm sang production.
+
+Nhưng namespace không phải là một tòa nhà riêng.
+Nếu điện, mạng, thang máy hoặc nền móng của tòa nhà gặp vấn đề, nhiều phòng vẫn bị ảnh hưởng.
+Trong Kubernetes cũng vậy: nếu cluster, node, storage, network plugin hoặc ingress chung bị lỗi, nhiều namespace có thể ảnh hưởng cùng lúc.
+
+### Control-plane
+
+`control-plane` giống như ban quản lý của tòa nhà.
+Nó không phải nơi nhân viên ngồi làm việc chính, mà là nơi nhận yêu cầu, ghi sổ, phân phòng, kiểm tra mọi thứ có đang đúng kế hoạch không.
+
+Nói dễ hiểu, control-plane làm các việc này:
+
+- Nhận lệnh từ bạn, Argo CD hoặc CI/CD.
+- Ghi nhớ cluster nên có những app nào, chạy mấy bản.
+- Chọn worker phù hợp để đặt pod.
+- Theo dõi nếu pod chết thì tạo lại pod khác.
+
+Ví dụ:
+
+```text
+Bạn muốn gateway chạy 3 bản
+  -> control-plane ghi nhận mong muốn đó
+  -> control-plane chọn worker còn tài nguyên
+  -> worker chạy 3 pod gateway
+```
+
+Nếu control-plane lỗi, app đang chạy có thể vẫn còn phục vụ trong một thời gian.
+Nhưng bạn sẽ khó deploy mới, scale, rollback, hoặc để Kubernetes tự chữa khi có pod/node lỗi.
+Vì vậy production nghiêm túc thường có 3 control-plane node.
+
+### Worker
+
+`worker` giống như các tầng/phòng làm việc thật.
+Đây là nơi app của bạn chạy.
+
+Ví dụ worker chạy:
+
+```text
+gateway pod
+uaa-service pod
+post-service pod
+ingress-nginx pod
+prometheus pod
+redis demo
+postgres demo
+```
+
+Nếu nói cực ngắn:
+
+```text
+control-plane: nơi điều khiển
+worker: nơi app chạy
+namespace: phòng/khu riêng bên trong cluster
+```
+
+Trong lab nhỏ:
+
+```text
+1 VPS có thể vừa là control-plane vừa là worker
+```
+
+Trong production:
+
+```text
+control-plane nên tách riêng
+worker nên dành để chạy app
+production nên có nhiều worker để một node chết app vẫn còn nơi khác chạy
+```
+
+---
+
 # Topology A. Một cluster, ba namespace môi trường
 
 ## 3.1. Khi nào dùng topology này?
@@ -227,6 +334,9 @@ Không lý tưởng khi:
 - Team vận hành chưa kiểm soát tốt quota, RBAC, network policy.
 
 ## 3.2. Sơ đồ tổng quan
+
+Trong topology A, cả 3 môi trường nằm trong cùng một cluster.
+Chúng được tách bằng namespace, giống như 3 phòng riêng trong cùng một tòa nhà.
 
 ```text
                          +-----------------------+
@@ -281,61 +391,98 @@ Không lý tưởng khi:
 +-------------------------------------------------------------------+
 ```
 
-## 3.3. Số node ví dụ để thực hành tiết kiệm
+## 3.3. Thuê VPS và đặt chương trình thế nào cho hợp lý
 
-Nếu thực hành bằng VM on-prem hoặc cloud nhỏ, dùng 3 node là đủ hiểu topology:
+Topology A chỉ cần một cluster, nên nếu thuê VPS Việt Nam để học thì có thể bắt đầu rất tiết kiệm.
 
-```text
-cluster shared:
-  control-plane-1: 2 vCPU, 4 GB RAM
-  worker-1:        4 vCPU, 8 GB RAM
-  worker-2:        4 vCPU, 8 GB RAM
-```
-
-Tổng:
+### Phương án A1: một VPS lớn, dễ quản lý nhất
 
 ```text
-10 vCPU
-20 GB RAM
+1 VPS: 6 CPU, 8 GB RAM
+  cài k3s single-node
 ```
 
-Với lab tiết kiệm hơn:
+Đặt chương trình:
 
 ```text
-control-plane-1: 2 vCPU, 4 GB RAM
-worker-1:        4 vCPU, 8 GB RAM
+namespace argocd:
+  Argo CD
+
+namespace ingress-nginx:
+  ingress-nginx controller
+
+namespace staging:
+  gateway, uaa-service, post-service
+
+namespace uat:
+  gateway, uaa-service, post-service
+
+namespace production:
+  gateway, uaa-service, post-service
+
+namespace external-secrets:
+  external-secrets hoặc sealed-secrets nếu muốn học secret flow
 ```
 
-Tổng:
+Không nên đặt trong lab nhỏ:
 
 ```text
-6 vCPU
-12 GB RAM
+GitLab self-managed
+Harbor full
+ELK/OpenSearch full
+Kafka cluster
+database production-like
 ```
 
-Nhưng doanh nghiệp thật không nên production một worker.
+Các thành phần này ăn RAM/disk mạnh, dễ làm bạn học topology thành bài toán chữa cháy tài nguyên.
 
-## 3.4. Số node doanh nghiệp nhỏ có thể dùng
-
-Một bản nhỏ nhưng tử tế hơn:
+### Phương án A2: nhiều VPS để hiểu control-plane và worker
 
 ```text
-control-plane-1: 2 vCPU, 4 GB RAM
-control-plane-2: 2 vCPU, 4 GB RAM
-control-plane-3: 2 vCPU, 4 GB RAM
-worker-1:        8 vCPU, 16 GB RAM
-worker-2:        8 vCPU, 16 GB RAM
-worker-3:        8 vCPU, 16 GB RAM
+VPS 1: 2 CPU, 4 GB RAM
+  role: control-plane
+
+VPS 2: 4 CPU, 4-8 GB RAM
+  role: worker
+
+VPS 3: 4 CPU, 4-8 GB RAM
+  role: worker
 ```
 
-Tổng:
+Placement nên dùng:
 
 ```text
-30 vCPU
-60 GB RAM
+control-plane:
+  kube-apiserver, etcd, scheduler, controller-manager
+  hạn chế chạy app nếu có thể
+
+worker-1:
+  ingress-nginx
+  gateway staging/uat/production
+  uaa-service staging/uat
+
+worker-2:
+  post-service staging/uat/production
+  uaa-service production
+  Argo CD
+  monitoring nhẹ nếu còn RAM
 ```
 
-Control plane 3 node giúp etcd/control plane HA hơn. Worker 3 node giúp app có chỗ chạy khi một node lỗi.
+Với topology A, production vẫn chung cluster với staging/UAT.
+Vì vậy đây là topology tốt để học namespace, RBAC, ResourceQuota, NetworkPolicy, nhưng không nên xem là mẫu production cho hệ thống tài chính.
+
+## 3.4. Bản doanh nghiệp nhỏ nếu vẫn dùng topology A
+
+Nếu doanh nghiệp thật vẫn chọn topology A, tối thiểu nên nghĩ theo cụm HA nhỏ:
+
+```text
+3 control-plane node
+3 worker node
+```
+
+Control-plane 3 node giúp etcd/control-plane HA hơn.
+Worker 3 node giúp app còn chỗ chạy khi một worker lỗi hoặc khi rolling update.
+Tuy nhiên với hệ thống quan trọng, nên cân nhắc topology B hoặc C thay vì để production chung cluster với non-prod.
 
 ## 3.5. Namespace layout
 
@@ -608,84 +755,108 @@ Một Argo CD quản lý cả non-prod và prod
 
 Với production, doanh nghiệp thường thích Argo CD riêng cho prod hơn để giảm blast radius.
 
-## 4.3. Số node ví dụ để thực hành tiết kiệm
+## 4.3. Thuê VPS và đặt chương trình thế nào cho hợp lý
 
-Lab tiết kiệm:
+Topology B là lựa chọn rất đáng học bằng nhiều VPS, vì nó cho bạn cảm giác production đã tách khỏi môi trường test.
 
-```text
-non-prod cluster:
-  control-plane-1: 2 vCPU, 4 GB RAM
-  worker-1:        4 vCPU, 8 GB RAM
-
-production cluster:
-  control-plane-1: 2 vCPU, 4 GB RAM
-  worker-1:        4 vCPU, 8 GB RAM
-```
-
-Tổng:
+### Phương án B1: hai VPS, tiết kiệm nhất
 
 ```text
-12 vCPU
-24 GB RAM
+VPS 1: 4-6 CPU, 8 GB RAM
+  cluster: non-prod
+  namespace: staging, uat, argocd, ingress-nginx
+
+VPS 2: 4-6 CPU, 8 GB RAM
+  cluster: production
+  namespace: production, argocd, ingress-nginx
 ```
 
-Vẫn chưa phải HA, nhưng đủ thực hành logic tách cluster.
-
-Lab khá hơn:
+Đặt chương trình:
 
 ```text
-non-prod cluster:
-  control-plane-1: 2 vCPU, 4 GB RAM
-  worker-1:        4 vCPU, 8 GB RAM
-  worker-2:        4 vCPU, 8 GB RAM
+VPS non-prod:
+  k3s single-node
+  Argo CD non-prod
+  ingress-nginx
+  gateway/uaa/post cho staging
+  gateway/uaa/post cho uat
+  monitoring nhẹ nếu còn RAM
 
-production cluster:
-  control-plane-1: 2 vCPU, 4 GB RAM
-  worker-1:        8 vCPU, 16 GB RAM
-  worker-2:        8 vCPU, 16 GB RAM
+VPS production:
+  k3s single-node
+  Argo CD prod
+  ingress-nginx
+  gateway/uaa/post production
+  external-secrets hoặc sealed-secrets
 ```
 
-Tổng:
+Phương án này đủ học:
 
 ```text
-28 vCPU
-56 GB RAM
+prod tách non-prod
+2 kubeconfig context
+2 Argo CD instance
+promotion staging -> uat -> production
+manual approval cho production
 ```
 
-## 4.4. Số node doanh nghiệp nhỏ đến vừa
+Nhưng nó chưa HA, vì mỗi cluster chỉ có một VPS.
 
-Non-prod:
+### Phương án B2: bốn VPS, gần thực tế hơn
 
 ```text
-control-plane-1: 2 vCPU, 4 GB RAM
-control-plane-2: 2 vCPU, 4 GB RAM
-control-plane-3: 2 vCPU, 4 GB RAM
-worker-1:        8 vCPU, 16 GB RAM
-worker-2:        8 vCPU, 16 GB RAM
-worker-3:        8 vCPU, 16 GB RAM
+VPS 1: 2 CPU, 4 GB RAM
+  non-prod control-plane
+
+VPS 2: 4-6 CPU, 8 GB RAM
+  non-prod worker
+
+VPS 3: 2 CPU, 4 GB RAM
+  production control-plane
+
+VPS 4: 6 CPU, 8 GB RAM
+  production worker
 ```
 
-Production:
+Placement:
 
 ```text
-control-plane-1: 4 vCPU, 8 GB RAM
-control-plane-2: 4 vCPU, 8 GB RAM
-control-plane-3: 4 vCPU, 8 GB RAM
-worker-1:        16 vCPU, 32 GB RAM
-worker-2:        16 vCPU, 32 GB RAM
-worker-3:        16 vCPU, 32 GB RAM
+non-prod control-plane:
+  kube-apiserver, etcd, scheduler, controller-manager
+  có thể đặt Argo CD nếu worker thiếu RAM
+
+non-prod worker:
+  ingress-nginx
+  staging apps
+  uat apps
+  monitoring nhẹ
+
+production control-plane:
+  kube-apiserver, etcd, scheduler, controller-manager
+  hạn chế chạy workload
+
+production worker:
+  ingress-nginx
+  production apps
+  Argo CD prod nếu muốn tách rõ control-plane
 ```
 
-Tổng production:
+### Phương án B3: doanh nghiệp nhỏ đến vừa
 
 ```text
-60 vCPU
-120 GB RAM
+non-prod:
+  3 control-plane nhỏ
+  2-3 worker vừa
+
+production:
+  3 control-plane
+  tối thiểu 3 worker
 ```
 
-Số này nghe lớn, nhưng production thật cần headroom, rolling update, node maintenance và failover.
+Production thật cần headroom cho rolling update, node maintenance và failover.
+Nếu chỉ có một production worker, pod có nhiều replica nhưng vẫn có thể chết cùng một node.
 
-## 4.5. App instance phân bổ như thế nào?
+## 4.4. App instance phân bổ như thế nào?
 
 Non-prod staging:
 
@@ -724,7 +895,7 @@ node maintenance
   -> pod có thể phân tán sang nhiều node
 ```
 
-## 4.6. Placement theo node
+## 4.5. Placement theo node
 
 Production nên cố gắng phân tán pod cùng service ra nhiều node.
 
@@ -762,7 +933,7 @@ Nếu node đó chết:
 uaa-service mất toàn bộ replicas
 ```
 
-## 4.7. Ưu điểm topology B
+## 4.6. Ưu điểm topology B
 
 - Production tách khỏi non-prod.
 - Chi phí thấp hơn 3 cluster riêng.
@@ -770,7 +941,7 @@ uaa-service mất toàn bộ replicas
 - Phù hợp doanh nghiệp vừa.
 - Dễ chuyển tiếp từ topology A.
 
-## 4.8. Nhược điểm topology B
+## 4.7. Nhược điểm topology B
 
 - Staging và UAT vẫn chung cluster.
 - Nếu non-prod cluster lỗi, cả staging và UAT mất.
@@ -831,94 +1002,140 @@ Phù hợp khi:
         +------------------+  +------------------+  +------------------+
 ```
 
-## 5.3. Số node ví dụ để thực hành
+## 5.3. Thuê VPS và đặt chương trình thế nào cho hợp lý
 
-Nếu muốn thực hành nhưng tiết kiệm, có thể tạo 3 cluster nhỏ bằng `kind`, `k3d` hoặc `k3s` VM.
+Topology C nghĩa là mỗi môi trường có cluster riêng.
+Nếu ví cluster như tòa nhà, thì staging, UAT và production là 3 tòa nhà khác nhau, không chỉ là 3 phòng trong cùng một tòa nhà.
 
-Ví dụ cực tiết kiệm:
+### Phương án C1: ba VPS, học được đúng ý chính
 
 ```text
-staging cluster:
-  1 control-plane
-  1 worker
+VPS 1: 4 CPU, 4-8 GB RAM
+  cluster staging
 
-uat cluster:
-  1 control-plane
-  1 worker
+VPS 2: 4 CPU, 4-8 GB RAM
+  cluster uat
 
-production cluster:
-  1 control-plane
-  2 workers
+VPS 3: 6 CPU, 8 GB RAM
+  cluster production
 ```
 
-Nếu dùng VM:
+Mỗi VPS cài một cluster k3s single-node.
+Nghĩa là mỗi VPS vừa là control-plane vừa là worker.
+
+Đặt chương trình:
+
+```text
+staging VPS:
+  Argo CD staging
+  ingress-nginx
+  gateway/uaa/post staging
+  database demo nếu cần
+
+uat VPS:
+  Argo CD UAT
+  ingress-nginx
+  gateway/uaa/post UAT
+  database demo nếu cần
+
+production VPS:
+  Argo CD prod
+  ingress-nginx
+  gateway/uaa/post production
+  external-secrets hoặc sealed-secrets
+  monitoring nhẹ
+```
+
+Phương án này rất hợp để học:
+
+```text
+3 kubeconfig context
+3 Argo CD Application set
+config repo tách theo cluster
+promote image tag từ staging -> UAT -> production
+DNS/ingress host riêng từng môi trường
+```
+
+Điểm yếu:
+
+```text
+mỗi cluster chỉ có một VPS
+không chịu được lỗi VPS
+chưa mô phỏng HA thật
+```
+
+### Phương án C2: năm VPS, production học thực tế hơn
+
+```text
+VPS 1: 4 CPU, 4-8 GB RAM
+  cluster staging single-node
+
+VPS 2: 4 CPU, 4-8 GB RAM
+  cluster uat single-node
+
+VPS 3: 2 CPU, 4 GB RAM
+  production control-plane
+
+VPS 4: 4-6 CPU, 8 GB RAM
+  production worker-1
+
+VPS 5: 4-6 CPU, 8 GB RAM
+  production worker-2
+```
+
+Placement:
 
 ```text
 staging:
-  cp-1:     2 vCPU, 4 GB RAM
-  worker-1: 4 vCPU, 8 GB RAM
+  Argo CD staging
+  ingress-nginx
+  app staging
 
 uat:
-  cp-1:     2 vCPU, 4 GB RAM
-  worker-1: 4 vCPU, 8 GB RAM
+  Argo CD UAT
+  ingress-nginx
+  app UAT
+
+production control-plane:
+  kube-apiserver, etcd, scheduler, controller-manager
+  hạn chế chạy app
+
+production worker-1:
+  ingress-nginx
+  gateway-1
+  uaa-service-1
+  post-service-1
+
+production worker-2:
+  gateway-2
+  uaa-service-2
+  post-service-2
+  Argo CD prod
+  monitoring nhẹ
+```
+
+Phương án này bắt đầu cho bạn cảm giác production có worker riêng.
+Tuy vậy, production vẫn chưa HA chuẩn vì control-plane chỉ có một node và worker mới có 2 node.
+
+### Phương án C3: production-like nhỏ
+
+```text
+staging:
+  1-2 VPS
+
+uat:
+  1-2 VPS
 
 production:
-  cp-1:     2 vCPU, 4 GB RAM
-  worker-1: 4 vCPU, 8 GB RAM
-  worker-2: 4 vCPU, 8 GB RAM
+  3 control-plane
+  tối thiểu 3 worker
 ```
 
-Tổng:
+Production 3 worker giúp trải pod ra nhiều máy.
+Khi rolling update hoặc một worker chết, app còn khả năng chạy ở worker khác.
+Đây mới là hướng gần production hơn, nhưng chi phí VPS sẽ tăng rõ rệt.
 
-```text
-20 vCPU
-40 GB RAM
-```
-
-Đây là lab topology, không phải production HA thật.
-
-## 5.4. Số node production-like
-
-Staging:
-
-```text
-control-plane-1: 2 vCPU, 4 GB RAM
-worker-1:        4 vCPU, 8 GB RAM
-worker-2:        4 vCPU, 8 GB RAM
-```
-
-UAT:
-
-```text
-control-plane-1: 2 vCPU, 4 GB RAM
-control-plane-2: 2 vCPU, 4 GB RAM
-control-plane-3: 2 vCPU, 4 GB RAM
-worker-1:        8 vCPU, 16 GB RAM
-worker-2:        8 vCPU, 16 GB RAM
-worker-3:        8 vCPU, 16 GB RAM
-```
-
-Production:
-
-```text
-control-plane-1: 4 vCPU, 8 GB RAM
-control-plane-2: 4 vCPU, 8 GB RAM
-control-plane-3: 4 vCPU, 8 GB RAM
-worker-1:        16 vCPU, 32 GB RAM
-worker-2:        16 vCPU, 32 GB RAM
-worker-3:        16 vCPU, 32 GB RAM
-worker-4:        16 vCPU, 32 GB RAM
-worker-5:        16 vCPU, 32 GB RAM
-```
-
-Production 5 worker cho phép:
-
-- rolling update thoải mái hơn;
-- chịu lỗi một node tốt hơn;
-- tách workload system và app bằng taint/toleration nếu cần;
-- có headroom cho spike traffic.
-
-## 5.5. Ưu điểm topology C
+## 5.4. Ưu điểm topology C
 
 - Isolation rõ nhất theo môi trường.
 - Production an toàn hơn.
@@ -926,7 +1143,7 @@ Production 5 worker cho phép:
 - Lỗi staging không ảnh hưởng UAT/prod.
 - RBAC và quota dễ tách.
 
-## 5.6. Nhược điểm topology C
+## 5.5. Nhược điểm topology C
 
 - Tốn hạ tầng hơn.
 - Vận hành nhiều cluster hơn.
@@ -981,7 +1198,138 @@ workload clusters:
 +----------------+          +----------------+
 ```
 
-## 6.3. Khi nào không nên dùng?
+## 6.3. Thuê VPS và đặt chương trình thế nào cho hợp lý
+
+Topology D thêm một cluster/platform riêng.
+Nói dễ hiểu: thay vì để từng cluster tự ôm hết mọi công cụ, ta có một khu riêng để đặt đồ nghề chung.
+
+Đồ nghề chung thường là:
+
+```text
+GitLab Runner
+Argo CD central
+Prometheus/Grafana central
+Loki/OpenSearch nếu học logging
+Harbor registry nếu muốn tự host registry
+Vault hoặc External Secrets tooling
+```
+
+### Phương án D1: bốn VPS, D mini dễ học
+
+```text
+VPS 1: 8 CPU, 16 GB RAM
+  cluster platform
+
+VPS 2: 4 CPU, 4-8 GB RAM
+  cluster staging
+
+VPS 3: 4 CPU, 4-8 GB RAM
+  cluster uat
+
+VPS 4: 6 CPU, 8 GB RAM
+  cluster production
+```
+
+Placement:
+
+```text
+platform VPS:
+  Argo CD central hoặc Argo CD non-prod
+  GitLab Runner
+  Prometheus/Grafana
+  Loki nhẹ nếu đủ RAM
+  Harbor registry nếu không dùng GitLab Registry/Docker Hub
+  Vault hoặc External Secrets demo
+
+staging VPS:
+  ingress-nginx
+  gateway/uaa/post staging
+
+uat VPS:
+  ingress-nginx
+  gateway/uaa/post UAT
+
+production VPS:
+  Argo CD prod nếu muốn prod tự quản riêng
+  ingress-nginx
+  gateway/uaa/post production
+  external-secrets
+```
+
+Với người mới, nên để production có Argo CD riêng thay vì để Argo CD central quản lý tất cả ngay từ đầu.
+Lý do: dễ hiểu quyền, dễ thấy prod là vùng nhạy cảm, giảm cảm giác mọi thứ dính vào một chỗ.
+
+### Phương án D2: sáu VPS, học sát enterprise hơn
+
+```text
+VPS 1: 4 CPU, 8 GB RAM
+  platform control-plane
+
+VPS 2: 8 CPU, 16 GB RAM
+  platform worker
+
+VPS 3: 4 CPU, 4-8 GB RAM
+  staging cluster
+
+VPS 4: 4 CPU, 4-8 GB RAM
+  uat cluster
+
+VPS 5: 2 CPU, 4 GB RAM
+  production control-plane
+
+VPS 6: 6-8 CPU, 8-16 GB RAM
+  production worker
+```
+
+Placement:
+
+```text
+platform control-plane:
+  control-plane của platform cluster
+
+platform worker:
+  GitLab Runner
+  Argo CD central/non-prod
+  Prometheus/Grafana
+  logging nhẹ
+  registry/secret tooling
+
+staging:
+  app staging
+  ingress staging
+
+uat:
+  app UAT
+  ingress UAT
+
+production control-plane:
+  control-plane production
+
+production worker:
+  app production
+  ingress production
+  Argo CD prod nếu tách prod riêng
+```
+
+### Nên tránh gì khi mới học D?
+
+Đừng bật tất cả tool nặng cùng lúc.
+Hãy đi theo thứ tự:
+
+```text
+1. Argo CD
+2. ingress-nginx
+3. app demo
+4. GitLab Runner
+5. monitoring nhẹ
+6. registry riêng
+7. logging
+8. Vault/secret nâng cao
+```
+
+Nếu bật Harbor, Loki/OpenSearch, Prometheus retention dài, GitLab self-managed cùng lúc trên VPS nhỏ, bạn sẽ tốn phần lớn thời gian xử lý thiếu RAM/disk thay vì học topology.
+
+## 6.4. Khi nào không nên dùng?
 
 Không nên dùng nếu:
 
@@ -1956,76 +2304,42 @@ Tốt hơn:
 
 ---
 
-# 17. Node role và instance placement
+# 17. Nguyên tắc đặt instance/program lên node
 
-## 17.1. Control plane node
+Phần `control-plane`, `worker` đã giải thích ở mục 2.1.
+Ở đây chỉ cần nhớ vài nguyên tắc khi đặt chương trình lên VPS/node.
 
-Chứa:
+## 17.1. Lab nhỏ
 
-```text
-kube-apiserver
-kube-controller-manager
-kube-scheduler
-etcd
-```
+Lab nhỏ có thể để một VPS vừa làm control-plane vừa làm worker.
+Làm vậy rẻ, dễ dựng, đủ học topology.
 
-Không nên chạy workload app trên control plane trong production.
-
-Lab có thể chạy chung để tiết kiệm.
-
-## 17.2. Worker node
-
-Chứa:
+Nhưng đừng cài mọi thứ nặng cùng lúc.
+Thứ tự nên cài:
 
 ```text
-gateway pod
-uaa-service pod
-post-service pod
-ingress controller pod
-monitoring agent
-logging agent
+k3s
+ingress-nginx
+Argo CD
+app demo
+external-secrets hoặc sealed-secrets
+monitoring nhẹ
 ```
 
-Production nên có ít nhất 3 worker để trải pod.
-
-## 17.3. Infra node tùy chọn
-
-Một số doanh nghiệp tách node:
+Các món nên để sau:
 
 ```text
-infra worker:
-  ingress controller
-  monitoring
-  logging
-  Argo CD
-
-app worker:
-  gateway
-  uaa-service
-  post-service
+Harbor
+Loki/OpenSearch
+Kafka
+GitLab self-managed
+database HA
 ```
 
-Ví dụ:
+## 17.2. Production hoặc lab nghiêm túc hơn
 
-```text
-worker-infra-1
-worker-infra-2
-worker-app-1
-worker-app-2
-worker-app-3
-```
-
-Dùng:
-
-```text
-nodeSelector
-taints
-tolerations
-```
-
-Lab không cần tách infra node ngay.
-
-## 17.4. Placement ví dụ production 3 worker
+Nếu đã có nhiều worker, cố gắng rải pod cùng service ra nhiều worker.
+Ví dụ production có 3 worker:
 
 ```text
 worker-1:
@@ -2053,119 +2367,106 @@ Mục tiêu:
 pod cùng service không dồn vào một node
 ```
 
+Nếu cả 3 pod `uaa-service` cùng nằm trên `worker-1`, khi `worker-1` chết thì service này vẫn mất dù bạn đã khai báo 3 replicas.
+
+## 17.3. Khi nào cần infra node?
+
+Infra node là worker dành cho tool nền:
+
+```text
+ingress controller
+monitoring
+logging
+Argo CD
+registry
+```
+
+App worker là worker dành cho service business:
+
+```text
+gateway
+uaa-service
+post-service
+payment-service
+wallet-service
+```
+
+Lab ban đầu chưa cần tách infra node.
+Khi tài nguyên bắt đầu lớn hoặc muốn học giống enterprise hơn, hãy tách infra node để tool nền không tranh tài nguyên với app chính.
+
 ---
 
 # 18. Topology thực hành khuyến nghị cho bạn
 
-Vì bạn muốn example đủ thực hành nhưng hạ tầng tốn, mình khuyến nghị đi theo 2 giai đoạn.
-
-## 18.1. Giai đoạn 1: một cluster, ba namespace
-
-Dùng khi học:
+Vì bạn muốn thuê nhiều VPS để học dần, nên đi theo lộ trình này:
 
 ```text
-1 cluster kind hoặc k3s
-3 namespace:
-  staging
-  uat
-  production
-
-1 namespace:
-  argocd
-
-1 namespace:
-  ingress-nginx
+1. Topology B mini
+2. Topology C mini
+3. Topology D mini
+4. Production-like nhỏ
 ```
 
-Node:
+## 18.1. Bắt đầu nên chọn topology nào?
+
+Nếu mục tiêu là học giống doanh nghiệp nhưng vẫn kiểm soát chi phí, nên bắt đầu bằng Topology B.
 
 ```text
-kind:
-  1 control-plane
-  2 worker
+2 VPS:
+  non-prod cluster
+  production cluster
 ```
 
-Hoặc VM:
+Lý do:
+
+- Bạn học được việc tách production khỏi môi trường test.
+- Chi phí chưa quá cao.
+- Dễ hiểu hơn Topology C/D.
+- Sau này nâng cấp lên C hoặc D rất tự nhiên.
+
+## 18.2. Khi nào nâng lên C?
+
+Nâng lên Topology C khi bạn muốn mỗi môi trường là một cluster riêng:
 
 ```text
-cp-1:     2 vCPU, 4 GB RAM
-worker-1: 4 vCPU, 8 GB RAM
-worker-2: 4 vCPU, 8 GB RAM
+3 VPS:
+  staging cluster
+  uat cluster
+  production cluster
 ```
 
-Trên đó deploy:
+Lúc này bạn sẽ học rõ:
+
+- mỗi environment có kubeconfig/context riêng;
+- mỗi environment có Argo CD hoặc Application riêng;
+- config repo phải tách path rõ;
+- production không bị staging/UAT ảnh hưởng ở cấp cluster.
+
+## 18.3. Khi nào nâng lên D?
+
+Nâng lên Topology D khi bạn muốn học platform team làm gì.
 
 ```text
-argocd
-ingress-nginx
-gateway staging/uat/prod
-uaa-service staging/uat/prod
-post-service staging/uat/prod
-postgres staging/uat/prod nếu chỉ lab
+4 VPS trở lên:
+  platform cluster
+  staging cluster
+  uat cluster
+  production cluster
 ```
 
-Replica tiết kiệm:
+Platform cluster dùng để đặt đồ nghề chung:
 
 ```text
-staging:
-  gateway 1
-  uaa 1
-  post 1
-
-uat:
-  gateway 1
-  uaa 1
-  post 1
-
-production:
-  gateway 2
-  uaa 2
-  post 2
+GitLab Runner
+Argo CD central/non-prod
+monitoring
+logging
+registry
+secret tooling
 ```
 
-## 18.2. Giai đoạn 2: hai cluster, non-prod và production
-
-Dùng khi muốn sát doanh nghiệp hơn:
-
-```text
-cluster non-prod:
-  staging namespace
-  uat namespace
-  argocd-nonprod
-
-cluster production:
-  production namespace
-  argocd-prod
-```
-
-Node tiết kiệm:
-
-```text
-non-prod:
-  cp-1:     2 vCPU, 4 GB RAM
-  worker-1: 4 vCPU, 8 GB RAM
-
-production:
-  cp-1:     2 vCPU, 4 GB RAM
-  worker-1: 4 vCPU, 8 GB RAM
-  worker-2: 4 vCPU, 8 GB RAM
-```
-
-Tổng:
-
-```text
-16 vCPU
-32 GB RAM
-```
-
-Nếu chỉ có laptop mạnh, có thể mô phỏng bằng `kind` nhiều cluster:
-
-```text
-kind create cluster --name nonprod
-kind create cluster --name prod
-```
-
-Nhưng khi chạy nhiều service, RAM sẽ là giới hạn chính.
+Đừng bắt đầu bằng D nếu chưa quen B/C.
+D mạnh, nhưng nhiều thành phần hơn nên người mới dễ bị rối.
 
 ---
 
