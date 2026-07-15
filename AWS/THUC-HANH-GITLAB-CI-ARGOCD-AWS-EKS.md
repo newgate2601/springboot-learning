@@ -205,28 +205,41 @@ Chốt:
 
 **Hoàn thành khi:** mọi quyết định quan trọng có người phê duyệt và có lý do được ghi lại.
 
-## 6. Bước 2 – Tạo AWS account và quyền truy cập
+## 6. Bước 2 – Chuẩn bị AWS account lab và quyền truy cập
 
-Mô hình:
+Mô hình thực hành dùng **một AWS account duy nhất** để giữ chi phí thấp và tránh kích hoạt AWS Organizations trong giai đoạn học:
 
 ```text
-AWS Organization
-├── shared-services    # GitLab, Runner, ECR dùng chung
-├── non-production     # dev; sau này thêm staging
-├── production         # chưa tạo workload ở giai đoạn này
-├── security
-└── log-archive
+Single AWS Account - lab
+├── root account                  # chỉ dùng cho quản trị đặc biệt, bắt buộc bật MFA
+├── IAM user/group lab-admin       # dùng thao tác hằng ngày trên Console/CLI
+├── IAM user/role ci-lab           # dùng sau cho GitLab CI nếu cần
+├── ECR                            # registry dùng chung trong account
+├── Terraform state                # S3 bucket + locking trong cùng account
+├── dev resources                  # VPC, EKS, RDS, MSK, ElastiCache cho dev
+├── audit                          # CloudTrail trong cùng account
+└── budget                         # cảnh báo chi phí để bảo vệ free credit
 ```
+
+Trong mô hình lab này, chưa tạo account riêng cho `shared-services`, `staging`, `production`, `security` hoặc `log-archive`. Các tên đó chỉ giữ vai trò định hướng kiến trúc sau này. Khi cần nâng cấp lên mô hình doanh nghiệp, có thể tách account sau khi đã hiểu rõ luồng triển khai.
 
 Thực hiện:
 
-- Cấu hình AWS Identity Center và Multi-Factor Authentication.
-- Tạo role PlatformAdmin, DeveloperReadOnly, CIShared và SecurityAudit.
-- Bật AWS CloudTrail và lưu log tập trung.
-- Tạo budget/cost alert.
-- Không phát access key cố định cho người dùng.
+- Bật Multi-Factor Authentication cho root account.
+- Vô hiệu hóa hoặc xóa root access key nếu đang tồn tại.
+- Tạo IAM group `LabAdmin`.
+- Tạo IAM user dùng cho thực hành hằng ngày, ví dụ `tony-lab-admin`.
+- Gắn user thực hành vào group `LabAdmin`.
+- Gắn policy phù hợp cho group `LabAdmin`.
+  - Giai đoạn học có thể dùng `AdministratorAccess` để tránh vướng quyền khi dựng lab.
+  - Khi đã ổn định, giảm quyền theo từng phạm vi Terraform, ECR, EKS, RDS, MSK, ElastiCache.
+- Tạo IAM user hoặc role riêng cho CI sau này, ví dụ `ci-lab`, nhưng chưa cấp quyền production.
+- Bật AWS CloudTrail trong cùng account để audit hành động quan trọng.
+- Tạo budget/cost alert để bảo vệ khoản free credit.
+- Không dùng root account cho công việc hằng ngày.
+- Không phát access key cố định cho root account.
 
-**Hoàn thành khi:** đăng nhập bằng role hoạt động; hành động IAM có audit; developer không có quyền production.
+**Hoàn thành khi:** root account đã có MFA; root access key không còn active; đăng nhập được bằng IAM user lab; hành động quan trọng có CloudTrail audit; có budget alert; không có tài nguyên staging/production được tạo trong giai đoạn này.
 
 ## 7. Bước 3 – Dựng Terraform state chuẩn
 
