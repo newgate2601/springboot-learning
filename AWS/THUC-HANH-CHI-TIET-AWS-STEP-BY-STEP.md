@@ -746,3 +746,764 @@ Trạng thái hệ thống sau khi hoàn thành:
 
 Bước tiếp theo là **Bước 2.4 - Bật CloudTrail audit trong account lab**.
 
+---
+
+## Bước 2.4 - Bật CloudTrail audit trong account lab
+
+### 1. Mục tiêu của bước này
+
+Mục tiêu là bật **AWS CloudTrail** để ghi lại các hành động quan trọng xảy ra trong AWS account lab.
+
+Sau bước này, ta có một trail ghi log quản trị như:
+
+```text
+Ai đăng nhập
+Ai tạo/sửa/xóa IAM user, role, policy
+Ai tạo/sửa/xóa VPC, EC2, EKS, RDS, S3, ECR
+Ai gọi API quan trọng qua Console, AWS CLI, Terraform hoặc SDK
+```
+
+CloudTrail không ngăn hành động xảy ra, nhưng giúp truy vết sau khi có thay đổi hoặc sự cố.
+
+### 2. Vì sao cần làm bước này
+
+Ở các bước trước, ta đã:
+
+```text
+[x] Bật MFA cho root account
+[x] Vô hiệu hóa root access key
+[x] Tạo IAM group LabAdmin
+[x] Tạo IAM user tony-lab-admin
+```
+
+Nhưng nếu chưa bật audit, khi có ai đó tạo tài nguyên sai, xóa nhầm resource hoặc dùng credential không đúng, ta rất khó trả lời các câu hỏi:
+
+```text
+Ai đã làm?
+Làm lúc nào?
+Làm từ IP nào?
+Dùng Console hay AWS CLI?
+Gọi API gì?
+Thành công hay bị từ chối?
+```
+
+CloudTrail là nền tảng audit bắt buộc trước khi đi tiếp sang Terraform, GitLab CI, ECR, EKS và Argo CD.
+
+Nếu bỏ qua bước này:
+
+- Không có lịch sử đầy đủ để điều tra thay đổi quan trọng.
+- Khó phát hiện việc dùng root account hoặc access key không đúng.
+- Khi Terraform hoặc CI tạo tài nguyên, khó phân biệt thao tác của người dùng và thao tác tự động.
+- Không đạt cổng nghiệm thu nền tảng dùng chung trong tài liệu `THUC-HANH-GITLAB-CI-ARGOCD-AWS-EKS.md`.
+
+### 3. Trước khi bắt đầu cần có gì
+
+Cần chuẩn bị:
+
+- Đã đăng nhập AWS Console bằng IAM user lab, ví dụ `tony-lab-admin`.
+- User lab thuộc group `LabAdmin` và có quyền tạo CloudTrail, S3 bucket, CloudWatch Logs nếu cần.
+- Region lab chính đã được chọn, ví dụ:
+
+```text
+Asia Pacific (Singapore) ap-southeast-1
+```
+
+Lưu ý:
+
+- CloudTrail là dịch vụ global theo account, nhưng trail có **home region**.
+- Trong bài lab, chọn home region trùng với region lab chính để dễ quản lý.
+- Chưa tạo staging hoặc production ở bước này.
+
+### 4. Thao tác chi tiết trên AWS Console
+
+#### 4.1. Mở dịch vụ CloudTrail
+
+1. Đăng nhập AWS Console bằng IAM user lab.
+2. Trên ô search ở đầu màn hình, gõ:
+
+```text
+CloudTrail
+```
+
+3. Bấm vào dịch vụ **CloudTrail**.
+4. Kiểm tra region góc phải trên đang là region lab chính, ví dụ:
+
+```text
+ap-southeast-1
+```
+
+#### 4.2. Tạo trail mới
+
+Trong CloudTrail:
+
+1. Ở menu trái, chọn:
+
+```text
+Trails
+```
+
+2. Bấm:
+
+```text
+Create trail
+```
+
+3. Ở ô **Trail name**, nhập:
+
+```text
+lab-management-events-trail
+```
+
+Tên này có ý nghĩa:
+
+- `lab`: trail dùng cho account lab.
+- `management-events`: tập trung vào audit hành động quản trị.
+- `trail`: nhận diện đây là CloudTrail trail.
+
+#### 4.3. Chọn S3 bucket lưu log
+
+Ở phần **Storage location**, chọn:
+
+```text
+Create new S3 bucket
+```
+
+Đặt tên bucket theo dạng duy nhất toàn cầu:
+
+```text
+newgate2601-cloudtrail-logs-<account-id>-ap-southeast-1
+```
+
+Ví dụ:
+
+```text
+newgate2601-cloudtrail-logs-150914615641-ap-southeast-1
+```
+
+Nếu tên bucket bị trùng, đổi prefix cho riêng bạn, ví dụ:
+
+```text
+tony-cloudtrail-logs-150914615641-ap-southeast-1
+```
+
+Không dùng tên quá chung như:
+
+```text
+cloudtrail-logs
+aws-logs
+my-bucket
+```
+
+vì S3 bucket name là duy nhất trên toàn AWS.
+
+#### 4.4. Bật log file validation
+
+Trong phần cấu hình trail, bật:
+
+```text
+Log file validation
+```
+
+Ý nghĩa:
+
+- AWS tạo file digest để kiểm tra log có bị thay đổi sau khi ghi hay không.
+- Đây là cấu hình tốt cho audit.
+- Chi phí nhỏ, phù hợp bật ngay từ đầu.
+
+#### 4.5. Chưa cần bật CloudWatch Logs ở bước đầu
+
+AWS có thể hỏi có gửi log sang CloudWatch Logs hay không.
+
+Trong bài lab giai đoạn đầu, có thể để:
+
+```text
+CloudWatch Logs: Disabled
+```
+
+Lý do:
+
+- Mục tiêu bước này là có audit log lưu bền trong S3 trước.
+- CloudWatch Logs hữu ích cho cảnh báo gần thời gian thực, nhưng có thể thêm ở bước observability/security sau.
+- Bật quá nhiều ngay từ đầu dễ làm người học rối và có thể phát sinh chi phí log không cần thiết.
+
+Nếu muốn theo dõi cảnh báo đăng nhập root hoặc API nguy hiểm ngay, có thể bật CloudWatch Logs sau bằng một bước riêng.
+
+#### 4.6. Chọn loại event cần ghi
+
+Ở phần **Choose log events**, chọn:
+
+```text
+Management events
+```
+
+Thiết lập:
+
+```text
+API activity: Read and Write
+```
+
+Không cần bật vội:
+
+```text
+Data events
+Insights events
+Network activity events
+```
+
+Giải thích nhanh:
+
+- `Management events`: ghi các hành động quản trị tài nguyên AWS, phù hợp bật ngay.
+- `Data events`: ghi chi tiết truy cập object S3 hoặc Lambda invoke, số lượng lớn hơn và có thể tăng chi phí.
+- `Insights events`: phát hiện bất thường API, hữu ích sau này nhưng chưa bắt buộc cho bước đầu.
+- `Network activity events`: chỉ cần khi có nhu cầu audit network activity chuyên sâu.
+
+#### 4.7. Tạo trail
+
+Kiểm tra lại cấu hình:
+
+```text
+Trail name        : lab-management-events-trail
+Storage location  : S3 bucket riêng cho CloudTrail logs
+Log file validation: Enabled
+Management events : Read and Write
+Multi-region trail: Enabled nếu AWS cho chọn
+```
+
+Sau đó bấm:
+
+```text
+Create trail
+```
+
+Nếu AWS có lựa chọn **Apply trail to all regions**, nên bật.
+
+Ý nghĩa:
+
+- Dù đang dùng region chính là Singapore, nếu sau này lỡ tạo resource ở region khác, CloudTrail vẫn ghi nhận management event.
+- Giúp phát hiện thao tác nhầm region.
+
+### 5. File/config/lệnh liên quan
+
+Không cần tạo file trong repository ở bước này.
+
+Tài nguyên AWS được tạo:
+
+| Loại | Tên ví dụ | Mục đích |
+|---|---|---|
+| CloudTrail trail | `lab-management-events-trail` | Ghi audit management event trong account lab. |
+| S3 bucket | `newgate2601-cloudtrail-logs-<account-id>-ap-southeast-1` | Lưu CloudTrail log file. |
+| S3 bucket policy | Do AWS tự thêm | Cho phép CloudTrail ghi log vào bucket. |
+| Log digest | Bật qua log file validation | Kiểm tra tính toàn vẹn của log file. |
+
+Sau này khi chuyển sang Terraform, các tài nguyên này nên được đưa vào `platform-infrastructure` để quản lý bằng IaC. Ở bước hiện tại, thao tác Console giúp hiểu rõ CloudTrail trước.
+
+### 6. Giải thích từng phần quan trọng
+
+| Phần trên màn hình | Ý nghĩa | Bạn cần làm gì |
+|---|---|---|
+| `Trail name` | Tên trail dùng để nhận diện cấu hình audit. | Đặt tên rõ ràng, ví dụ `lab-management-events-trail`. |
+| `Storage location` | Nơi lưu log CloudTrail. | Tạo S3 bucket riêng cho CloudTrail. |
+| `Create new S3 bucket` | AWS tạo bucket mới và cấu hình policy cho CloudTrail ghi log. | Dùng lựa chọn này để giảm lỗi policy khi mới học. |
+| `Log file validation` | Tạo digest để kiểm tra log có bị sửa không. | Bật. |
+| `Management events` | Ghi lại thao tác quản trị trên AWS resources. | Bật `Read and Write`. |
+| `Read events` | Các API đọc/xem thông tin như `DescribeInstances`, `ListBuckets`. | Bật để audit đầy đủ hơn trong lab. |
+| `Write events` | Các API tạo/sửa/xóa như `CreateUser`, `RunInstances`, `DeleteBucket`. | Bắt buộc bật. |
+| `Data events` | Ghi truy cập sâu vào object S3, Lambda invoke. | Chưa bật ở bước này để tránh nhiều log và chi phí. |
+| `Multi-region trail` | Trail ghi management event ở tất cả region. | Nên bật nếu AWS cho chọn. |
+
+#### Management event khác gì data event?
+
+Hiểu đơn giản:
+
+```text
+Management event = ai quản trị tài nguyên AWS
+Data event       = ai truy cập dữ liệu bên trong tài nguyên
+```
+
+Ví dụ:
+
+| Hành động | Loại event |
+|---|---|
+| Tạo S3 bucket | Management event |
+| Xóa IAM user | Management event |
+| Tạo EKS cluster | Management event |
+| Upload object vào S3 bucket | Data event |
+| Download object từ S3 bucket | Data event |
+| Invoke Lambda function | Data event |
+
+Bước này chỉ cần management event vì ta đang dựng nền tảng account lab.
+
+### 7. Kiểm tra hoàn thành
+
+#### 7.1. Kiểm tra trail đã bật
+
+Vào:
+
+```text
+CloudTrail
+  -> Trails
+  -> lab-management-events-trail
+```
+
+Kiểm tra thấy:
+
+```text
+Status: Logging
+```
+
+hoặc trạng thái tương đương cho biết trail đang ghi log.
+
+#### 7.2. Kiểm tra Event history
+
+Vào:
+
+```text
+CloudTrail
+  -> Event history
+```
+
+Tìm thử các event gần đây, ví dụ:
+
+```text
+CreateTrail
+PutBucketPolicy
+CreateBucket
+ConsoleLogin
+```
+
+CloudTrail Event history có thể trễ vài phút. Nếu chưa thấy ngay, chờ khoảng 5-15 phút rồi refresh.
+
+#### 7.3. Kiểm tra log trong S3 bucket
+
+Vào:
+
+```text
+S3
+  -> Buckets
+  -> <cloudtrail-log-bucket>
+```
+
+Tìm prefix có dạng:
+
+```text
+AWSLogs/<account-id>/CloudTrail/
+AWSLogs/<account-id>/CloudTrail-Digest/
+```
+
+Nếu thấy file `.json.gz` trong `CloudTrail` và file digest trong `CloudTrail-Digest`, nghĩa là log đã được ghi xuống S3.
+
+### 8. Lỗi thường gặp và cách xử lý
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| Tên S3 bucket bị trùng | S3 bucket name là duy nhất toàn cầu. | Thêm account id, region hoặc prefix cá nhân vào tên bucket. |
+| Không tạo được trail | IAM user thiếu quyền CloudTrail hoặc S3. | Kiểm tra user thuộc group `LabAdmin` và group có policy phù hợp. |
+| Trail tạo xong nhưng chưa thấy event | CloudTrail có độ trễ ghi log. | Chờ 5-15 phút rồi refresh Event history và S3 bucket. |
+| Không thấy log trong S3 | Bucket policy chưa cho CloudTrail ghi log hoặc chọn nhầm bucket. | Mở trail kiểm tra storage location, xem bucket policy do AWS tạo. |
+| Tạo trail ở nhầm region | Console đang chọn region khác region lab chính. | Kiểm tra góc phải trên Console và bật multi-region trail nếu có. |
+| Log quá nhiều hoặc lo chi phí | Bật nhầm data event cho S3/Lambda. | Tắt data event nếu chưa cần, chỉ giữ management event. |
+
+### 9. Kết quả sau bước này
+
+Trạng thái hệ thống sau khi hoàn thành:
+
+```text
+[x] Root account đã được bảo vệ bằng MFA
+[x] Root access key không còn active
+[x] Có IAM user lab dùng cho thao tác hằng ngày
+[x] CloudTrail đã ghi management event
+[x] CloudTrail log được lưu vào S3 bucket riêng
+[x] Có thể truy vết hành động quan trọng trong account lab
+```
+
+Bước tiếp theo là **Bước 2.5 - Tạo budget/cost alert để bảo vệ free credit**.
+
+---
+
+## Bước 2.5 - Tạo budget/cost alert để bảo vệ free credit
+
+### 1. Mục tiêu của bước này
+
+Mục tiêu là tạo **AWS Budget** để cảnh báo khi chi phí trong account lab bắt đầu tăng.
+
+Sau bước này, ta có một budget theo tháng, gửi email cảnh báo khi chi phí đạt các ngưỡng như:
+
+```text
+50% budget
+80% budget
+100% budget
+```
+
+Ví dụ nếu đặt budget là `20 USD/tháng`:
+
+```text
+10 USD  -> cảnh báo sớm
+16 USD  -> cảnh báo cần kiểm tra ngay
+20 USD  -> cảnh báo đã chạm ngân sách tháng
+```
+
+Budget không phải công cụ chặn chi phí tuyệt đối. Nó là hệ thống cảnh báo để ta biết sớm và dọn tài nguyên kịp thời.
+
+### 2. Vì sao cần làm bước này
+
+Trong bài lab AWS, nhiều dịch vụ có thể phát sinh chi phí nếu quên tắt hoặc cấu hình quá lớn:
+
+- EC2 instance.
+- NAT Gateway.
+- Load Balancer.
+- EKS cluster.
+- RDS instance.
+- MSK cluster.
+- ElastiCache cluster.
+- EBS volume và snapshot.
+- CloudWatch log.
+- Data transfer.
+
+Free credit giúp thực hành dễ hơn, nhưng không thay thế được kiểm soát chi phí. Nếu không có budget alert, ta có thể chỉ phát hiện chi phí tăng sau nhiều ngày.
+
+Budget/cost alert giúp:
+
+- Biết sớm khi tài nguyên lab bắt đầu tốn tiền.
+- Tránh dùng hết free credit quá nhanh.
+- Phát hiện tài nguyên quên xóa.
+- Tạo thói quen vận hành có kiểm soát trước khi dựng EKS, RDS, MSK và ElastiCache.
+
+Nếu bỏ qua bước này:
+
+- Dễ quên tài nguyên đang chạy.
+- NAT Gateway, Load Balancer, EKS hoặc database có thể tạo chi phí liên tục.
+- Không đạt điều kiện hoàn thành phần chuẩn bị AWS account lab trong tài liệu nền tảng.
+
+### 3. Trước khi bắt đầu cần có gì
+
+Cần chuẩn bị:
+
+- Đăng nhập AWS Console bằng IAM user lab, ví dụ `tony-lab-admin`.
+- User có quyền truy cập Billing/Budgets.
+- Một email nhận cảnh báo chi phí.
+- Đã bật CloudTrail ở bước 2.4.
+- Biết mức ngân sách lab muốn đặt.
+
+Gợi ý cho bài lab cá nhân:
+
+| Mục đích | Budget gợi ý |
+|---|---|
+| Chỉ đang làm IAM, CloudTrail, S3 nhỏ | `5 USD/tháng` |
+| Chuẩn bị Terraform, ECR, EC2 nhỏ | `10 USD/tháng` |
+| Sắp dựng EKS/RDS/MSK lab | `20-50 USD/tháng` tùy free credit |
+
+Nếu đang dùng free credit, vẫn nên đặt budget thấp hơn tổng free credit. Ví dụ có `100 USD` credit thì không nên đặt budget tháng đầu là `100 USD`; nên đặt thấp hơn để có cảnh báo sớm.
+
+### 4. Thao tác chi tiết trên AWS Console
+
+#### 4.1. Mở Billing and Cost Management
+
+1. Đăng nhập AWS Console bằng IAM user lab.
+2. Nhìn góc phải trên cùng, bấm vào tên account.
+3. Chọn:
+
+```text
+Billing and Cost Management
+```
+
+hoặc trên ô search gõ:
+
+```text
+Billing
+```
+
+Sau đó mở trang Billing.
+
+#### 4.2. Mở AWS Budgets
+
+Ở menu trái của Billing, chọn:
+
+```text
+Budgets
+```
+
+Nếu đây là lần đầu vào Billing bằng IAM user và bị báo thiếu quyền, cần bật quyền IAM access to billing ở root account hoặc kiểm tra policy của user. Phần lỗi này có hướng dẫn ở mục 8.
+
+#### 4.3. Tạo budget mới
+
+Trong trang Budgets:
+
+1. Bấm:
+
+```text
+Create budget
+```
+
+2. Nếu AWS hỏi chọn cách tạo, chọn:
+
+```text
+Customize
+```
+
+hoặc:
+
+```text
+Use a template
+```
+
+Với bài lab, nếu AWS có template **Monthly cost budget**, có thể dùng template để nhanh hơn. Nếu muốn hiểu rõ từng phần, chọn **Customize**.
+
+#### 4.4. Chọn loại budget
+
+Chọn:
+
+```text
+Cost budget
+```
+
+Không chọn:
+
+```text
+Usage budget
+Reservation budget
+Savings Plans budget
+```
+
+Lý do:
+
+- `Cost budget` theo dõi tiền phát sinh, phù hợp bảo vệ free credit.
+- `Usage budget` theo dõi số lượng sử dụng của từng dịch vụ, dùng sau khi cần kiểm soát chi tiết.
+- `Reservation` và `Savings Plans` không phù hợp bài lab hiện tại.
+
+#### 4.5. Cấu hình budget
+
+Điền thông tin:
+
+```text
+Budget name   : lab-monthly-cost-budget
+Period        : Monthly
+Budget renewal: Recurring budget
+Budget amount : Fixed
+Amount        : 20 USD
+```
+
+Nếu muốn thận trọng hơn, đặt:
+
+```text
+Amount: 10 USD
+```
+
+Nếu chuẩn bị dựng EKS/RDS/MSK và đã có free credit đủ, có thể đặt:
+
+```text
+Amount: 50 USD
+```
+
+Không nên đặt budget quá cao chỉ để khỏi nhận email. Mục tiêu của budget là buộc mình chú ý chi phí sớm.
+
+#### 4.6. Chọn phạm vi chi phí
+
+Với account lab một account, giữ phạm vi mặc định:
+
+```text
+All AWS services
+All linked accounts
+All regions
+```
+
+Nếu có lựa chọn cost type, nên để mặc định hoặc chọn theo hướng:
+
+```text
+Include tax: Enabled nếu AWS cho chọn
+Include credits: Enabled hoặc giữ mặc định
+Include refunds: Enabled hoặc giữ mặc định
+Include upfront reservation fees: Enabled hoặc giữ mặc định
+Include recurring reservation charges: Enabled hoặc giữ mặc định
+```
+
+Trong bài lab cá nhân, điều quan trọng nhất là budget bao phủ toàn account, không lọc riêng một service.
+
+#### 4.7. Tạo alert threshold
+
+Tạo ít nhất ba cảnh báo:
+
+| Ngưỡng | Loại | Ý nghĩa |
+|---|---|---|
+| `50%` | Actual cost | Cảnh báo sớm khi chi phí đã dùng một nửa budget. |
+| `80%` | Actual cost | Cảnh báo cần kiểm tra và dọn tài nguyên ngay. |
+| `100%` | Forecasted cost | Cảnh báo AWS dự đoán cuối tháng sẽ chạm hoặc vượt budget. |
+
+Nếu AWS cho thêm nhiều alert, có thể dùng cấu hình:
+
+```text
+Alert 1: Actual cost >= 50%
+Alert 2: Actual cost >= 80%
+Alert 3: Actual cost >= 100%
+Alert 4: Forecasted cost >= 100%
+```
+
+Giải thích:
+
+- `Actual cost` là chi phí đã phát sinh thật tới thời điểm hiện tại.
+- `Forecasted cost` là chi phí AWS dự đoán tới cuối kỳ nếu tốc độ sử dụng hiện tại tiếp tục.
+
+#### 4.8. Nhập email nhận cảnh báo
+
+Ở phần notification, nhập email nhận cảnh báo, ví dụ:
+
+```text
+your-email@example.com
+```
+
+Nếu có nhiều người cùng làm lab, có thể thêm nhiều email.
+
+Lưu ý:
+
+- Nhập đúng email đang dùng thường xuyên.
+- Kiểm tra cả inbox, spam và promotions.
+- Một số loại notification có thể yêu cầu xác nhận subscription nếu dùng Amazon SNS. Nếu chỉ nhập email trực tiếp trong AWS Budgets, thường không cần thao tác SNS riêng.
+
+#### 4.9. Review và tạo budget
+
+Kiểm tra lại:
+
+```text
+Budget name : lab-monthly-cost-budget
+Period      : Monthly
+Amount      : 10/20/50 USD tùy lab
+Scope       : All AWS services, all regions
+Alerts      : 50%, 80%, 100% hoặc forecasted 100%
+Email       : email nhận cảnh báo
+```
+
+Sau đó bấm:
+
+```text
+Create budget
+```
+
+### 5. File/config/lệnh liên quan
+
+Không cần tạo file trong repository ở bước này.
+
+Tài nguyên/cấu hình AWS liên quan:
+
+| Loại | Tên ví dụ | Mục đích |
+|---|---|---|
+| AWS Budget | `lab-monthly-cost-budget` | Theo dõi chi phí tháng của account lab. |
+| Alert threshold | `50%`, `80%`, `100%` | Gửi cảnh báo theo mức chi phí. |
+| Email recipient | Email cá nhân hoặc team | Nhận thông báo khi vượt ngưỡng. |
+| Billing dashboard | Cost Management Console | Kiểm tra chi phí phát sinh. |
+
+Sau này khi hệ thống trưởng thành hơn, có thể bổ sung:
+
+- Cost Anomaly Detection.
+- Budget theo từng service như EKS, RDS, MSK.
+- Tag-based cost allocation.
+- Budget action để tự động chặn một số quyền khi vượt ngưỡng.
+
+Trong bước này, chỉ cần budget cảnh báo tổng chi phí toàn account.
+
+### 6. Giải thích từng phần quan trọng
+
+| Phần trên màn hình | Ý nghĩa | Bạn cần làm gì |
+|---|---|---|
+| `Cost budget` | Budget theo tiền phát sinh. | Chọn loại này để bảo vệ free credit. |
+| `Budget name` | Tên budget. | Đặt `lab-monthly-cost-budget`. |
+| `Period: Monthly` | Tính chi phí theo từng tháng. | Chọn monthly cho lab. |
+| `Recurring budget` | Budget tự lặp lại mỗi tháng. | Bật để không phải tạo lại hằng tháng. |
+| `Fixed budget` | Mức tiền cố định. | Dùng cho lab vì dễ hiểu. |
+| `Actual cost` | Chi phí đã phát sinh thật. | Dùng cho alert 50% và 80%. |
+| `Forecasted cost` | Chi phí AWS dự đoán tới cuối kỳ. | Dùng cho cảnh báo 100% sớm hơn. |
+| `Alert threshold` | Ngưỡng kích hoạt cảnh báo. | Tạo nhiều ngưỡng để biết sớm. |
+| `Email recipients` | Danh sách email nhận cảnh báo. | Nhập email thật sự đọc. |
+
+#### Budget có tự tắt tài nguyên không?
+
+Không.
+
+Budget mặc định chỉ cảnh báo:
+
+```text
+Chi phí vượt ngưỡng
+  -> AWS gửi email
+  -> Người vận hành kiểm tra
+  -> Tắt/xóa/giảm tài nguyên nếu cần
+```
+
+Vì vậy sau khi nhận email cảnh báo, cần chủ động kiểm tra:
+
+```text
+Billing
+  -> Cost Explorer
+  -> xem service nào đang tốn tiền
+```
+
+và:
+
+```text
+EC2
+RDS
+EKS
+MSK
+ElastiCache
+Load Balancer
+NAT Gateway
+EBS Snapshot
+CloudWatch Logs
+```
+
+### 7. Kiểm tra hoàn thành
+
+Bước này hoàn thành khi:
+
+```text
+[x] Có budget tên lab-monthly-cost-budget
+[x] Budget theo chu kỳ Monthly
+[x] Budget bao phủ toàn account hoặc toàn bộ AWS services
+[x] Có ít nhất 3 alert threshold
+[x] Có email nhận cảnh báo
+```
+
+Kiểm tra trên Console:
+
+```text
+Billing and Cost Management
+  -> Budgets
+  -> lab-monthly-cost-budget
+```
+
+Trong trang chi tiết budget, kiểm tra:
+
+```text
+Budgeted amount
+Current actual spend
+Forecasted spend
+Alert thresholds
+Email recipients
+```
+
+Nếu vừa tạo budget, có thể chưa thấy số chi phí ngay. AWS cost data có thể trễ nhiều giờ.
+
+### 8. Lỗi thường gặp và cách xử lý
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| IAM user không vào được Billing | Root account chưa bật IAM access to billing hoặc user thiếu quyền. | Đăng nhập root, vào Account/Billing setting và bật IAM user access to billing, sau đó kiểm tra policy user. |
+| Không thấy menu Budgets | Đang ở trang Console khác hoặc giao diện Billing thay đổi. | Search `Budgets` trên thanh tìm kiếm AWS Console. |
+| Không nhận được email | Nhập sai email, email vào spam hoặc notification chưa được xác nhận. | Kiểm tra lại email, spam, promotions; nếu dùng SNS thì xác nhận subscription. |
+| Budget tạo xong nhưng chi phí vẫn là 0 | Cost data chưa cập nhật hoặc chưa phát sinh chi phí. | Chờ vài giờ đến 24 giờ rồi kiểm tra lại. |
+| Alert gửi trễ | AWS Budgets không phải hệ thống realtime từng giây. | Dùng alert sớm 50% và 80%; sau này thêm Cost Anomaly Detection nếu cần. |
+| Vượt budget nhưng tài nguyên vẫn chạy | Budget mặc định chỉ cảnh báo, không tự tắt tài nguyên. | Vào Cost Explorer tìm service tốn tiền và tự dọn tài nguyên. |
+| Free credit còn nhưng vẫn thấy cost | AWS vẫn ghi nhận usage/cost, credit có thể được áp dụng ở billing. | Kiểm tra phần Credits và Bills để hiểu credit được trừ như thế nào. |
+
+### 9. Kết quả sau bước này
+
+Trạng thái hệ thống sau khi hoàn thành:
+
+```text
+[x] Root account đã có MFA
+[x] Root access key không còn active
+[x] Có IAM user lab để thao tác hằng ngày
+[x] CloudTrail audit đã bật
+[x] Có budget/cost alert bảo vệ free credit
+[x] Account lab sẵn sàng đi tiếp sang Terraform remote state
+```
+
+Bước tiếp theo là **Bước 3.1 - Chuẩn bị S3 bucket lưu Terraform remote state**.
+
