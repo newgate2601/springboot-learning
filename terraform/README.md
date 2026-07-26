@@ -632,6 +632,8 @@ Khi Terraform hỏi có copy state lên backend mới không, nhập:
 yes
 ```
 
+Lưu ý: `yes` ở đây là câu trả lời tại dòng `Enter a value:` của Terraform, không phải lệnh PowerShell chạy riêng. Nếu Terraform đã kết thúc và bạn gõ `yes` ở prompt `PS ...>`, PowerShell sẽ báo không tìm thấy lệnh `yes`.
+
 Từ lúc này, bootstrap cũng dùng remote state.
 
 ---

@@ -1509,250 +1509,1454 @@ Bước tiếp theo là **Bước 3.1 - Viết Terraform bootstrap tạo remote 
 
 ---
 
-## Bước 3.1 - Viết Terraform bootstrap tạo remote state backend
+## Bước 3.1 - Bootstrap Terraform remote state backend
 
 ### 1. Mục tiêu của bước này
 
-Mục tiêu là bắt đầu phần Terraform theo cách chuẩn doanh nghiệp hơn: **không tạo S3 bucket và DynamoDB table thủ công bằng Console**, mà viết một Terraform bootstrap nhỏ để tạo Terraform remote state backend.
+Mục tiêu là tạo nơi lưu Terraform state dùng chung cho các bước hạ tầng sau.
 
-Sau bước này, ta có:
-
-```text
-Terraform bootstrap code : tạo backend ban đầu
-S3 bucket                : lưu terraform.tfstate
-DynamoDB table           : khóa state, tránh apply đồng thời
-KMS key                  : mã hóa Terraform state
-Bucket policy            : chặn public, ép HTTPS, ép encryption
-Quy ước backend key      : scale được cho dev, staging, production
-```
-
-Đồng thời chốt phạm vi ứng dụng xuyên suốt bài thực hành:
+Sau bước này ta có:
 
 ```text
-gateway
-uaa
-post-service
+S3 bucket  : lưu terraform.tfstate
+DynamoDB   : lock state khi plan/apply
+KMS key    : mã hóa state
+Backend S3 : bootstrap state đã được migrate lên S3
 ```
 
-Ba service này sẽ là bộ ứng dụng chính được dùng xuyên suốt các bước GitLab CI, ECR, Kubernetes, Argo CD, database, secret, observability và kiểm thử vận hành.
+Phần giải thích chi tiết từng file Terraform đã nằm trong `terraform/README.md`. Ở đây chỉ ghi luồng thực hành cần làm.
 
-### 2. Vì sao cần làm bước này
-
-Terraform lưu trạng thái hạ tầng trong file `terraform.tfstate`. File này chứa thông tin rất quan trọng:
-
-- Tài nguyên AWS đã tạo.
-- ID của VPC, subnet, security group, cluster, database.
-- Quan hệ phụ thuộc giữa các tài nguyên.
-- Một số output nhạy cảm nếu cấu hình không cẩn thận.
-
-Nếu để state trên laptop:
-
-- Người khác không dùng chung được.
-- Dễ mất khi đổi máy hoặc xóa nhầm folder.
-- Không có locking nên hai lần `terraform apply` có thể đè nhau.
-- Không phù hợp với GitLab CI sau này.
-
-Remote state bằng S3 + DynamoDB giúp:
-
-- State nằm ở nơi dùng chung trong AWS account lab.
-- Có versioning để phục hồi khi cần.
-- Có locking để tránh apply đồng thời.
-- GitLab Runner sau này có thể dùng cùng backend.
-- Hạ tầng được quản lý theo hướng doanh nghiệp hơn, dù vẫn là lab một account.
-
-Điểm quan trọng: Terraform backend có bài toán “con gà quả trứng”.
-
-```text
-Terraform cần backend để lưu state
-nhưng backend cũng là hạ tầng cần tạo
-```
-
-Cách làm chuẩn là có một lớp **bootstrap** riêng:
-
-```text
-Lần đầu:
-  terraform/bootstrap dùng local state tạm thời
-  -> tạo S3 backend, DynamoDB lock, KMS key
-
-Các lần sau:
-  mọi root module khác dùng S3 remote backend
-```
-
-Trong doanh nghiệp lớn, bootstrap này thường do platform/cloud team quản lý. Team ứng dụng không tự bấm Console tạo backend.
-
-### 3. Trước khi bắt đầu cần có gì
+### 2. Trước khi bắt đầu cần có gì
 
 Cần chuẩn bị:
 
-- Đã hoàn thành các bước bảo vệ account:
-  - Root MFA.
-  - Root access key không còn active.
-  - IAM user lab.
-  - CloudTrail.
-  - Budget/cost alert.
-- Đăng nhập AWS Console bằng IAM user lab, ví dụ `tony-lab-admin`.
-- Máy local đã cài hoặc chuẩn bị cài:
+- Đã đăng nhập AWS bằng IAM user lab, không dùng root access key.
+- AWS CLI chạy được lệnh `aws sts get-caller-identity`.
+- Terraform CLI chạy được lệnh `terraform version`.
+- Đang đứng ở repository local `springboot-learning`.
+- Đã có thư mục `terraform/bootstrap/backend` trong repo.
 
-```text
-AWS CLI
-Terraform
-Git
+Kiểm tra nhanh:
+
+```powershell
+aws sts get-caller-identity
+terraform version
 ```
 
-- Region lab chính đã chốt, ví dụ:
+### 3. File Terraform đã chuẩn bị
+
+Các file chính nằm ở:
 
 ```text
-ap-southeast-1
+terraform/bootstrap/backend
 ```
 
-- Account ID AWS, ví dụ:
+Gồm:
 
-```text
-150914615641
-```
-
-Trong bước này, chưa tạo VPC, EKS, RDS, MSK, ElastiCache, GitLab hoặc ECR. Ta chỉ viết và chạy bootstrap backend.
-
-Nguyên tắc:
-
-```text
-Console chỉ dùng để kiểm tra
-Terraform code là nguồn sự thật
-```
-
-### 4. Thao tác chi tiết
-
-#### 4.1. Cài công cụ local trên Windows PowerShell
-
-Trước khi chạy Terraform, máy local cần có các công cụ sau:
-
-| Công cụ | Dùng để làm gì |
+| File | Vai trò ngắn gọn |
 |---|---|
-| Terraform CLI | Đọc file `.tf`, tạo plan, apply hạ tầng lên AWS. |
-| AWS CLI | Cấu hình credential local và kiểm tra đang gọi đúng AWS account. |
-| Git | Quản lý source code Terraform, commit/push lên GitLab sau này. |
-| IntelliJ IDEA | Viết code Spring Boot và có thể viết luôn file Terraform/HCL. |
+| `versions.tf` | Khai báo Terraform và AWS provider version. |
+| `providers.tf` | Cấu hình AWS provider và default tags. |
+| `variables.tf` | Khai báo input cần truyền vào. |
+| `locals.tf` | Gom tag chung thành `local.common_tags`. |
+| `main.tf` | Tạo S3, DynamoDB, KMS và policy cần thiết. |
+| `outputs.tf` | In ra bucket, table và KMS key ARN. |
+| `terraform.tfvars.example` | File mẫu để tạo input thật. |
+| `remote-state/backend.tf` | Backend S3 dùng sau khi bootstrap resource đã tồn tại. |
 
-Trong lần thực hành này, ta đã gặp lỗi:
+Không cần copy lại toàn bộ nội dung các file vào tài liệu này. Khi cần đọc chi tiết từng keyword, xem `terraform/README.md`.
 
-```text
-terraform : The term 'terraform' is not recognized
-```
+### 4. Tạo file input thật
 
-Nghĩa là PowerShell chưa tìm thấy `terraform.exe`. Cách xử lý là cài Terraform CLI.
-
-Cài Terraform bằng `winget`:
-
-```powershell
-winget install Hashicorp.Terraform
-```
-
-Kiểm tra:
+Đi tới thư mục bootstrap:
 
 ```powershell
-terraform -version
+cd C:\code\springboot-learning\terraform\bootstrap\backend
 ```
 
-Kết quả thực tế sau khi cài:
-
-```text
-Terraform v1.15.0
-on windows_amd64
-```
-
-Ta cũng gặp lỗi:
-
-```text
-aws : The term 'aws' is not recognized
-```
-
-Nghĩa là PowerShell chưa tìm thấy AWS CLI. Cách xử lý là cài AWS CLI.
-
-Cài AWS CLI bằng `winget`:
+Copy file mẫu:
 
 ```powershell
-winget install Amazon.AWSCLI
+Copy-Item terraform.tfvars.example terraform.tfvars
 ```
 
-Kiểm tra:
+Mở `terraform.tfvars` và chỉnh theo account thật.
+
+Ví dụ lab hiện tại:
+
+```hcl
+aws_region        = "ap-southeast-1"
+project           = "newgate2601"
+environment       = "bootstrap"
+account_id        = "150914615641"
+state_bucket_name = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+lock_table_name   = "terraform-state-lock"
+owner             = "tony"
+```
+
+Ghi nhớ: `locals.tf` không thay thế cho `terraform.tfvars`. `locals.common_tags` chỉ dùng lại các giá trị đã được truyền qua `var.*`.
+
+### 5. Chạy bootstrap lần đầu bằng local state
+
+Lần đầu S3 backend chưa tồn tại, nên Terraform chưa thể lưu state lên S3 ngay. Vì vậy bootstrap chạy theo 2 pha:
+
+```text
+Pha 1: dùng local state tạm thời để tạo S3, DynamoDB, KMS
+Pha 2: copy local state đó lên S3 backend vừa tạo
+```
+
+Điểm quan trọng: đây là ngoại lệ chỉ dành cho chính module bootstrap. Các root module sau như `dev/network`, `dev/eks`, `shared-services/ecr` sẽ dùng remote state ngay từ đầu.
+
+Trạng thái thư mục đúng trước lần chạy đầu:
+
+```text
+terraform/bootstrap/backend/
+  versions.tf
+  providers.tf
+  variables.tf
+  locals.tf
+  main.tf
+  outputs.tf
+  terraform.tfvars.example
+  remote-state/backend.tf
+```
+
+Chưa nên có:
+
+```text
+backend.tf
+.terraform/
+terraform.tfvars
+terraform.tfstate
+tfplan
+```
+
+Nếu đang thực hành lại từ đầu trên cùng máy, có thể xóa các file/thư mục sinh ra từ lần chạy trước:
 
 ```powershell
-aws --version
+Remove-Item .terraform -Recurse -Force
+Remove-Item terraform.tfvars -Force
+Remove-Item tfplan -Force
 ```
 
-Sau khi cài Terraform hoặc AWS CLI, nếu PowerShell hoặc terminal trong IntelliJ vẫn không nhận lệnh, cần:
+Lưu ý: các lệnh trên chỉ reset phần local. Nếu lần trước đã `terraform apply` thành công thì S3 bucket, DynamoDB table và KMS key vẫn còn trong AWS. Khi đó muốn apply lại từ số 0 thật sự, cần một trong hai cách:
 
 ```text
-Đóng terminal hiện tại
-Mở terminal mới
-Hoặc restart IntelliJ
+Cách 1: destroy tài nguyên AWS cũ trước rồi thực hành lại với cùng tên
+Cách 2: đổi project/state_bucket_name để tạo bộ backend mới
 ```
 
-Lý do: terminal cũ chưa reload biến môi trường `PATH`.
+Không nên xóa resource AWS thủ công trên Console khi state vẫn còn, vì Terraform sẽ mất dấu tài nguyên đang quản lý.
 
-`PATH` là danh sách thư mục mà Windows dùng để tìm chương trình khi ta gõ lệnh như:
+#### 5.1. `terraform init`
 
-```text
-terraform
-aws
-git
-```
-
-#### 4.2. Cấu hình AWS credential cho máy local
-
-Sau khi AWS CLI đã cài xong, cần cấu hình credential để Terraform biết dùng AWS account nào.
-
-Không dùng root access key.
-
-Tạo access key cho IAM user lab:
-
-```text
-AWS Console
-  -> IAM
-  -> Users
-  -> tony-lab-admin
-  -> Security credentials
-  -> Access keys
-  -> Create access key
-  -> Use case: Command Line Interface (CLI)
-```
-
-AWS sẽ tạo:
-
-```text
-Access Key ID
-Secret Access Key
-```
-
-Lưu ý:
-
-- `Secret Access Key` chỉ hiện một lần.
-- Không commit key vào Git.
-- Không gửi key lên chat.
-- Không tạo access key cho root account.
-
-Cấu hình trên PowerShell:
+Chạy:
 
 ```powershell
-aws configure
+terraform init
+```
+
+Lệnh này kết hợp các thành phần sau:
+
+| Thành phần | Terraform dùng để làm gì |
+|---|---|
+| `versions.tf` | Đọc `required_version` và `required_providers`. |
+| Terraform Registry | Tải AWS provider `hashicorp/aws` đúng version cho phép. |
+| `.terraform/` | Lưu provider plugin đã tải về local working directory. |
+| `.terraform.lock.hcl` | Ghi lại provider version và checksum thực tế đã chọn. |
+| `backend.tf` nếu có | Cấu hình nơi lưu state. Lần đầu bootstrap chưa nên có file này. |
+
+Giải thích dễ hiểu về `.terraform/`:
+
+Khi ta viết:
+
+```hcl
+provider "aws" {
+  region = var.aws_region
+}
+```
+
+Terraform chưa tự biết cách gọi AWS. Nó cần một chương trình hỗ trợ tên là **AWS provider**.
+
+`terraform init` sẽ tải chương trình AWS provider đó về máy và đặt trong thư mục:
+
+```text
+.terraform/
+```
+
+Nói đơn giản:
+
+```text
+File .tf của mình
+  -> nói muốn tạo S3, DynamoDB, KMS
+
+AWS provider trong .terraform/
+  -> biết cách gọi AWS API để tạo S3, DynamoDB, KMS thật
+```
+
+Vì vậy `.terraform/` dùng để chứa những thứ Terraform cần để chạy được trong thư mục hiện tại. Nếu chưa có `.terraform/`, Terraform chưa có provider local để làm việc với AWS.
+
+Ví dụ sau `terraform init`, bên trong có thể có dạng:
+
+```text
+.terraform/
+  providers/
+    registry.terraform.io/
+      hashicorp/
+        aws/
+          5.100.0/
+            windows_amd64/
+              terraform-provider-aws...
+```
+
+Ý nghĩa:
+
+```text
+hashicorp/aws -> provider AWS
+5.100.0       -> version provider
+windows_amd64 -> bản chạy trên Windows 64-bit
+```
+
+Ghi nhớ về `.terraform/`:
+
+- Nó nằm trên máy local.
+- Nó không phải resource AWS.
+- Nó không phải file state.
+- Nó không cần commit lên Git.
+- Nếu xóa `.terraform/`, chưa mất resource AWS nào.
+- Sau khi xóa, chạy lại `terraform init` thì Terraform tải/cài lại provider.
+
+Giải thích dễ hiểu về `.terraform.lock.hcl`:
+
+Sau khi tải provider, Terraform tạo hoặc cập nhật file:
+
+```text
+.terraform.lock.hcl
+```
+
+File này trả lời câu hỏi:
+
+```text
+Lần này Terraform đã chọn đúng provider nào?
+```
+
+Ví dụ:
+
+```text
+hashicorp/aws version 5.100.0
+```
+
+Nếu không có file lock, máy khác hoặc CI có thể chọn provider version khác trong khoảng cho phép. Version khác có thể có thay đổi nhỏ làm output, plan hoặc behavior khác đi.
+
+Vì vậy `.terraform.lock.hcl` giúp các lần chạy sau dùng lại cùng provider version đã chọn trước đó.
+
+Ví dụ dễ hiểu:
+
+```text
+Lần đầu:
+  versions.tf cho phép AWS provider 5.x
+  terraform init chọn được 5.100.0
+  .terraform.lock.hcl ghi lại: dùng 5.100.0
+
+Lần sau:
+  terraform init đọc .terraform.lock.hcl
+  thấy đã khóa 5.100.0
+  tiếp tục dùng 5.100.0
+```
+
+Trong `.terraform.lock.hcl` có nhiều dòng hash/checksum. Các giá trị này dùng để kiểm tra file provider tải về có đúng nội dung không.
+
+Nói đơn giản:
+
+```text
+Version  -> đúng tên phiên bản chưa?
+Hash     -> đúng nội dung file provider chưa?
+```
+
+Nếu ai đó thay đổi nội dung provider nhưng vẫn đặt tên version giống cũ, hash sẽ khác. Terraform sẽ phát hiện và không âm thầm dùng file đó.
+
+Ghi nhớ về `.terraform.lock.hcl`:
+
+- Nên commit file này lên Git.
+- Nó giúp máy bạn, máy người khác và CI dùng cùng provider version.
+- Nó không chứa password AWS.
+- Nó không chứa danh sách resource AWS đã tạo.
+- Nó không phải file state.
+
+Điểm rất dễ nhầm:
+
+```text
+.terraform.lock.hcl
+```
+
+không phải là lock để chặn 2 người cùng chạy `terraform apply`.
+
+Nó chỉ lock version provider.
+
+Lock chống 2 người cùng sửa state là chuyện khác:
+
+```text
+DynamoDB table terraform-state-lock
+```
+
+Trong bài này, DynamoDB lock chỉ dùng sau khi đã migrate state lên S3 backend.
+
+Nếu có 2 máy cùng chạy `terraform init`:
+
+```text
+Máy A:
+  -> có thư mục .terraform/ riêng trên máy A
+  -> tải/cài provider trên máy A
+
+Máy B:
+  -> có thư mục .terraform/ riêng trên máy B
+  -> tải/cài provider trên máy B
+
+Nếu .terraform.lock.hcl đã commit lên Git:
+  -> cả hai máy cùng dùng provider version đã ghi trong file lock
+```
+
+Hai máy không tranh nhau ở bước `terraform init`, vì bước này chỉ chuẩn bị provider trên từng máy.
+
+Nếu chạy lại `terraform init` khi `.terraform.lock.hcl` đã tồn tại:
+
+```text
+Nếu .terraform/ vẫn còn provider:
+  -> Terraform dùng lại provider đã tải
+
+Nếu .terraform/ đã bị xóa:
+  -> Terraform đọc .terraform.lock.hcl
+  -> tải lại đúng provider version đã khóa
+
+Nếu muốn cập nhật provider lên bản mới:
+  -> chạy terraform init -upgrade
+  -> Terraform chọn version mới phù hợp
+  -> .terraform.lock.hcl được cập nhật lại
+```
+
+Tác động của lệnh:
+
+```text
+Local machine
+  -> tạo/cập nhật thư mục .terraform/
+  -> tạo/cập nhật .terraform.lock.hcl
+  -> chưa tạo resource AWS nào
+  -> chưa gọi apply thay đổi hạ tầng
+```
+
+Giá trị tạo ra:
+
+- Máy local biết phải dùng provider AWS nào.
+- Terraform biết backend hiện tại là local hay S3.
+- Provider version được khóa để lần sau chạy ổn định hơn.
+
+Output thực tế trong lần chạy này:
+
+```text
+Initializing the backend...
+
+Initializing provider plugins...
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Installing hashicorp/aws v5.100.0...
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+
+Terraform has been successfully initialized!
+```
+
+Đọc output này như sau:
+
+| Dòng output | Nó nói Terraform đang làm gì |
+|---|---|
+| `Initializing the backend...` | Terraform kiểm tra backend hiện tại. Lúc này chưa có `backend.tf`, nên backend là local. |
+| `Reusing previous version ... from the dependency lock file` | Terraform đọc `.terraform.lock.hcl` để biết lần trước đã khóa provider AWS version nào. |
+| `Installing hashicorp/aws v5.100.0...` | Terraform tải AWS provider plugin về máy. Provider này là cầu nối từ file `.tf` sang AWS API. |
+| `Installed ... signed by HashiCorp` | Provider đã tải xong, và Terraform xác nhận gói này do HashiCorp phát hành. |
+| `Terraform has been successfully initialized!` | Thư mục bootstrap đã sẵn sàng chạy `validate`, `plan`, `apply`. |
+
+Giải thích dễ hiểu về `signed by HashiCorp`:
+
+AWS provider là chương trình Terraform sẽ chạy trên máy bạn. Vì vậy Terraform cần kiểm tra gói provider tải về có đúng là gói chính thức không.
+
+`signed by HashiCorp` nghĩa là:
+
+```text
+Terraform tải AWS provider
+  -> kiểm tra gói này có phải do HashiCorp phát hành không
+  -> kiểm tra nội dung gói có khớp với hash trong lock file không
+  -> hợp lệ thì mới cài vào .terraform/
+```
+
+Nếu gói provider không đúng nguồn hoặc nội dung không khớp, Terraform sẽ không coi đó là provider hợp lệ.
+
+Nói ngắn gọn:
+
+```text
+version trong .terraform.lock.hcl -> dùng đúng version provider
+hash trong .terraform.lock.hcl    -> file provider tải về đúng nội dung
+signed by HashiCorp               -> provider này do HashiCorp phát hành
+```
+
+Sau lệnh này, Terraform chỉ chuẩn bị môi trường local. Nó chưa tạo S3, DynamoDB hoặc KMS trên AWS.
+
+Nếu thư mục bootstrap đã có `backend.tf` trỏ tới S3 nhưng bucket chưa tồn tại, `terraform init` sẽ lỗi vì Terraform cố kết nối backend trước khi tạo resource. Đó là lý do file backend S3 được để tạm trong `remote-state/backend.tf`.
+
+#### 5.2. `terraform fmt`
+
+Chạy:
+
+```powershell
+terraform fmt
+```
+
+Lệnh này chỉ xử lý format file `.tf`:
+
+```text
+*.tf trong thư mục hiện tại
+  -> căn spacing
+  -> căn dấu =
+  -> chuẩn hóa style HCL
+```
+
+Tác động:
+
+- Có thể sửa nội dung file `.tf` trên máy local.
+- Không gọi AWS API.
+- Không đọc credential AWS.
+- Không tạo state.
+- Không tạo resource.
+
+Giá trị tạo ra:
+
+- File Terraform dễ review hơn.
+- Diff sạch hơn khi commit.
+- Tránh mỗi người format một kiểu.
+
+Nếu command in ra tên file, ví dụ:
+
+```text
+backend.tf
+```
+
+nghĩa là file đó vừa được format lại.
+
+Trong lần chạy này, `terraform fmt` không in ra file nào:
+
+```text
+PS ...\terraform\bootstrap\backend> terraform fmt
+PS ...\terraform\bootstrap\backend>
+```
+
+Nghĩa là các file `.tf` hiện đã đúng format, nên Terraform không cần sửa gì. Nếu nó in ra `backend.tf`, `main.tf` hoặc file khác, nghĩa là file đó vừa được căn lại spacing.
+
+#### 5.3. `terraform validate`
+
+Chạy:
+
+```powershell
+terraform validate
+```
+
+Lệnh này kiểm tra cấu hình Terraform có hợp lệ về mặt cú pháp và liên kết nội bộ không.
+
+Nó kết hợp:
+
+| Thành phần | Terraform kiểm tra gì |
+|---|---|
+| `variables.tf` | Biến được khai báo đúng type chưa. |
+| `locals.tf` | `local.common_tags` có tham chiếu biến tồn tại không. |
+| `providers.tf` | Provider block viết đúng schema không. |
+| `main.tf` | Resource type, argument, reference có hợp lệ không. |
+| `outputs.tf` | Output có tham chiếu resource tồn tại không. |
+| AWS provider schema | Biết `aws_s3_bucket`, `aws_kms_key`, `aws_dynamodb_table` cần field nào. |
+
+Tác động:
+
+```text
+Terraform code
+  -> kiểm tra syntax/reference/schema
+  -> không tạo AWS resource
+  -> không so sánh với AWS hiện tại
+  -> không biết bucket thật đã tồn tại hay chưa
+```
+
+Giá trị tạo ra:
+
+- Xác nhận code Terraform đọc được.
+- Bắt lỗi sớm như sai tên resource, sai field, thiếu provider.
+
+Ví dụ `validate` có thể bắt lỗi:
+
+```text
+Reference to undeclared input variable
+Unsupported argument
+Invalid resource type
+```
+
+Nhưng `validate` chưa bắt được lỗi kiểu:
+
+```text
+S3 bucket name đã bị người khác dùng
+IAM user không đủ quyền
+AWS region sai
+```
+
+Những lỗi đó chỉ lộ ra khi `plan` hoặc `apply` gọi AWS API.
+
+Output thực tế trong lần chạy này:
+
+```text
+Success! The configuration is valid.
+```
+
+Ý nghĩa:
+
+```text
+Terraform đọc được versions.tf, providers.tf, variables.tf, locals.tf, main.tf, outputs.tf
+Các reference như var.project, local.common_tags, aws_s3_bucket.terraform_state.id đều hợp lệ
+AWS provider schema chấp nhận các resource/argument đang dùng
+```
+
+Nhưng dòng `Success` này chưa có nghĩa là resource đã tồn tại hay có quyền tạo resource. Nó chỉ xác nhận code Terraform hợp lệ trước khi gọi AWS để lập plan.
+
+#### 5.4. `terraform plan -out=tfplan`
+
+Chạy:
+
+```powershell
+terraform plan -out=tfplan
+```
+
+Đây là bước Terraform ghép mọi thứ lại với nhau để tính “nếu apply thì sẽ làm gì”.
+
+Đầu vào của `plan`:
+
+| Đầu vào | Vai trò |
+|---|---|
+| File `.tf` | Mô tả hạ tầng mong muốn: S3, DynamoDB, KMS, policy. |
+| `terraform.tfvars` | Gán giá trị thật cho `var.aws_region`, `var.project`, `var.account_id`, `var.owner`, `var.state_bucket_name`. |
+| `locals.tf` | Tạo `local.common_tags` từ các biến đã có giá trị. |
+| AWS credential local | Cho provider quyền gọi AWS API để đọc trạng thái thật. |
+| Terraform state hiện tại | Cho Terraform biết resource nào đã được quản lý trước đó. Lần đầu là local state rỗng. |
+| AWS provider | Dịch resource Terraform thành API tương ứng của AWS. |
+
+Luồng xử lý dễ hiểu:
+
+```text
+1. Terraform đọc code .tf
+   -> biết mình muốn có S3 bucket, DynamoDB table, KMS key
+
+2. Terraform đọc terraform.tfvars
+   -> biết tên bucket thật là gì
+   -> biết region/account/project/owner là gì
+
+3. Terraform đọc state hiện tại
+   -> biết trước đó nó đã quản lý resource nào chưa
+   -> lần bootstrap đầu tiên thì local state thường đang rỗng
+
+4. Terraform hỏi AWS
+   -> bucket này đã tồn tại chưa?
+   -> DynamoDB table này đã tồn tại chưa?
+   -> KMS key này đã tồn tại chưa?
+
+5. Terraform so sánh
+   -> code muốn có resource
+   -> state chưa ghi nhận resource
+   -> AWS hiện tại chưa có resource do Terraform quản lý
+
+6. Terraform kết luận
+   -> cần tạo resource mới
+   -> in ra Plan: 9 to add, 0 to change, 0 to destroy
+
+7. Vì có -out=tfplan
+   -> Terraform lưu kế hoạch này vào file tfplan
+```
+
+Nói ngắn gọn:
+
+```text
+plan = xem trước Terraform sẽ làm gì
+plan chưa tạo resource thật
+```
+
+`terraform plan` không chỉ đọc file local. Nó có thể gọi AWS API để kiểm tra trạng thái thật. Nhưng ở bước này Terraform chỉ đọc/kiểm tra, chưa tạo S3, chưa tạo DynamoDB, chưa tạo KMS.
+
+Terraform cũng tính thứ tự tạo resource. Ví dụ:
+
+```text
+KMS key
+  -> KMS alias
+  -> S3 encryption config
+
+S3 bucket
+  -> versioning
+  -> public access block
+  -> ownership controls
+  -> bucket policy
+
+DynamoDB table
+  -> state lock table
+```
+
+Terraform hiểu thứ tự này nhờ các tham chiếu trong code như:
+
+```hcl
+aws_kms_key.terraform_state.arn
+aws_s3_bucket.terraform_state.id
+aws_s3_bucket.terraform_state.arn
+```
+
+Tác động:
+
+- Có gọi AWS API để đọc/check tài nguyên.
+- Chưa tạo, sửa, xóa resource.
+- Tạo file plan local tên `tfplan`.
+
+Giải thích dễ hiểu về file `tfplan`:
+
+```text
+tfplan
+  -> file local được tạo bởi terraform plan -out=tfplan
+  -> chứa kế hoạch Terraform vừa tính xong
+  -> terraform apply "tfplan" sẽ chạy đúng kế hoạch trong file này
+```
+
+Nếu không dùng `-out=tfplan`, bạn vẫn xem được plan trên màn hình, nhưng khi chạy `terraform apply`, Terraform sẽ tính plan lại một lần nữa.
+
+Nếu dùng `-out=tfplan`, luồng sẽ là:
+
+```text
+terraform plan -out=tfplan
+  -> xem trước kế hoạch
+  -> lưu kế hoạch vào file tfplan
+
+terraform apply "tfplan"
+  -> không tự tính kế hoạch mới
+  -> dùng đúng kế hoạch đã lưu trong tfplan
+```
+
+Điều này hữu ích vì kế hoạch bạn review chính là kế hoạch sẽ được apply.
+
+Ghi nhớ về `tfplan`:
+
+- `tfplan` là file sinh ra sau khi chạy lệnh, không phải file code.
+- `tfplan` nằm local trong thư mục đang chạy Terraform.
+- Không nên commit `tfplan` lên Git.
+- Nếu chạy lại `terraform plan -out=tfplan`, file `tfplan` cũ trong cùng thư mục sẽ bị ghi đè.
+- Nếu đổi code `.tf`, đổi `terraform.tfvars`, hoặc state/AWS thật đã thay đổi, nên chạy lại `terraform plan -out=tfplan` để tạo plan mới.
+- Không nên dùng một file `tfplan` quá cũ để apply.
+
+Vì sao không nên đẩy `tfplan` lên Git?
+
+```text
+tfplan là kết quả tạm thời của một lần plan cụ thể
+tfplan có thể chứa giá trị lấy từ biến, state hoặc provider
+tfplan có thể không còn đúng sau khi code/state/AWS thay đổi
+tfplan không cần cho người khác đọc source Terraform
+```
+
+Trong repo nên commit:
+
+```text
+*.tf
+*.tfvars.example
+.terraform.lock.hcl
+```
+
+Không nên commit:
+
+```text
+tfplan
+*.tfplan
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+terraform.tfvars
+```
+
+Nếu lỡ có `tfplan` trong thư mục và chạy lại:
+
+```powershell
+terraform plan -out=tfplan
+```
+
+Terraform sẽ ghi plan mới vào đúng tên file `tfplan`. Nói đơn giản là file cũ bị thay bằng file mới trên máy local. Git chỉ bị ảnh hưởng nếu bạn cố tình `git add tfplan`, nhưng mình không nên làm vậy.
+
+Nếu lỡ commit `tfplan` lên Git:
+
+```text
+Người khác git pull
+  -> cũng nhận file tfplan đó
+
+Người đó chạy terraform plan -out=tfplan
+  -> Terraform ghi đè tfplan trên máy người đó
+  -> Git sẽ thấy tfplan bị modified
+```
+
+Việc này không giúp ích gì, vì mỗi người/mỗi CI nên tự tạo plan mới từ code, biến, state và AWS tại thời điểm chạy. Repo này đã cấu hình `.gitignore` để bỏ qua:
+
+```text
+tfplan
+*.tfplan
+```
+
+Giá trị tạo ra:
+
+- Một bản kế hoạch cố định cho lần apply tiếp theo.
+- Bạn nhìn được Terraform định tạo bao nhiêu resource.
+- Nếu dùng `-out=tfplan`, lệnh `apply "tfplan"` sẽ apply đúng bản plan đã xem, tránh việc plan lại ra kết quả khác.
+
+Kết quả mong đợi lần đầu:
+
+```text
+Plan: 9 to add, 0 to change, 0 to destroy.
+```
+
+Output thực tế trong lần chạy này có các phần quan trọng:
+
+```text
+Terraform used the selected providers to generate the following execution plan.
+Resource actions are indicated with the following symbols:
+  + create
+ <= read (data resources)
+```
+
+Ý nghĩa:
+
+| Ký hiệu | Nghĩa |
+|---|---|
+| `+ create` | Terraform sẽ tạo resource mới trên AWS. |
+| `<= read` | Terraform sẽ đọc/tính data source trong lúc apply, không tạo resource riêng. |
+
+Trong plan có dòng:
+
+```text
+# data.aws_iam_policy_document.terraform_state will be read during apply
+# (config refers to values not yet known)
+```
+
+Nó nghĩa là bucket policy chưa thể tính đủ ngay tại plan, vì policy cần ARN của S3 bucket:
+
+```text
+aws_s3_bucket.terraform_state.arn
+```
+
+Mà bucket ARN chỉ chắc chắn có sau khi bucket được tạo. Vì vậy Terraform đánh dấu nhiều giá trị là:
+
+```text
+(known after apply)
+```
+
+Đây không phải lỗi. Nó nghĩa là Terraform biết giá trị đó sẽ có sau khi AWS tạo resource thật.
+
+Các resource chính trong plan:
+
+```text
+aws_kms_key.terraform_state will be created
+aws_kms_alias.terraform_state will be created
+aws_s3_bucket.terraform_state will be created
+aws_s3_bucket_versioning.terraform_state will be created
+aws_s3_bucket_server_side_encryption_configuration.terraform_state will be created
+aws_s3_bucket_public_access_block.terraform_state will be created
+aws_s3_bucket_ownership_controls.terraform_state will be created
+aws_s3_bucket_policy.terraform_state will be created
+aws_dynamodb_table.terraform_lock will be created
+```
+
+Các giá trị đáng chú ý Terraform đã tính được ngay từ `.tfvars` và `locals.tf`:
+
+```text
+name   = "terraform-state-lock"
+bucket = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+name   = "alias/newgate2601/terraform-state"
+
+tags_all = {
+  "AccountId"   = "150914615641"
+  "Component"   = "terraform-backend"
+  "Environment" = "bootstrap"
+  "ManagedBy"   = "Terraform"
+  "Owner"       = "tony"
+  "Project"     = "newgate2601"
+}
+```
+
+Đoạn trên chứng minh:
+
+```text
+terraform.tfvars
+  -> cấp giá trị cho var.project, var.owner, var.account_id, var.aws_region
+
+locals.tf
+  -> gom các var đó thành local.common_tags
+
+providers.tf
+  -> đưa local.common_tags vào default_tags
+
+AWS provider
+  -> áp tag đó lên các resource bằng tags_all
+```
+
+Cuối plan:
+
+```text
+Plan: 9 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + kms_key_arn       = (known after apply)
+  + lock_table_name   = "terraform-state-lock"
+  + state_bucket_name = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+
+Saved the plan to: tfplan
+```
+
+Ý nghĩa:
+
+- `9 to add`: Terraform sẽ tạo đúng 9 resource quản lý backend.
+- `0 to change`: không sửa resource nào đã có.
+- `0 to destroy`: không xóa resource nào.
+- `kms_key_arn = (known after apply)`: KMS ARN chỉ biết sau khi AWS tạo key.
+- `Saved the plan to: tfplan`: kế hoạch đã được đóng gói vào file `tfplan`; bước apply sau sẽ dùng đúng kế hoạch này.
+
+Nếu Terraform hỏi:
+
+```text
+var.project
+Enter a value:
+```
+
+nghĩa là biến đó chưa có trong `terraform.tfvars`, chưa có `default`, và cũng chưa được truyền qua `-var`.
+
+#### 5.5. `terraform apply "tfplan"`
+
+Chạy:
+
+```powershell
+terraform apply "tfplan"
+```
+
+Lệnh này lấy kế hoạch đã lưu trong `tfplan` và bắt đầu gọi AWS API để tạo resource thật.
+
+Nó kết hợp:
+
+| Thành phần | Vai trò khi apply |
+|---|---|
+| `tfplan` | Danh sách hành động đã được tính ở bước plan. |
+| AWS provider | Gọi API tạo KMS, S3, DynamoDB. |
+| AWS credential | Quyền thực thi các API đó. |
+| Terraform state local | Ghi lại resource nào đã tạo thành công và ID thật của chúng. |
+
+Tác động vào AWS:
+
+```text
+AWS KMS
+  -> tạo KMS key
+  -> tạo alias alias/<project>/terraform-state
+
+Amazon S3
+  -> tạo bucket state
+  -> bật versioning
+  -> bật SSE-KMS encryption
+  -> bật block public access
+  -> bật ownership controls
+  -> gắn bucket policy ép HTTPS và encryption
+
+Amazon DynamoDB
+  -> tạo table terraform-state-lock
+  -> tạo partition key LockID
+  -> bật point-in-time recovery
+```
+
+Tác động vào local state:
+
+```text
+terraform.tfstate
+  -> lưu mapping Terraform address với AWS resource id thật
+```
+
+Ví dụ mapping ý tưởng:
+
+```text
+aws_s3_bucket.terraform_state
+  -> bucket newgate2601-terraform-state-150914615641-ap-southeast-1
+
+aws_dynamodb_table.terraform_lock
+  -> table terraform-state-lock
+
+aws_kms_key.terraform_state
+  -> key arn:aws:kms:...
+```
+
+Giá trị tạo ra:
+
+- Hạ tầng backend thật trong AWS.
+- Local state biết chính xác resource nào thuộc quyền quản lý của Terraform.
+- Các output có thể đọc được bằng `terraform output`.
+
+Kết quả mong đợi:
+
+```text
+Apply complete! Resources: 9 added, 0 changed, 0 destroyed.
+```
+
+Output thực tế trong lần chạy này:
+
+```text
+aws_kms_key.terraform_state: Creating...
+aws_dynamodb_table.terraform_lock: Creating...
+aws_s3_bucket.terraform_state: Creating...
+aws_s3_bucket.terraform_state: Creation complete after 2s [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+data.aws_iam_policy_document.terraform_state: Reading...
+aws_s3_bucket_public_access_block.terraform_state: Creating...
+aws_s3_bucket_ownership_controls.terraform_state: Creating...
+aws_s3_bucket_versioning.terraform_state: Creating...
+data.aws_iam_policy_document.terraform_state: Read complete after 0s [id=1759525144]
+aws_s3_bucket_policy.terraform_state: Creating...
+```
+
+Đọc đoạn này:
+
+- Terraform tạo KMS key, DynamoDB table và S3 bucket gần như song song vì ba resource này chưa phụ thuộc trực tiếp vào nhau.
+- Sau khi S3 bucket tạo xong, Terraform mới đọc `data.aws_iam_policy_document.terraform_state`.
+- Bucket policy cần bucket ARN, nên nó chỉ tạo sau khi data policy đã đọc/tính xong.
+- Versioning, public access block và ownership controls đều gắn lên bucket vừa tạo.
+
+Đoạn tiếp:
+
+```text
+aws_kms_key.terraform_state: Creation complete after 9s [id=38aaa237-5b16-4d7e-811c-c634ae35de52]
+aws_kms_alias.terraform_state: Creating...
+aws_s3_bucket_server_side_encryption_configuration.terraform_state: Creating...
+aws_kms_alias.terraform_state: Creation complete after 0s [id=alias/newgate2601/terraform-state]
+aws_s3_bucket_server_side_encryption_configuration.terraform_state: Creation complete after 0s [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+```
+
+Ý nghĩa:
+
+- KMS key tạo xong và có ID thật `38aaa237-5b16-4d7e-811c-c634ae35de52`.
+- KMS alias chỉ tạo được sau khi key tồn tại, vì alias phải trỏ tới key.
+- S3 encryption config cũng chỉ tạo được sau khi KMS key tồn tại, vì encryption config cần `kms_master_key_id`.
+
+Đoạn DynamoDB:
+
+```text
+aws_dynamodb_table.terraform_lock: Still creating... [00m10s elapsed]
+aws_dynamodb_table.terraform_lock: Creation complete after 11s [id=terraform-state-lock]
+```
+
+Ý nghĩa:
+
+- DynamoDB table thường mất vài giây để AWS chuyển sang trạng thái usable.
+- Khi complete, table có ID/name là `terraform-state-lock`.
+- Sau này S3 backend dùng table này để lock state.
+
+Kết quả cuối:
+
+```text
+Apply complete! Resources: 9 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+kms_key_arn = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
+lock_table_name = "terraform-state-lock"
+state_bucket_name = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+```
+
+Đây là thời điểm AWS đã có backend thật:
+
+```text
+S3 bucket     -> newgate2601-terraform-state-150914615641-ap-southeast-1
+DynamoDB lock -> terraform-state-lock
+KMS key       -> 38aaa237-5b16-4d7e-811c-c634ae35de52
+KMS alias     -> alias/newgate2601/terraform-state
+```
+
+Nhưng state của bootstrap lúc này vẫn đang nằm local, vì `backend.tf` chưa được copy vào root module trước lệnh apply.
+
+#### 5.6. `terraform output kms_key_arn`
+
+Chạy:
+
+```powershell
+terraform output kms_key_arn
+```
+
+Lệnh này đọc output từ Terraform state.
+
+Nó không tạo resource mới. Nó chỉ lấy giá trị đã được Terraform biết sau apply:
+
+```text
+outputs.tf
+  -> output "kms_key_arn"
+  -> aws_kms_key.terraform_state.arn
+  -> giá trị ARN thật trong state
+```
+
+Giá trị này cần cho `remote-state/backend.tf` vì backend S3 phải biết KMS key nào dùng để mã hóa state object.
+
+Ví dụ:
+
+```text
+arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52
+```
+
+Trong lần chạy này, Terraform cũng in output ngay sau `apply`, nên có thể lấy trực tiếp dòng:
+
+```text
+kms_key_arn = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
+```
+
+Giá trị này phải được đưa vào `remote-state/backend.tf`:
+
+```hcl
+kms_key_id = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
+```
+
+### 6. Migrate bootstrap state lên S3
+
+Mở file:
+
+```text
+terraform/bootstrap/backend/remote-state/backend.tf
+```
+
+Kiểm tra các giá trị:
+
+```hcl
+bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+key            = "bootstrap/backend/terraform.tfstate"
+region         = "ap-southeast-1"
+dynamodb_table = "terraform-state-lock"
+encrypt        = true
+kms_key_id     = "<kms-key-arn-from-terraform-output>"
+```
+
+Thay `kms_key_id` bằng output thật từ `terraform output kms_key_arn`.
+
+File này không tạo S3 bucket. Nó chỉ nói với Terraform:
+
+```text
+Từ bây giờ state của module này sẽ được đọc/ghi ở đâu.
+```
+
+Các thành phần trong backend S3 phối hợp như sau:
+
+| Tham số | Kết nối tới đâu | Dùng để làm gì |
+|---|---|---|
+| `bucket` | S3 bucket vừa tạo ở bước apply | Nơi lưu file `terraform.tfstate`. |
+| `key` | Object path bên trong bucket | Tách state bootstrap khỏi state của module khác. |
+| `region` | AWS region của bucket/table | Giúp Terraform gọi đúng endpoint AWS. |
+| `dynamodb_table` | DynamoDB table vừa tạo | Lock state khi Terraform chạy. |
+| `encrypt` | S3 server-side encryption | Yêu cầu state object được mã hóa. |
+| `kms_key_id` | KMS key ARN vừa output | Chỉ định key mã hóa state. |
+
+Luồng state sau migrate:
+
+```text
+Trước migrate:
+  terraform/bootstrap/backend/terraform.tfstate trên máy local
+
+Sau migrate:
+  s3://newgate2601-terraform-state-150914615641-ap-southeast-1/bootstrap/backend/terraform.tfstate
+```
+
+Sau đó copy backend config vào root module bootstrap:
+
+```powershell
+Copy-Item remote-state\backend.tf backend.tf
+```
+
+Vì sao phải copy?
+
+Terraform chỉ tự đọc backend config ở root module hiện tại. File trong `remote-state/backend.tf` chỉ là bản mẫu để giữ an toàn ở lần chạy đầu. Khi copy thành:
+
+```text
+terraform/bootstrap/backend/backend.tf
+```
+
+Terraform mới xem nó là backend config chính thức của module bootstrap.
+
+Chạy migrate:
+
+```powershell
+terraform init -migrate-state
+```
+
+Note quan trọng:
+
+Lệnh `terraform init -migrate-state` thường chỉ cần chạy **một lần sau lần `terraform apply` bootstrap đầu tiên**.
+
+Lý do:
+
+```text
+Lần apply bootstrap đầu tiên
+  -> S3 backend chưa tồn tại
+  -> Terraform phải dùng local state
+  -> sau apply mới có S3 bucket thật
+  -> cần migrate state từ local lên S3
+
+Các lần sau
+  -> S3 backend đã tồn tại
+  -> backend.tf đã trỏ tới S3
+  -> Terraform tự đọc/ghi state trên S3
+  -> không cần terraform init -migrate-state nữa
+```
+
+Sau khi migrate thành công, luồng chạy bình thường là:
+
+```powershell
+terraform init
+terraform plan -out=tfplan
+terraform apply "tfplan"
+```
+
+Chỉ dùng lại `terraform init -migrate-state` khi thật sự muốn chuyển state từ nơi lưu cũ sang nơi lưu mới, ví dụ đổi backend hoặc đổi S3 bucket lưu state.
+
+Lệnh này khác `terraform init` lần đầu ở chỗ:
+
+```text
+terraform init
+  -> cài provider, cấu hình backend
+
+terraform init -migrate-state
+  -> cấu hình backend mới
+  -> phát hiện đang có state local
+  -> hỏi có muốn copy state local lên backend mới không
+```
+
+Nó kết hợp:
+
+| Thành phần | Vai trò |
+|---|---|
+| `backend.tf` | Backend mới là S3. |
+| Local `terraform.tfstate` | State cũ đang nằm trên máy. |
+| S3 bucket | Nơi nhận state mới. |
+| DynamoDB table | Lock trong lúc ghi state. |
+| KMS key | Mã hóa object state khi ghi lên S3. |
+| AWS credential | Quyền đọc/ghi S3, DynamoDB và dùng KMS key. |
+
+Khi Terraform hỏi:
+
+```text
+Do you want to copy existing state to the new backend?
 ```
 
 Nhập:
 
 ```text
-AWS Access Key ID     : access key của IAM user lab
-AWS Secret Access Key : secret key của IAM user lab
-Default region name   : ap-southeast-1
-Default output format : json
+yes
 ```
 
-Kiểm tra credential:
+Lưu ý: `yes` ở đây là câu trả lời tại dòng `Enter a value:` của Terraform, không phải lệnh PowerShell chạy riêng. Nếu Terraform đã kết thúc và bạn gõ `yes` ở prompt `PS ...>`, PowerShell sẽ báo không tìm thấy lệnh `yes`.
+
+Output thực tế trong lần chạy này:
+
+```text
+Do you want to copy existing state to the new backend?
+  Pre-existing state was found while migrating the previous "local" backend to the
+  newly configured "s3" backend. No existing state was found in the newly
+  configured "s3" backend. Do you want to copy this state to the new "s3"
+  backend? Enter "yes" to copy and "no" to start with an empty state.
+
+  Enter a value: yes
+
+Successfully configured the backend "s3"!
+```
+
+Đọc output này thật kỹ:
+
+| Câu trong output | Ý nghĩa |
+|---|---|
+| `Pre-existing state was found` | Terraform thấy state local đang có 9 resource vừa apply. |
+| `previous "local" backend` | Trước migrate, state nằm trên máy local. |
+| `newly configured "s3" backend` | Sau khi copy `backend.tf`, backend mới là S3. |
+| `No existing state was found in the newly configured "s3" backend` | Trong S3 key `bootstrap/backend/terraform.tfstate` chưa có state. Đây là đúng lần migrate đầu. |
+| `Enter "yes" to copy` | Nếu nhập `yes`, Terraform copy state local lên S3. |
+| `Successfully configured the backend "s3"` | Từ giờ module bootstrap đọc/ghi state qua S3 backend. |
+
+Từ lúc này, state của chính bootstrap cũng nằm trên S3.
+
+Tác động thực tế:
+
+```text
+Terraform local
+  -> đọc local terraform.tfstate
+  -> lấy lock qua DynamoDB
+  -> ghi state object lên S3 tại key bootstrap/backend/terraform.tfstate
+  -> S3 mã hóa object bằng KMS key đã cấu hình
+  -> các lần terraform plan/apply sau đọc state từ S3
+```
+
+Giá trị tạo ra:
+
+- State không còn phụ thuộc vào một laptop.
+- GitLab Runner sau này có thể dùng cùng backend.
+- Nếu chạy Terraform từ máy khác, chỉ cần có code + credential + backend config là đọc được state.
+- DynamoDB lock giúp tránh hai terminal/CI cùng sửa một state.
+
+Sau migrate, Terraform init lại provider:
+
+```text
+Initializing provider plugins...
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Using previously-installed hashicorp/aws v5.100.0
+```
+
+Khác với lần đầu, lần này provider đã có trong `.terraform`, nên Terraform dùng lại provider đã cài thay vì tải mới.
+
+Warning đã gặp:
+
+```text
+Warning: Deprecated Parameter
+The parameter "dynamodb_table" is deprecated. Use parameter "use_lockfile" instead.
+```
+
+Warning này đến từ `backend.tf`, không phải từ resource `aws_dynamodb_table`. Terraform version mới khuyến nghị cơ chế lock mới hơn. Trong bài này, warning không làm migrate thất bại; backend S3 vẫn được cấu hình thành công.
+
+Không commit các file state local nếu còn sót lại:
+
+```text
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+```
+
+### 7. Kiểm tra hoàn thành
+
+Kiểm tra bằng Terraform:
+
+```powershell
+terraform init
+terraform plan
+```
+
+Kết quả mong đợi sau khi đã apply và migrate:
+
+```text
+No changes. Your infrastructure matches the configuration.
+```
+
+Output thực tế trong lần chạy này khi chạy lại `terraform init`:
+
+```text
+Initializing the backend...
+
+Initializing provider plugins...
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Using previously-installed hashicorp/aws v5.100.0
+
+Terraform has been successfully initialized!
+```
+
+Điểm khác với `init -migrate-state`:
+
+- Không còn hỏi copy state nữa.
+- Terraform đã biết backend hiện tại là S3.
+- Provider đã có sẵn nên dùng lại bản đã cài.
+
+Output thực tế khi chạy `terraform plan` sau migrate:
+
+```text
+aws_kms_key.terraform_state: Refreshing state... [id=38aaa237-5b16-4d7e-811c-c634ae35de52]
+aws_s3_bucket.terraform_state: Refreshing state... [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+aws_dynamodb_table.terraform_lock: Refreshing state... [id=terraform-state-lock]
+aws_kms_alias.terraform_state: Refreshing state... [id=alias/newgate2601/terraform-state]
+aws_s3_bucket_public_access_block.terraform_state: Refreshing state... [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+aws_s3_bucket_ownership_controls.terraform_state: Refreshing state... [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+aws_s3_bucket_server_side_encryption_configuration.terraform_state: Refreshing state... [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+aws_s3_bucket_versioning.terraform_state: Refreshing state... [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+data.aws_iam_policy_document.terraform_state: Reading...
+data.aws_iam_policy_document.terraform_state: Read complete after 0s [id=1759525144]
+aws_s3_bucket_policy.terraform_state: Refreshing state... [id=newgate2601-terraform-state-150914615641-ap-southeast-1]
+
+No changes. Your infrastructure matches the configuration.
+```
+
+Đọc đoạn `Refreshing state`:
+
+```text
+Terraform remote state trên S3
+  -> biết đang quản lý KMS key, S3 bucket, DynamoDB table, alias, bucket configs
+  -> gọi AWS API để refresh trạng thái thật của từng resource
+  -> so sánh AWS thật với code .tf hiện tại
+```
+
+Kết quả `No changes` nghĩa là:
+
+```text
+Code Terraform hiện tại
+  == State trên S3
+  == Resource thật trên AWS
+```
+
+Đây là dấu hiệu hoàn thành tốt nhất của bước 3.1.
+
+Kiểm tra nhanh bằng AWS CLI nếu cần:
+
+```powershell
+aws s3api get-bucket-versioning --bucket newgate2601-terraform-state-150914615641-ap-southeast-1
+aws s3api get-public-access-block --bucket newgate2601-terraform-state-150914615641-ap-southeast-1
+aws dynamodb describe-table --table-name terraform-state-lock --region ap-southeast-1
+```
+
+### 8. Lỗi thường gặp
+
+| Lỗi | Cách xử lý nhanh |
+|---|---|
+| `terraform` is not recognized | Cài Terraform, mở terminal mới, kiểm tra `terraform version`. |
+| Terraform hỏi `var.project`, `var.owner`, `var.account_id` | Chưa có `terraform.tfvars`; copy từ `terraform.tfvars.example`. |
+| `No valid credential sources found` | Chạy `aws configure`, rồi kiểm tra `aws sts get-caller-identity`. |
+| Tên S3 bucket bị trùng | Đổi `state_bucket_name`, nên có project + account id + region. |
+| `AccessDenied` | IAM user lab thiếu quyền tạo S3, DynamoDB, KMS hoặc IAM policy. |
+| `terraform init -migrate-state` hỏi migrate | Đây là đúng luồng; nhập `yes` nếu backend config đã đúng. |
+| Warning `dynamodb_table` deprecated | Ghi nhận warning, bước này vẫn chạy được; refactor lock backend sau. |
+
+### 9. Kết quả sau bước này
+
+Trạng thái sau khi hoàn thành:
+
+```text
+[x] Có S3 bucket lưu Terraform state
+[x] Có DynamoDB table lock state
+[x] Có KMS key mã hóa state
+[x] Bootstrap state đã migrate lên S3
+[x] Terraform bootstrap sẵn sàng làm backend cho các root module sau
+```
+
+Bước tiếp theo là tạo root module đầu tiên cho hạ tầng dùng chung hoặc môi trường `dev`, theo cấu trúc trong `terraform/README.md`.
+
+---
+
+## Bước 3.2 - Tạo root module đầu tiên cho network dev
+
+### 1. Mục tiêu của bước này
+
+Mục tiêu của bước này là khởi tạo **root module Terraform đầu tiên sau bootstrap backend**.
+
+Trong bài thực hành này, ta chọn root module đầu tiên là:
+
+```text
+terraform/environments/dev/network
+```
+
+Root module này chưa cần tạo ngay VPC thật nếu bạn muốn đi chậm. Nhưng sau bước này, repo sẽ có bộ khung chuẩn để chuẩn bị tạo network cho môi trường `dev`.
+
+Sau khi hoàn thành, ta có:
+
+```text
+terraform/
+├── environments/
+│   └── dev/
+│       └── network/
+│           ├── versions.tf
+│           ├── backend.tf
+│           ├── providers.tf
+│           ├── variables.tf
+│           ├── locals.tf
+│           ├── main.tf
+│           ├── outputs.tf
+│           ├── terraform.tfvars.example
+│           └── README.md
+└── modules/
+    └── vpc/
+        ├── variables.tf
+        ├── main.tf
+        ├── outputs.tf
+        └── README.md
+```
+
+Ý nghĩa:
+
+- `environments/dev/network` là root module dành riêng cho network của môi trường `dev`.
+- `modules/vpc` là module dùng lại được, sau này `staging` và `production` cũng gọi lại module này với biến khác.
+- State của root module này được lưu riêng trong S3 backend tại key:
+
+```text
+dev/network/terraform.tfstate
+```
+
+Bước này phục vụ phần:
+
+```text
+Terraform
+AWS network
+Dev environment
+Nền tảng dùng lại cho EKS, RDS, MSK, ElastiCache sau này
+```
+
+### 2. Vì sao cần làm bước này
+
+Ở bước 3.1, ta mới tạo backend cho Terraform:
+
+```text
+S3 bucket      -> lưu state
+DynamoDB table -> lock state
+KMS key        -> mã hóa state
+```
+
+Nhưng backend chỉ là nơi lưu trạng thái. Nó chưa tạo VPC, subnet, route table, EKS, database hay service nào.
+
+Muốn bắt đầu dựng hạ tầng thật, ta cần root module đầu tiên.
+
+Root module là nơi Terraform được chạy trực tiếp bằng các lệnh:
+
+```powershell
+terraform init
+terraform plan
+terraform apply
+```
+
+Module dùng lại như `modules/vpc` không chạy trực tiếp. Nó giống một bộ linh kiện. Root module mới là nơi chọn linh kiện đó, truyền biến vào, cấu hình backend và tạo resource cho một phạm vi cụ thể.
+
+So sánh dễ hiểu:
+
+| Thành phần | Vai trò |
+|---|---|
+| `modules/vpc` | Công thức tạo VPC có thể dùng lại. |
+| `environments/dev/network` | Nơi gọi công thức đó để tạo network dev. |
+| `backend.tf` trong root module | Nơi nói state của network dev lưu ở đâu. |
+| `terraform.tfvars` | Giá trị cụ thể của dev, ví dụ CIDR, project, owner, region. |
+
+Nếu bỏ qua bước này:
+
+- Terraform backend đã có nhưng chưa có root module nào sử dụng backend đó.
+- Không có state riêng cho `dev/network`.
+- Dễ viết lẫn tài nguyên dev, shared-services, staging và production vào cùng một chỗ.
+- Sau này EKS, RDS, MSK, Redis không có network nền để gắn vào.
+- Module có thể bị viết hard-code cho dev, khó dùng lại cho staging/production.
+
+Nguyên tắc từ tài liệu `THUC-HANH-GITLAB-CI-ARGOCD-AWS-EKS.md` vẫn giữ nguyên:
+
+```text
+Nền tảng dùng chung hoàn thành
+  -> dev hoàn thành và được nghiệm thu
+  -> staging chỉ tạo sau khi dev đạt
+  -> production chỉ tạo sau khi staging đạt
+```
+
+Vì vậy bước này **không tạo staging** và **không tạo production**.
+
+### 3. Trước khi bắt đầu cần có gì
+
+Cần chuẩn bị:
+
+- Đã hoàn thành bước 3.1.
+- S3 bucket Terraform state đã tồn tại.
+- DynamoDB table lock đã tồn tại.
+- KMS key mã hóa state đã tồn tại.
+- AWS CLI đã đăng nhập đúng IAM user lab.
+- Terraform CLI chạy được.
+- Đang đứng ở repository:
+
+```powershell
+cd C:\code\springboot-learning
+```
+
+Kiểm tra nhanh AWS identity:
 
 ```powershell
 aws sts get-caller-identity
 ```
 
-Output cần thấy:
+Kết quả mong đợi:
 
 ```json
 {
@@ -1762,147 +2966,123 @@ Output cần thấy:
 }
 ```
 
-Trong đó:
+Kiểm tra backend bootstrap vẫn ổn:
 
-```text
-Account = AWS account id
-Arn     = IAM user/role đang dùng
+```powershell
+cd terraform\bootstrap\backend
+terraform init
+terraform plan
 ```
 
-Nếu chưa cấu hình credential mà chạy `terraform plan`, Terraform sẽ báo:
+Kết quả mong đợi:
 
 ```text
-No valid credential sources found
+No changes. Your infrastructure matches the configuration.
 ```
 
-và có thể thử gọi:
+Sau đó quay lại root repository:
+
+```powershell
+cd ..\..\..
+```
+
+### 4. Thao tác chi tiết
+
+#### 4.1. Xác định root module đầu tiên sẽ tạo
+
+Trong tài liệu `terraform/README.md`, cấu trúc môi trường đã được định hướng:
 
 ```text
-http://169.254.169.254/latest/meta-data/iam/security-credentials/
+terraform/environments/
+├── shared-services/
+├── dev/
+├── staging/
+└── production/
 ```
 
-Đây là EC2 metadata endpoint, chỉ dùng khi Terraform chạy trên EC2 có IAM role. Khi chạy local trên laptop thì không dùng đường này.
-
-#### 4.3. Chốt tên các service ứng dụng dùng xuyên suốt
-
-Từ bước này trở đi, bài thực hành dùng 3 service chính:
-
-| Service | Vai trò | Ghi chú triển khai |
-|---|---|---|
-| `gateway` | API Gateway/BFF nội bộ của hệ thống | Nhận request từ client, route tới service phía sau, xử lý cross-cutting concern phù hợp. |
-| `uaa` | User Account and Authentication service | Quản lý authentication, authorization, token, user/session hoặc tích hợp identity. |
-| `post-service` | Service nghiệp vụ bài viết/post | Quản lý post, tương tác database/cache/message nếu cần. |
-
-Các tài nguyên về container image, Helm values, Argo CD application, dashboard và alert sau này nên đi theo tên này.
-
-Ví dụ ECR repository sau này:
+Với `dev`, các root module dự kiến là:
 
 ```text
-gateway
-uaa
-post-service
+terraform/environments/dev/
+├── network
+├── eks
+├── data
+└── observability
 ```
 
-Ví dụ GitOps path sau này:
+Ta chọn `network` trước vì:
+
+- EKS cần VPC và subnet.
+- RDS, MSK, ElastiCache cần private/data subnet.
+- VPC endpoint, route table và security group là nền cho các service sau.
+- Nếu network sai, các tầng phía trên sẽ sai theo.
+
+Không tạo `eks`, `data`, `observability` ở bước này.
+
+#### 4.2. Tạo thư mục root module `dev/network`
+
+Chạy từ repository root:
+
+```powershell
+New-Item -ItemType Directory -Force terraform\environments\dev\network
+```
+
+Thư mục này là nơi chạy Terraform cho network dev.
+
+Sau này khi thao tác network dev, luôn vào thư mục này:
+
+```powershell
+cd terraform\environments\dev\network
+```
+
+Không chạy `terraform apply` ở toàn bộ thư mục `terraform/`, vì Terraform chỉ nên chạy trong đúng root module.
+
+#### 4.3. Tạo thư mục module dùng lại `modules/vpc`
+
+Chạy:
+
+```powershell
+New-Item -ItemType Directory -Force terraform\modules\vpc
+```
+
+Module này là nơi đặt code tạo VPC thật sau này.
+
+Ở bước này, ta có thể tạo skeleton trước:
 
 ```text
-applications/gateway/values-dev.yaml
-applications/uaa/values-dev.yaml
-applications/post-service/values-dev.yaml
+modules/vpc/
+├── variables.tf
+├── main.tf
+├── outputs.tf
+└── README.md
 ```
 
-Ví dụ namespace Kubernetes sau này:
+Lưu ý quan trọng:
 
 ```text
-gateway-dev
-uaa-dev
-post-service-dev
+Không hard-code giá trị dev trong modules/vpc.
 ```
 
-Hoặc nếu gom theo domain:
+Ví dụ không viết như này trong module:
 
-```text
-application-dev
+```hcl
+cidr_block = "10.20.0.0/16"
 ```
 
-Trong bài này, ưu tiên bắt đầu đơn giản với namespace theo môi trường, sau đó tách namespace theo service nếu nhu cầu phân quyền và network policy rõ hơn.
+Mà phải nhận từ biến:
 
-#### 4.4. Chốt các thành phần doanh nghiệp sẽ thêm theo lộ trình
-
-Ngoài 3 service chính, hệ thống thực hành sẽ cần thêm các thành phần nền tảng sau:
-
-| Nhóm | Thành phần | Mục đích |
-|---|---|---|
-| Source control | GitLab Self-Managed | Lưu source code, Terraform và GitOps repo riêng tư. |
-| CI | GitLab Runner EC2 Auto Scaling | Build/test/scan image, chạy Terraform plan/apply có kiểm soát. |
-| Registry | Amazon ECR | Lưu image của `gateway`, `uaa`, `post-service` theo digest. |
-| IaC | Terraform | Tạo AWS infrastructure bằng module dùng lại. |
-| Kubernetes | Amazon EKS | Chạy workload Spring Boot. |
-| GitOps | Argo CD | Đồng bộ manifest/Helm chart từ Git xuống EKS. |
-| Secret | AWS Secrets Manager + External Secrets Operator | Không lưu secret trực tiếp trong Git. |
-| Database | Amazon RDS for MariaDB | Database chính cho service cần dữ liệu quan hệ. |
-| Cache | Amazon ElastiCache Redis/Valkey | Cache, session hoặc distributed lock nếu cần. |
-| Messaging | Amazon MSK hoặc Kafka tương đương | Event/message giữa service nếu bài thực hành cần async flow. |
-| Object storage | Amazon S3 | Lưu file, artifact, backup hoặc object nghiệp vụ. |
-| Observability | CloudWatch, dashboard, log, metric, trace | Theo dõi hệ thống, debug, alert. |
-| Security | IAM least privilege, security group, network policy | Giảm quyền và giảm bề mặt tấn công. |
-
-Các thành phần này không tạo hết ngay bây giờ. Ta sẽ tạo theo đúng thứ tự:
-
-```text
-Terraform backend
-  -> network
-  -> GitLab/GitLab Runner hoặc repository nền
-  -> ECR
-  -> EKS dev
-  -> data services dev
-  -> add-on
-  -> GitOps
-  -> deploy gateway, uaa, post-service
+```hcl
+cidr_block = var.vpc_cidr
 ```
 
-#### 4.5. Tạo cấu trúc thư mục Terraform bootstrap
+Khác biệt của dev, staging và production sẽ nằm trong root module hoặc `.tfvars`, không nằm chết trong module.
 
-Trong repository hạ tầng, tạo cấu trúc:
-
-```text
-platform-infrastructure/
-├── bootstrap/
-│   └── backend/
-│       ├── versions.tf
-│       ├── providers.tf
-│       ├── variables.tf
-│       ├── locals.tf
-│       ├── main.tf
-│       ├── outputs.tf
-│       ├── terraform.tfvars.example
-│       └── README.md
-├── modules/
-└── environments/
-```
-
-Nếu hiện tại chưa tách repo `platform-infrastructure`, có thể đặt tạm trong repo đang học:
-
-```text
-terraform/
-├── bootstrap/
-│   └── backend/
-├── modules/
-└── environments/
-```
-
-Khi đưa lên GitLab Self-Managed, chuyển cấu trúc này vào repository:
-
-```text
-platform/platform-infrastructure
-```
-
-#### 4.6. Viết file `versions.tf`
+#### 4.4. Tạo `versions.tf` cho root module
 
 Tạo file:
 
 ```text
-terraform/bootstrap/backend/versions.tf
+terraform/environments/dev/network/versions.tf
 ```
 
 Nội dung:
@@ -1920,18 +3100,75 @@ terraform {
 }
 ```
 
-Ý nghĩa:
+File này khai báo:
 
-- Pin provider AWS theo major version `5.x`.
-- Tránh mỗi máy dùng một provider version quá khác nhau.
-- Sau này nâng version bằng Merge Request riêng.
+- Terraform CLI tối thiểu là `1.6.0`.
+- Root module này dùng AWS provider.
+- Dùng AWS provider dòng `5.x`, tránh tự nhảy major version ngoài kiểm soát.
 
-#### 4.7. Viết file `providers.tf`
+#### 4.5. Tạo `backend.tf` cho state riêng của `dev/network`
 
 Tạo file:
 
 ```text
-terraform/bootstrap/backend/providers.tf
+terraform/environments/dev/network/backend.tf
+```
+
+Nội dung:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+    key            = "dev/network/terraform.tfstate"
+    region         = "ap-southeast-1"
+    dynamodb_table = "terraform-state-lock"
+    encrypt        = true
+    kms_key_id     = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
+  }
+}
+```
+
+Giá trị cần thay theo account thật của bạn:
+
+| Tham số | Lấy từ đâu |
+|---|---|
+| `bucket` | Output `state_bucket_name` của bước 3.1. |
+| `region` | Region đã chọn, ví dụ `ap-southeast-1`. |
+| `dynamodb_table` | Output `lock_table_name` của bước 3.1. |
+| `kms_key_id` | Output `kms_key_arn` của bước 3.1. |
+
+Điểm quan trọng nhất là:
+
+```hcl
+key = "dev/network/terraform.tfstate"
+```
+
+`key` này giúp tách state network dev khỏi state bootstrap.
+
+So sánh:
+
+| Root module | Backend key |
+|---|---|
+| `terraform/bootstrap/backend` | `bootstrap/backend/terraform.tfstate` |
+| `terraform/environments/dev/network` | `dev/network/terraform.tfstate` |
+
+Không dùng chung một key cho nhiều root module.
+
+Sai nguy hiểm:
+
+```hcl
+key = "terraform.tfstate"
+```
+
+Nếu nhiều root module cùng dùng key chung như trên, state có thể ghi đè hoặc trộn tài nguyên, rất khó sửa.
+
+#### 4.6. Tạo `providers.tf`
+
+Tạo file:
+
+```text
+terraform/environments/dev/network/providers.tf
 ```
 
 Nội dung:
@@ -1946,784 +3183,834 @@ provider "aws" {
 }
 ```
 
-`default_tags` giúp mọi resource do Terraform tạo đều có tag chuẩn.
+Ý nghĩa:
 
-#### 4.8. Viết file `variables.tf`
+- Mọi resource AWS trong root module này sẽ tạo ở region `var.aws_region`.
+- Tag chung được gắn tự động qua `default_tags`.
+- Khi nhìn tài nguyên trên AWS Console, ta biết tài nguyên thuộc project, môi trường và component nào.
+
+#### 4.7. Tạo `variables.tf`
 
 Tạo file:
 
 ```text
-terraform/bootstrap/backend/variables.tf
+terraform/environments/dev/network/variables.tf
 ```
 
 Nội dung:
 
 ```hcl
 variable "aws_region" {
-  description = "AWS region used for Terraform backend resources."
+  description = "AWS region for dev network resources."
   type        = string
 }
 
 variable "project" {
-  description = "Project or platform name used in resource naming."
+  description = "Project name used for naming and tagging."
   type        = string
 }
 
 variable "environment" {
-  description = "Bootstrap environment name."
+  description = "Environment name."
   type        = string
-  default     = "bootstrap"
-}
-
-variable "account_id" {
-  description = "AWS account id used to make globally unique names."
-  type        = string
-}
-
-variable "state_bucket_name" {
-  description = "S3 bucket name for Terraform remote state."
-  type        = string
-}
-
-variable "lock_table_name" {
-  description = "DynamoDB table name for Terraform state locking."
-  type        = string
-  default     = "terraform-state-lock"
 }
 
 variable "owner" {
-  description = "Owner of these bootstrap resources."
+  description = "Owner of the resources."
   type        = string
+}
+
+variable "account_id" {
+  description = "AWS account id used for tagging and validation."
+  type        = string
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for the dev VPC."
+  type        = string
+}
+
+variable "availability_zones" {
+  description = "Availability zones used by the dev network."
+  type        = list(string)
 }
 ```
 
-Không hard-code account id, region hoặc owner trong resource.
+Các biến này chia làm hai nhóm:
 
-#### 4.9. Viết file `locals.tf`
+| Nhóm | Biến | Dùng để làm gì |
+|---|---|---|
+| Biến chung | `aws_region`, `project`, `environment`, `owner`, `account_id` | Provider, naming, tagging, audit. |
+| Biến network | `vpc_cidr`, `availability_zones` | Thiết kế VPC và subnet sau này. |
+
+Ở bước skeleton này, `vpc_cidr` và `availability_zones` có thể chưa được dùng trong resource thật. Nhưng khai báo trước giúp định hình interface của root module.
+
+#### 4.8. Tạo `locals.tf`
 
 Tạo file:
 
 ```text
-terraform/bootstrap/backend/locals.tf
+terraform/environments/dev/network/locals.tf
 ```
 
 Nội dung:
 
 ```hcl
 locals {
+  name_prefix = "${var.project}-${var.environment}"
+
   common_tags = {
     Project     = var.project
     Environment = var.environment
     ManagedBy   = "Terraform"
     Owner       = var.owner
-    Component   = "terraform-backend"
+    Component   = "network"
     AccountId   = var.account_id
   }
 }
 ```
 
-Tag chuẩn giúp sau này Cost Explorer, audit và cleanup dễ hơn.
+Ý nghĩa:
 
-#### 4.10. Viết file `main.tf`
+- `name_prefix` giúp đặt tên resource nhất quán, ví dụ `newgate2601-dev`.
+- `common_tags` giúp mọi resource có tag giống nhau.
+- `Component = "network"` phân biệt resource network với backend, EKS, data, observability.
+
+Sau này khi có VPC thật, tag sẽ giúp lọc tài nguyên trên AWS Console:
+
+```text
+Project     = newgate2601
+Environment = dev
+Component   = network
+ManagedBy   = Terraform
+Owner       = tony
+```
+
+#### 4.9. Tạo `main.tf` cho root module
 
 Tạo file:
 
 ```text
-terraform/bootstrap/backend/main.tf
+terraform/environments/dev/network/main.tf
+```
+
+Ở bước đầu tiên, có thể để root module gọi module VPC nhưng module chưa tạo resource thật:
+
+```hcl
+module "vpc" {
+  source = "../../../modules/vpc"
+
+  name_prefix        = local.name_prefix
+  vpc_cidr           = var.vpc_cidr
+  availability_zones = var.availability_zones
+  tags               = local.common_tags
+}
+```
+
+Đường dẫn:
+
+```hcl
+source = "../../../modules/vpc"
+```
+
+Giải thích đường dẫn từ `terraform/environments/dev/network`:
+
+```text
+network
+  -> đi lên dev
+  -> đi lên environments
+  -> đi lên terraform
+  -> vào modules/vpc
+```
+
+Tức là:
+
+```text
+../../../modules/vpc
+```
+
+Nếu đường dẫn sai, `terraform init` hoặc `terraform validate` sẽ báo không tìm thấy module.
+
+#### 4.10. Tạo `outputs.tf` cho root module
+
+Tạo file:
+
+```text
+terraform/environments/dev/network/outputs.tf
+```
+
+Nội dung ban đầu:
+
+```hcl
+output "name_prefix" {
+  description = "Name prefix used by dev network resources."
+  value       = local.name_prefix
+}
+```
+
+Khi module VPC tạo resource thật, ta sẽ bổ sung thêm:
+
+```hcl
+output "vpc_id" {
+  description = "Dev VPC id."
+  value       = module.vpc.vpc_id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet ids for application workloads."
+  value       = module.vpc.private_subnet_ids
+}
+
+output "data_subnet_ids" {
+  description = "Isolated subnet ids for data services."
+  value       = module.vpc.data_subnet_ids
+}
+```
+
+Nhưng ở bước skeleton, chưa cần output các giá trị chưa tồn tại.
+
+#### 4.11. Tạo `terraform.tfvars.example`
+
+Tạo file:
+
+```text
+terraform/environments/dev/network/terraform.tfvars.example
 ```
 
 Nội dung:
 
 ```hcl
-resource "aws_kms_key" "terraform_state" {
-  description             = "KMS key for Terraform remote state encryption"
-  deletion_window_in_days = 30
-  enable_key_rotation     = true
-}
+aws_region = "ap-southeast-1"
+project    = "newgate2601"
+environment = "dev"
+owner      = "tony"
+account_id = "150914615641"
 
-resource "aws_kms_alias" "terraform_state" {
-  name          = "alias/${var.project}/terraform-state"
-  target_key_id = aws_kms_key.terraform_state.key_id
-}
+vpc_cidr = "10.20.0.0/16"
 
-resource "aws_s3_bucket" "terraform_state" {
-  bucket = var.state_bucket_name
-}
-
-resource "aws_s3_bucket_versioning" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.terraform_state.arn
-      sse_algorithm     = "aws:kms"
-    }
-  }
-}
-
-resource "aws_s3_bucket_public_access_block" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_s3_bucket_ownership_controls" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-
-  rule {
-    object_ownership = "BucketOwnerEnforced"
-  }
-}
-
-data "aws_iam_policy_document" "terraform_state" {
-  statement {
-    sid    = "DenyInsecureTransport"
-    effect = "Deny"
-
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-
-    actions = ["s3:*"]
-
-    resources = [
-      aws_s3_bucket.terraform_state.arn,
-      "${aws_s3_bucket.terraform_state.arn}/*"
-    ]
-
-    condition {
-      test     = "Bool"
-      variable = "aws:SecureTransport"
-      values   = ["false"]
-    }
-  }
-
-  statement {
-    sid    = "DenyUnEncryptedObjectUploads"
-    effect = "Deny"
-
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-
-    actions = ["s3:PutObject"]
-
-    resources = [
-      "${aws_s3_bucket.terraform_state.arn}/*"
-    ]
-
-    condition {
-      test     = "Null"
-      variable = "s3:x-amz-server-side-encryption"
-      values   = ["true"]
-    }
-  }
-
-  statement {
-    sid    = "DenyIncorrectEncryptionHeader"
-    effect = "Deny"
-
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-
-    actions = ["s3:PutObject"]
-
-    resources = [
-      "${aws_s3_bucket.terraform_state.arn}/*"
-    ]
-
-    condition {
-      test     = "StringNotEquals"
-      variable = "s3:x-amz-server-side-encryption"
-      values   = ["aws:kms"]
-    }
-  }
-}
-
-resource "aws_s3_bucket_policy" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-  policy = data.aws_iam_policy_document.terraform_state.json
-}
-
-resource "aws_dynamodb_table" "terraform_lock" {
-  name         = var.lock_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  point_in_time_recovery {
-    enabled = true
-  }
-}
+availability_zones = [
+  "ap-southeast-1a",
+  "ap-southeast-1b",
+  "ap-southeast-1c"
+]
 ```
 
-Resource trên tạo:
+File `.example` được commit vào Git để làm mẫu.
 
-```text
-KMS key
-S3 bucket
-S3 versioning
-S3 encryption bằng KMS
-S3 public access block
-S3 ownership controls
-S3 policy ép HTTPS
-S3 policy ép PutObject phải dùng SSE-KMS
-DynamoDB lock table
-DynamoDB point-in-time recovery
+Khi chạy thật, copy thành:
+
+```powershell
+Copy-Item terraform.tfvars.example terraform.tfvars
 ```
 
-#### 4.11. Viết file `outputs.tf`
+File `terraform.tfvars` thật thường không commit vì có thể chứa giá trị riêng của account hoặc môi trường.
+
+#### 4.12. Tạo `README.md` cho root module
 
 Tạo file:
 
 ```text
-terraform/bootstrap/backend/outputs.tf
+terraform/environments/dev/network/README.md
+```
+
+Nội dung gợi ý:
+
+````md
+# Dev Network
+
+Root module này quản lý network nền cho môi trường `dev`.
+
+State backend:
+
+```text
+s3://newgate2601-terraform-state-150914615641-ap-southeast-1/dev/network/terraform.tfstate
+```
+
+Các tài nguyên dự kiến:
+
+- VPC.
+- Public subnet.
+- Private application subnet.
+- Isolated data subnet.
+- Internet Gateway.
+- NAT Gateway.
+- Route table.
+- VPC endpoint.
+- Security group nền.
+- VPC Flow Logs.
+
+Không đặt tài nguyên `staging` hoặc `production` trong root module này.
+````
+
+#### 4.13. Tạo skeleton cho `modules/vpc`
+
+Tạo file:
+
+```text
+terraform/modules/vpc/variables.tf
 ```
 
 Nội dung:
 
 ```hcl
-output "state_bucket_name" {
-  description = "S3 bucket name for Terraform remote state."
-  value       = aws_s3_bucket.terraform_state.bucket
+variable "name_prefix" {
+  description = "Prefix used for VPC resource names."
+  type        = string
 }
 
-output "lock_table_name" {
-  description = "DynamoDB table name for Terraform state locking."
-  value       = aws_dynamodb_table.terraform_lock.name
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC."
+  type        = string
 }
 
-output "kms_key_arn" {
-  description = "KMS key ARN for Terraform state encryption."
-  value       = aws_kms_key.terraform_state.arn
+variable "availability_zones" {
+  description = "Availability zones used by this VPC."
+  type        = list(string)
+}
+
+variable "tags" {
+  description = "Tags applied to VPC resources."
+  type        = map(string)
 }
 ```
-
-Các output này dùng để copy vào backend config của root module khác.
-
-#### 4.12. Viết file `terraform.tfvars.example`
 
 Tạo file:
 
 ```text
-terraform/bootstrap/backend/terraform.tfvars.example
+terraform/modules/vpc/main.tf
 ```
 
-Nội dung:
+Nội dung ban đầu:
 
 ```hcl
-aws_region        = "ap-southeast-1"
-project           = "newgate2601"
-environment       = "bootstrap"
-account_id        = "150914615641"
-state_bucket_name = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-lock_table_name   = "terraform-state-lock"
-owner             = "tony"
+# Resources will be added in the next network implementation step.
 ```
 
-Không commit file chứa secret. File này không chứa secret, nhưng khi tạo file thật `terraform.tfvars`, vẫn nên kiểm soát cẩn thận.
-
-Tạo file dùng thật ở local:
+Tạo file:
 
 ```text
-terraform/bootstrap/backend/terraform.tfvars
+terraform/modules/vpc/outputs.tf
 ```
 
-và điền giá trị thật của account.
+Nội dung ban đầu:
 
-#### 4.13. Chạy Terraform bootstrap bằng local state
-
-Đi tới thư mục bootstrap:
-
-```bash
-cd terraform/bootstrap/backend
+```hcl
+output "name_prefix" {
+  description = "Prefix used for VPC resource names."
+  value       = var.name_prefix
+}
 ```
+
+Tạo file:
+
+```text
+terraform/modules/vpc/README.md
+```
+
+Nội dung gợi ý:
+
+```md
+# VPC Module
+
+Module này dùng để tạo VPC và các thành phần network liên quan.
+
+Module không được hard-code giá trị riêng của `dev`, `staging` hoặc `production`.
+
+Các root module sẽ truyền vào:
+
+- `name_prefix`
+- `vpc_cidr`
+- `availability_zones`
+- `tags`
+```
+
+Vì module hiện chưa có resource AWS thật, `terraform plan` sẽ chưa tạo VPC. Đây là chủ ý của bước này: kiểm tra khung root module, backend và module wiring trước.
+
+#### 4.14. Copy file biến thật để chạy local
+
+Đi vào root module:
+
+```powershell
+cd terraform\environments\dev\network
+```
+
+Copy file biến:
+
+```powershell
+Copy-Item terraform.tfvars.example terraform.tfvars
+```
+
+Kiểm tra nội dung:
+
+```powershell
+Get-Content terraform.tfvars
+```
+
+Nếu account id, owner hoặc region khác thì sửa lại trước khi chạy Terraform.
+
+#### 4.15. Chạy `terraform fmt`
 
 Chạy:
 
-```bash
-terraform init
+```powershell
+terraform fmt -recursive
+```
+
+Lệnh này format cả root module và module con nếu chạy từ đúng thư mục có đường dẫn tới module.
+
+Nếu chỉ muốn format trong root module hiện tại:
+
+```powershell
 terraform fmt
-terraform validate
-terraform plan
-terraform apply
 ```
 
-Lưu ý:
+Kết quả mong đợi:
 
-- Đây là lần hiếm hoi dùng local state, vì backend chưa tồn tại.
-- Sau khi apply xong, phải giữ file local state bootstrap cẩn thận hoặc migrate bootstrap state lên chính S3 backend ở bước sau.
-- Không dùng local state cho network, EKS, data hoặc các module hạ tầng lớn.
+- Nếu file đã đúng format, lệnh có thể không in gì.
+- Nếu file được format lại, Terraform in tên file vừa sửa.
 
-#### 4.14. Sau khi backend được tạo, migrate bootstrap state lên S3
+#### 4.16. Chạy `terraform init`
 
-Trong repo, để tránh `terraform init` lần đầu bị lỗi vì S3 bucket chưa tồn tại, file backend chính thức được đặt tạm trong thư mục con:
-
-```text
-terraform/bootstrap/backend/remote-state/backend.tf
-```
-
-Nội dung:
-
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-    key            = "bootstrap/backend/terraform.tfstate"
-    region         = "ap-southeast-1"
-    dynamodb_table = "terraform-state-lock"
-    encrypt        = true
-    kms_key_id     = "<kms-key-arn-from-terraform-output>"
-  }
-}
-```
-
-Thay `<kms-key-arn-from-terraform-output>` bằng giá trị `kms_key_arn` sau khi chạy bootstrap `terraform apply`.
-
-Sau đó copy file backend lên root module bootstrap:
+Chạy:
 
 ```powershell
-Copy-Item remote-state\backend.tf backend.tf
+terraform init
 ```
 
-Rồi chạy:
-
-```bash
-terraform init -migrate-state
-```
-
-Terraform sẽ hỏi có muốn copy local state lên S3 backend không. Chọn:
+Lệnh này làm ba việc quan trọng:
 
 ```text
-yes
+Đọc backend.tf
+  -> kết nối S3 backend tại key dev/network/terraform.tfstate
+
+Đọc versions.tf
+  -> tải hoặc dùng lại AWS provider
+
+Đọc main.tf
+  -> tải module local ../../../modules/vpc
 ```
 
-Từ lúc này, ngay cả bootstrap backend cũng được quản lý bằng remote state.
-
-#### 4.15. Quy ước cấu trúc root module để scale lên dev, staging, production
-
-Sau bootstrap, cấu trúc dài hạn:
+Kết quả mong đợi:
 
 ```text
-terraform/
-├── bootstrap/
-│   └── backend/
-├── modules/
-│   ├── vpc/
-│   ├── ecr/
-│   ├── eks/
-│   ├── rds-mariadb/
-│   ├── msk/
-│   ├── elasticache/
-│   ├── s3/
-│   ├── iam/
-│   └── observability/
-└── environments/
-    ├── shared-services/
-    │   ├── gitlab/
-    │   ├── runner/
-    │   └── ecr/
-    ├── dev/
-    │   ├── network/
-    │   ├── eks/
-    │   ├── data/
-    │   └── observability/
-    ├── staging/
-    │   └── README.md
-    └── production/
-        └── README.md
-```
-
-Ban đầu `staging` và `production` chỉ có README hoặc placeholder, chưa apply tài nguyên.
-
-Khi dev đạt cổng nghiệm thu, staging sẽ dùng lại module:
-
-```text
-modules/vpc
-modules/eks
-modules/rds-mariadb
-modules/msk
-modules/elasticache
-modules/observability
-```
-
-Khác biệt chỉ nằm ở:
-
-```text
-terraform.tfvars
-backend key
-capacity
-CIDR
-backup retention
-deletion protection
-replica count
-domain name
-```
-
-#### 4.16. Quy ước backend key cho từng môi trường
-
-Không dùng một file state duy nhất cho tất cả tài nguyên.
-
-Quy ước key:
-
-```text
-bootstrap/backend/terraform.tfstate
-shared-services/gitlab/terraform.tfstate
-shared-services/runner/terraform.tfstate
-shared-services/ecr/terraform.tfstate
-dev/network/terraform.tfstate
-dev/eks/terraform.tfstate
-dev/data/terraform.tfstate
-dev/observability/terraform.tfstate
-staging/network/terraform.tfstate       # chỉ tạo sau khi dev đạt
-staging/eks/terraform.tfstate           # chỉ tạo sau khi dev đạt
-staging/data/terraform.tfstate          # chỉ tạo sau khi dev đạt
-production/network/terraform.tfstate    # chỉ tạo sau khi staging đạt
-production/eks/terraform.tfstate        # chỉ tạo sau khi staging đạt
-production/data/terraform.tfstate       # chỉ tạo sau khi staging đạt
-```
-
-Ví dụ backend cho `dev/network`:
-
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-    key            = "dev/network/terraform.tfstate"
-    region         = "ap-southeast-1"
-    dynamodb_table = "terraform-state-lock"
-    encrypt        = true
-    kms_key_id     = "<kms-key-arn-from-terraform-output>"
-  }
-}
-```
-
-Ví dụ backend cho `staging/network` sau này:
-
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-    key            = "staging/network/terraform.tfstate"
-    region         = "ap-southeast-1"
-    dynamodb_table = "terraform-state-lock"
-    encrypt        = true
-    kms_key_id     = "<kms-key-arn-from-terraform-output>"
-  }
-}
-```
-
-Chỉ khác `key`. Module vẫn là module dùng chung.
-
-#### 4.17. Nhật ký thực hành thực tế đã làm
-
-Trong lần thực hành này, ta đã làm theo đúng luồng bootstrap:
-
-```text
-1. Cài Terraform CLI trên Windows
-2. Cài AWS CLI trên Windows
-3. Tạo access key cho IAM user lab, không dùng root access key
-4. Cấu hình AWS credential local bằng aws configure
-5. Chạy terraform init
-6. Chạy terraform plan -out=tfplan
-7. Chạy terraform apply "tfplan"
-8. Lấy output kms_key_arn
-9. Thay KMS ARN vào remote-state/backend.tf
-10. Copy remote-state/backend.tf thành backend.tf
-11. Chạy terraform init -migrate-state
-12. Nhập yes để copy local state lên S3 backend
-```
-
-Các giá trị thực tế trong lab:
-
-```text
-AWS account id : 150914615641
-Region         : ap-southeast-1
-Project        : newgate2601
-Owner          : tony
-State bucket   : newgate2601-terraform-state-150914615641-ap-southeast-1
-Lock table     : terraform-state-lock
-KMS key ARN    : arn:aws:kms:ap-southeast-1:150914615641:key/ac4b9b4e-7e2c-4008-806f-9b4eae719f96
-```
-
-Kết quả `terraform apply "tfplan"`:
-
-```text
-Apply complete! Resources: 9 added, 0 changed, 0 destroyed.
-```
-
-Các resource đã được tạo:
-
-```text
-aws_kms_key.terraform_state
-aws_kms_alias.terraform_state
-aws_s3_bucket.terraform_state
-aws_s3_bucket_versioning.terraform_state
-aws_s3_bucket_server_side_encryption_configuration.terraform_state
-aws_s3_bucket_public_access_block.terraform_state
-aws_s3_bucket_ownership_controls.terraform_state
-aws_s3_bucket_policy.terraform_state
-aws_dynamodb_table.terraform_lock
-```
-
-Sau khi chạy:
-
-```powershell
-terraform init -migrate-state
-```
-
-Terraform hỏi:
-
-```text
-Do you want to copy existing state to the new backend?
-Enter a value:
-```
-
-Ta nhập:
-
-```text
-yes
-```
-
-Kết quả:
-
-```text
-Successfully configured the backend "s3"!
+Initializing the backend...
+Initializing modules...
+Initializing provider plugins...
 Terraform has been successfully initialized!
 ```
 
-Như vậy state bootstrap đã được copy từ local lên S3 backend.
+Nếu đây là lần đầu root module `dev/network` dùng backend key này, Terraform sẽ tạo state rỗng trên S3 khi cần ghi state.
 
-Lưu ý warning đã gặp:
+Khác với bước bootstrap, root module này **không cần** `terraform init -migrate-state` nếu chưa từng có local state cũ.
 
-```text
-Warning: Deprecated Parameter
-The parameter "dynamodb_table" is deprecated. Use parameter "use_lockfile" instead.
-```
+#### 4.17. Chạy `terraform validate`
 
-Warning này không làm bước 3.1 thất bại. Terraform vẫn migrate state thành công. Đây là cảnh báo do Terraform version mới khuyến nghị cơ chế lock mới hơn. Trong bài thực hành này, ta tạm ghi nhận warning này và có thể xử lý ở bước refactor/nâng cấp backend sau.
+Chạy:
 
-### 5. File/config/lệnh liên quan
-
-File cần tạo:
-
-| File | Mục đích |
-|---|---|
-| `terraform/bootstrap/backend/versions.tf` | Pin Terraform và AWS provider version. |
-| `terraform/bootstrap/backend/providers.tf` | Cấu hình AWS provider và default tags. |
-| `terraform/bootstrap/backend/variables.tf` | Khai báo biến đầu vào. |
-| `terraform/bootstrap/backend/locals.tf` | Tag chuẩn và giá trị dùng chung. |
-| `terraform/bootstrap/backend/main.tf` | Tạo KMS, S3 bucket, bucket policy, DynamoDB lock table. |
-| `terraform/bootstrap/backend/outputs.tf` | Xuất tên bucket, table, KMS key ARN. |
-| `terraform/bootstrap/backend/terraform.tfvars.example` | Mẫu giá trị biến. |
-| `terraform/bootstrap/backend/remote-state/backend.tf` | File backend chính thức, đặt trong thư mục con để Terraform không đọc ở lần init đầu tiên. |
-| `terraform/bootstrap/backend/backend.tf` | Được copy từ `remote-state/backend.tf` sau khi backend đã tồn tại để migrate state. |
-| `terraform/README.md` | Tài liệu tiếng Việt giải thích từng file, từng keyword và cách chạy cho người mới. |
-| `.gitignore` | Bỏ qua `.terraform/`, `*.tfstate`, `*.tfvars`, nhưng vẫn cho commit `*.tfvars.example` và `.terraform.lock.hcl`. |
-
-Tài nguyên AWS được tạo bằng Terraform:
-
-| Loại | Tên ví dụ | Mục đích |
-|---|---|---|
-| S3 bucket | `newgate2601-terraform-state-<account-id>-ap-southeast-1` | Lưu Terraform remote state. |
-| S3 versioning | Enabled | Giữ lịch sử state. |
-| S3 encryption | SSE-KMS | Mã hóa state bằng KMS key riêng. |
-| S3 public access block | Enabled | Không cho public state. |
-| S3 bucket policy | Deny insecure transport | Ép truy cập qua HTTPS. |
-| KMS key | `alias/newgate2601/terraform-state` | Mã hóa Terraform state. |
-| DynamoDB table | `terraform-state-lock` | Lock Terraform state. |
-| DynamoDB PITR | Enabled | Có điểm phục hồi cho lock table. |
-
-Command chính:
-
-```bash
-aws sts get-caller-identity
-terraform init
-terraform fmt
+```powershell
 terraform validate
-terraform plan -out=tfplan
-terraform apply "tfplan"
-terraform output kms_key_arn
-Copy-Item remote-state\backend.tf backend.tf
-terraform init -migrate-state
 ```
 
-Chỉ chạy `terraform apply` trong bootstrap backend. Chưa apply VPC, EKS, RDS, MSK hoặc ElastiCache.
-
-### 6. Giải thích từng phần quan trọng
-
-| Thành phần | Ý nghĩa | Ghi nhớ |
-|---|---|---|
-| Bootstrap Terraform | Terraform nhỏ chạy trước backend chính. | Có thể dùng local state một lần, sau đó migrate lên S3. |
-| S3 backend | Nơi Terraform lưu state. | Không commit `terraform.tfstate` vào Git. |
-| DynamoDB lock | Cơ chế khóa state khi Terraform chạy. | Tránh hai người hoặc CI apply cùng lúc. |
-| Bucket versioning | Giữ phiên bản cũ của state. | Hữu ích khi cần phục hồi. |
-| KMS encryption | Mã hóa state bằng key riêng. | Dễ audit và kiểm soát hơn SSE-S3 mặc định. |
-| Bucket policy | Ép HTTPS và chặn truy cập không an toàn. | State là dữ liệu nhạy cảm. |
-| State key | Đường dẫn state trong bucket. | Tách theo môi trường và miền tài nguyên. |
-| Root module | Thư mục Terraform gọi module để tạo tài nguyên thật. | Mỗi root module nên có backend key riêng. |
-| Reusable module | Module dùng lại cho dev/staging/production. | Không copy module thành nhiều bản riêng. |
-| `terraform.tfvars` | Giá trị khác nhau theo môi trường. | Không hard-code dev/staging/prod trong module. |
-| `.terraform.lock.hcl` | File khóa provider version sau `terraform init`. | Nên commit để các máy dùng cùng version provider. |
-
-#### Vì sao bootstrap được phép dùng local state?
-
-Vì lúc chưa có S3 backend, Terraform chưa có nơi remote để lưu state.
-
-Bootstrap local state là ngoại lệ có kiểm soát:
+Kết quả mong đợi:
 
 ```text
-Chỉ dùng cho backend ban đầu
-Chạy rất ít lần
-Sau khi backend tồn tại thì migrate state lên S3
-Không dùng cho workload hạ tầng chính
+Success! The configuration is valid.
 ```
 
-Đây là pattern thực tế hơn so với bấm Console thủ công.
+Lệnh này kiểm tra:
 
-#### Vì sao không copy module sang staging/prod?
+- Syntax HCL đúng.
+- Module source đúng.
+- Biến truyền vào module phù hợp.
+- Output không tham chiếu tới giá trị không tồn tại.
 
-Module phải dùng lại được:
+#### 4.18. Chạy `terraform plan`
 
-```text
-modules/vpc
-  -> environments/dev/network
-  -> environments/staging/network
-  -> environments/production/network
-```
+Chạy:
 
-Khác biệt nằm ở biến:
-
-```text
-dev.tfvars
-staging.tfvars
-production.tfvars
-```
-
-Nếu phải copy module thành ba bản khác nhau, nghĩa là thiết kế module chưa tốt.
-
-#### Vì sao cần tách state?
-
-Nếu dùng một state duy nhất:
-
-```text
-network + eks + data + gitlab + runner + ecr + observability
-```
-
-thì mỗi lần plan/apply sẽ nặng, rủi ro cao và khó phân quyền.
-
-Tách state giúp:
-
-```text
-dev/network
-dev/eks
-dev/data
-shared-services/ecr
-staging/network
-production/network
-```
-
-có thể thay đổi từng phần có kiểm soát.
-
-### 7. Kiểm tra hoàn thành
-
-Bước này hoàn thành khi:
-
-```text
-[x] Có S3 bucket riêng cho Terraform state
-[x] Bucket đã bật Block all public access
-[x] Bucket đã bật versioning
-[x] Bucket đã bật SSE-KMS encryption
-[x] Có KMS key riêng cho Terraform state
-[x] Có DynamoDB table terraform-state-lock
-[x] DynamoDB table có partition key LockID kiểu String
-[x] Bootstrap state đã được migrate lên S3 backend
-[x] Đã chốt 3 service chính: gateway, uaa, post-service
-[x] Đã chốt quy ước state key cho shared-services, dev, staging, production
-```
-
-Kiểm tra bằng CLI:
-
-```bash
-aws sts get-caller-identity
-aws s3api get-bucket-versioning --bucket newgate2601-terraform-state-150914615641-ap-southeast-1
-aws s3api get-public-access-block --bucket newgate2601-terraform-state-150914615641-ap-southeast-1
-aws dynamodb describe-table --table-name terraform-state-lock --region ap-southeast-1
-```
-
-Kiểm tra bằng Terraform:
-
-```bash
-cd terraform/bootstrap/backend
-terraform init
+```powershell
 terraform plan
 ```
 
-Kết quả mong đợi sau khi apply xong:
+Vì module VPC hiện chỉ là skeleton chưa có resource AWS, kết quả mong đợi có thể là:
 
 ```text
 No changes. Your infrastructure matches the configuration.
 ```
 
+Điều này không có nghĩa là bước sai. Nó chỉ nói rằng:
+
+```text
+Root module đã đọc được
+Backend đã cấu hình được
+Module local đã nối được
+Nhưng chưa có resource AWS nào để tạo
+```
+
+Nếu bạn đã thêm resource VPC thật vào `modules/vpc/main.tf`, lúc đó `terraform plan` sẽ hiện danh sách resource chuẩn bị tạo.
+
+### 5. File/config/lệnh liên quan
+
+Các file cần tạo cho root module:
+
+| File | Ý nghĩa |
+|---|---|
+| `terraform/environments/dev/network/versions.tf` | Khai báo Terraform và provider version. |
+| `terraform/environments/dev/network/backend.tf` | Cấu hình remote state riêng cho network dev. |
+| `terraform/environments/dev/network/providers.tf` | Cấu hình AWS provider và default tags. |
+| `terraform/environments/dev/network/variables.tf` | Khai báo biến đầu vào của root module. |
+| `terraform/environments/dev/network/locals.tf` | Tạo `name_prefix` và tag chung. |
+| `terraform/environments/dev/network/main.tf` | Gọi module `modules/vpc`. |
+| `terraform/environments/dev/network/outputs.tf` | In giá trị quan trọng sau plan/apply. |
+| `terraform/environments/dev/network/terraform.tfvars.example` | File mẫu giá trị dev. |
+| `terraform/environments/dev/network/README.md` | Ghi chú phạm vi root module. |
+
+Các file cần tạo cho module dùng lại:
+
+| File | Ý nghĩa |
+|---|---|
+| `terraform/modules/vpc/variables.tf` | Interface đầu vào của module VPC. |
+| `terraform/modules/vpc/main.tf` | Nơi sẽ tạo VPC, subnet, route table ở bước sau. |
+| `terraform/modules/vpc/outputs.tf` | Output trả về cho root module. |
+| `terraform/modules/vpc/README.md` | Tài liệu ngắn cho module VPC. |
+
+Các lệnh chính:
+
+```powershell
+New-Item -ItemType Directory -Force terraform\environments\dev\network
+New-Item -ItemType Directory -Force terraform\modules\vpc
+
+cd terraform\environments\dev\network
+Copy-Item terraform.tfvars.example terraform.tfvars
+
+terraform fmt -recursive
+terraform init
+terraform validate
+terraform plan
+```
+
+Các giá trị backend cần nhất quán với bước 3.1:
+
+```hcl
+bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+region         = "ap-southeast-1"
+dynamodb_table = "terraform-state-lock"
+kms_key_id     = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
+```
+
+Giá trị backend key riêng của bước này:
+
+```hcl
+key = "dev/network/terraform.tfstate"
+```
+
+### 6. Giải thích từng phần quan trọng
+
+#### Root module là gì?
+
+Root module là thư mục Terraform mà bạn trực tiếp chạy lệnh:
+
+```powershell
+terraform init
+terraform plan
+terraform apply
+```
+
+Trong bài này:
+
+```text
+terraform/environments/dev/network
+```
+
+là root module.
+
+Root module chịu trách nhiệm:
+
+- Chọn backend state.
+- Chọn provider region.
+- Nhận giá trị `.tfvars`.
+- Gọi module dùng lại.
+- Xuất output cho root module khác hoặc người vận hành đọc.
+
+#### Module dùng lại là gì?
+
+Module dùng lại là thư mục Terraform được gọi bằng:
+
+```hcl
+module "vpc" {
+  source = "../../../modules/vpc"
+}
+```
+
+Trong bài này:
+
+```text
+terraform/modules/vpc
+```
+
+là module dùng lại.
+
+Module không nên biết nó đang chạy cho `dev`, `staging` hay `production` bằng cách hard-code. Nó chỉ nhận biến.
+
+Ví dụ đúng:
+
+```hcl
+resource "aws_vpc" "this" {
+  cidr_block = var.vpc_cidr
+  tags       = var.tags
+}
+```
+
+Ví dụ không nên:
+
+```hcl
+resource "aws_vpc" "this" {
+  cidr_block = "10.20.0.0/16"
+}
+```
+
+#### Vì sao chọn `dev/network` trước?
+
+Network là nền của các tầng sau:
+
+```text
+dev/network
+  -> dev/eks
+  -> dev/data
+  -> dev/observability
+```
+
+EKS cần subnet để đặt node.
+
+RDS cần subnet group.
+
+MSK cần subnet và security group.
+
+ElastiCache cần subnet group.
+
+VPC endpoint giúp private subnet truy cập AWS service mà không phải đi public internet.
+
+Vì vậy network phải đi trước.
+
+#### Vì sao backend key phải tách theo root module?
+
+Terraform state là bộ nhớ của từng root module.
+
+Nếu `bootstrap/backend` và `dev/network` dùng chung state key, Terraform sẽ nghĩ tài nguyên của hai phạm vi này thuộc cùng một root module. Điều đó làm plan khó đọc và tăng nguy cơ sửa nhầm.
+
+Tách đúng:
+
+```text
+bootstrap/backend/terraform.tfstate
+dev/network/terraform.tfstate
+dev/eks/terraform.tfstate
+dev/data/terraform.tfstate
+```
+
+Tách như vậy giúp:
+
+- Plan nhỏ hơn.
+- Apply ít rủi ro hơn.
+- Lock độc lập hơn.
+- Dễ phân quyền CI theo từng phạm vi.
+- Dễ debug khi một phần hạ tầng lỗi.
+
+#### Vì sao chưa tạo staging/production?
+
+Theo nguyên tắc đã chốt:
+
+```text
+Dev chưa đạt nghiệm thu
+  -> chưa tạo staging
+
+Staging chưa đạt nghiệm thu
+  -> chưa tạo production
+```
+
+Ở bước này, ta chỉ tạo skeleton cho `dev/network`. Nếu cần giữ placeholder `staging` và `production`, chỉ để `README.md`, không có backend thật và không apply.
+
+#### Vì sao có `terraform.tfvars.example` nhưng không commit `terraform.tfvars`?
+
+`terraform.tfvars.example` là mẫu cho mọi người biết cần điền gì.
+
+`terraform.tfvars` là file chạy thật trên máy hoặc trong CI.
+
+File chạy thật có thể chứa:
+
+- Account id thật.
+- CIDR nội bộ.
+- Domain.
+- Tên owner.
+- Một số giá trị riêng của môi trường.
+
+Vì vậy nguyên tắc an toàn là:
+
+```text
+Commit terraform.tfvars.example
+Không commit terraform.tfvars
+```
+
+#### Vì sao plan có thể `No changes`?
+
+Ở bước này, module VPC mới là skeleton.
+
+Nếu `modules/vpc/main.tf` chưa có resource như:
+
+```hcl
+resource "aws_vpc" "this" {
+  ...
+}
+```
+
+thì Terraform không có gì để tạo. `No changes` trong tình huống này chỉ chứng minh cấu hình đọc được, backend chạy được và module nối được.
+
+Bước tiếp theo mới thêm resource VPC thật.
+
+### 7. Kiểm tra hoàn thành
+
+Bước này hoàn thành khi có đủ cấu trúc:
+
+```text
+terraform/environments/dev/network
+terraform/modules/vpc
+```
+
+Kiểm tra bằng lệnh:
+
+```powershell
+Get-ChildItem terraform\environments\dev\network
+Get-ChildItem terraform\modules\vpc
+```
+
+Kết quả mong đợi trong `dev/network`:
+
+```text
+backend.tf
+locals.tf
+main.tf
+outputs.tf
+providers.tf
+README.md
+terraform.tfvars
+terraform.tfvars.example
+variables.tf
+versions.tf
+```
+
+Kết quả mong đợi trong `modules/vpc`:
+
+```text
+main.tf
+outputs.tf
+README.md
+variables.tf
+```
+
+Kiểm tra Terraform:
+
+```powershell
+cd terraform\environments\dev\network
+terraform fmt -check -recursive
+terraform init
+terraform validate
+terraform plan
+```
+
+Kết quả mong đợi:
+
+```text
+Terraform has been successfully initialized!
+Success! The configuration is valid.
+No changes. Your infrastructure matches the configuration.
+```
+
+Nếu đã thêm resource VPC thật, `terraform plan` sẽ không còn `No changes`, mà sẽ hiển thị các resource chuẩn bị tạo. Khi đó phải đọc kỹ plan trước khi apply.
+
+Kiểm tra state object trên S3 sau khi đã từng chạy plan/apply có ghi state:
+
+```powershell
+aws s3 ls s3://newgate2601-terraform-state-150914615641-ap-southeast-1/dev/network/
+```
+
+Kết quả mong đợi sau khi state được ghi:
+
+```text
+terraform.tfstate
+```
+
+Nếu chưa có object state nhưng `terraform init` và `terraform plan` vẫn thành công, chưa chắc là lỗi. Với skeleton không resource, Terraform có thể chưa cần ghi state có nội dung đáng kể.
+
 ### 8. Lỗi thường gặp và cách xử lý
 
 | Lỗi | Nguyên nhân thường gặp | Cách xử lý |
 |---|---|---|
-| `terraform` is not recognized | Terraform CLI chưa cài hoặc terminal chưa nhận PATH mới. | Cài Terraform, đóng/mở lại PowerShell hoặc restart IntelliJ terminal. |
-| IntelliJ Terminal vẫn không nhận `terraform` dù PowerShell ngoài nhận | IntelliJ đang chạy process cũ, chưa reload PATH. | Tắt hẳn IntelliJ rồi mở lại, hoặc chạy bằng PowerShell ngoài. |
-| `aws` is not recognized | AWS CLI chưa cài hoặc chưa có trong PATH. | Cài AWS CLI, mở terminal mới rồi kiểm tra `aws --version`. |
-| `No valid credential sources found` | Chưa cấu hình AWS credential local cho Terraform/AWS provider. | Tạo access key cho IAM user lab, chạy `aws configure`, kiểm tra `aws sts get-caller-identity`. |
-| Terraform thử gọi `169.254.169.254` | AWS provider không thấy credential local nên thử EC2 metadata. | Cấu hình AWS CLI credential đúng; chạy local không dùng EC2 metadata. |
-| Tên S3 bucket bị trùng | Bucket name là duy nhất toàn cầu. | Thêm account id, region hoặc prefix cá nhân. |
-| `terraform init` tải provider lỗi | Máy chưa có mạng hoặc registry Terraform bị chặn. | Kiểm tra network/proxy, chạy lại khi truy cập được registry. |
-| `AccessDenied` khi tạo KMS/S3/DynamoDB | IAM user lab thiếu quyền. | Kiểm tra user thuộc `LabAdmin` hoặc policy bootstrap phù hợp. |
-| Bucket bị public warning | Cấu hình public access block thiếu. | Kiểm tra resource `aws_s3_bucket_public_access_block`. |
-| Terraform init báo không tìm thấy bucket | Sai tên bucket hoặc sai region trong backend. | Kiểm tra lại `bucket` và `region` trong `backend.tf`. |
-| Terraform init báo không tìm thấy DynamoDB table | Sai tên table hoặc table tạo ở region khác. | Tạo table đúng `terraform-state-lock` ở `ap-southeast-1`. |
-| `terraform init -migrate-state` hỏi migrate | Đây là hành vi đúng. | Chọn `yes` nếu backend đã tạo đúng. |
-| Warning `dynamodb_table` deprecated | Terraform version mới khuyến nghị cơ chế lock mới. | Ghi nhận warning; bước 3.1 vẫn thành công nếu backend S3 init thành công. Có thể refactor sau. |
-| Lock bị kẹt | Terraform trước đó bị ngắt giữa chừng. | Kiểm tra thật kỹ rồi dùng `terraform force-unlock` nếu chắc chắn không còn process đang chạy. |
-| Lỡ commit terraform.tfstate vào Git | Chạy Terraform local backend hoặc quên `.gitignore`. | Xóa khỏi Git history nếu có secret, thêm `.terraform/` và `*.tfstate*` vào `.gitignore`. |
-| Module khó dùng lại cho staging/prod | Hard-code giá trị dev trong module. | Đưa khác biệt ra biến và `.tfvars`, module chỉ giữ logic dùng chung. |
+| `Module not found` | Sai đường dẫn `source = "../../../modules/vpc"`. | Kiểm tra từ `terraform/environments/dev/network` đi lên 3 cấp rồi vào `modules/vpc`. |
+| `Unsupported argument` | Root module truyền biến nhưng module VPC chưa khai báo biến đó. | Thêm biến tương ứng vào `terraform/modules/vpc/variables.tf`. |
+| `Reference to undeclared input variable` | Dùng `var.xxx` nhưng chưa khai báo trong `variables.tf`. | Khai báo biến trong root module hoặc module đúng nơi. |
+| Terraform hỏi `var.aws_region` | Chưa có `terraform.tfvars` hoặc file thiếu biến. | Copy `terraform.tfvars.example` thành `terraform.tfvars`, điền đủ giá trị. |
+| `No valid credential sources found` | AWS credential chưa cấu hình. | Chạy `aws configure` hoặc kiểm tra profile đang dùng. |
+| `AccessDenied` khi init backend | IAM user thiếu quyền đọc/ghi S3, DynamoDB hoặc KMS. | Kiểm tra quyền với bucket state, lock table và KMS key. |
+| `Error loading state: AccessDenied` | Backend bucket đúng nhưng credential không được đọc state key. | Kiểm tra policy S3/KMS và đúng account/region. |
+| `Failed to get existing workspaces` | Backend S3 không truy cập được hoặc sai bucket/region. | Kiểm tra `bucket`, `region`, AWS credential và network. |
+| Plan báo tạo resource staging/production | Đặt nhầm source, biến hoặc code của môi trường khác vào dev. | Dừng lại, sửa lại phạm vi root module; không apply. |
+| `terraform fmt -check` fail | File HCL chưa đúng format. | Chạy `terraform fmt -recursive`, xem file nào thay đổi. |
+
+Lỗi cần đặc biệt chú ý:
+
+```text
+Backend key dùng sai hoặc trùng với root module khác
+```
+
+Ví dụ nếu `dev/network/backend.tf` vô tình dùng:
+
+```hcl
+key = "bootstrap/backend/terraform.tfstate"
+```
+
+thì phải sửa ngay thành:
+
+```hcl
+key = "dev/network/terraform.tfstate"
+```
+
+Không chạy `apply` khi backend key chưa chắc chắn đúng.
 
 ### 9. Kết quả sau bước này
 
-Trạng thái hệ thống sau khi hoàn thành:
+Trạng thái sau khi hoàn thành:
 
 ```text
-[x] AWS account lab đã có bảo vệ cơ bản
-[x] Có CloudTrail audit
-[x] Có budget/cost alert
-[x] Có Terraform bootstrap code tạo remote state backend
-[x] Có DynamoDB state locking
-[x] Có KMS key mã hóa Terraform state
-[x] Bootstrap state đã migrate lên S3
-[x] Terraform CLI đã chạy được trên Windows
-[x] AWS CLI đã được cài và dùng để cấu hình credential
-[x] Terraform apply tạo thành công 9 resource backend
-[x] KMS key ARN thực tế đã được đưa vào backend config
-[x] Đã chốt service chính: gateway, uaa, post-service
-[x] Sẵn sàng tạo root module Terraform đầu tiên theo pattern dev/staging/prod
+[x] Đã có root module đầu tiên: terraform/environments/dev/network
+[x] Đã có backend key riêng: dev/network/terraform.tfstate
+[x] Đã có provider, variables, locals, outputs và tfvars example cho network dev
+[x] Đã có skeleton module dùng lại: terraform/modules/vpc
+[x] Terraform init/validate/plan chạy được cho root module đầu tiên
+[x] Chưa tạo staging hoặc production
+[x] Chưa tạo EKS/RDS/MSK/ElastiCache
 ```
 
-Bước tiếp theo là **Bước 3.2 - Cài AWS CLI, Terraform và cấu hình credential cho IAM user lab**.
+Sau bước này, repo đã sẵn sàng để viết resource network thật.
 
+Bước tiếp theo là triển khai nội dung thật cho `modules/vpc` và `environments/dev/network`, gồm:
+
+```text
+VPC
+public subnet
+private application subnet
+isolated data subnet
+Internet Gateway
+NAT Gateway
+route table
+VPC endpoint
+security group nền
+VPC Flow Logs
+```
+
+Khi bước network dev chạy ổn, các root module sau mới lần lượt dùng output của network:
+
+```text
+dev/network
+  -> dev/eks
+  -> dev/data
+  -> dev/observability
+```
