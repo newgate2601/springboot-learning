@@ -1,0 +1,13 @@
+aws_region  = "ap-southeast-1"
+project     = "newgate2601"
+environment = "dev"
+owner       = "tony"
+account_id  = "150914615641"
+
+vpc_cidr = "10.20.0.0/16"
+
+availability_zones = [
+  "ap-southeast-1a",
+  "ap-southeast-1b",
+  "ap-southeast-1c"
+]
