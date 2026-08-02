@@ -2829,15 +2829,29 @@ Bước tiếp theo là tạo root module đầu tiên cho hạ tầng dùng chu
 
 ### 1. Mục tiêu của bước này
 
-Mục tiêu của bước này là khởi tạo **root module Terraform đầu tiên sau bootstrap backend**.
+Mục tiêu là tạo bộ khung Terraform đầu tiên dùng cho network của môi trường `dev`.
 
-Trong bài thực hành này, ta chọn root module đầu tiên là:
+Sau bước 3.1, ta đã có nơi lưu state:
+
+```text
+S3 bucket  : lưu terraform.tfstate
+DynamoDB   : lock state khi plan/apply
+KMS key    : mã hóa state
+```
+
+Nhưng bước 3.1 chưa tạo network. Bước 3.2 này chỉ tạo khung để chuẩn bị cho network dev.
+
+Root module sẽ nằm ở:
 
 ```text
 terraform/environments/dev/network
 ```
 
-Root module này chưa cần tạo ngay VPC thật nếu bạn muốn đi chậm. Nhưng sau bước này, repo sẽ có bộ khung chuẩn để chuẩn bị tạo network cho môi trường `dev`.
+Module VPC dùng lại sẽ nằm ở:
+
+```text
+terraform/modules/vpc
+```
 
 Sau khi hoàn thành, ta có:
 
@@ -2863,78 +2877,24 @@ terraform/
         └── README.md
 ```
 
-Ý nghĩa:
+Ghi nhớ ngắn:
 
-- `environments/dev/network` là root module dành riêng cho network của môi trường `dev`.
-- `modules/vpc` là module dùng lại được, sau này `staging` và `production` cũng gọi lại module này với biến khác.
-- State của root module này được lưu riêng trong S3 backend tại key:
+| Thành phần | Nghĩa đơn giản |
+|---|---|
+| `terraform/environments/dev/network` | Nơi chạy `terraform init`, `plan`, `apply` cho network dev. |
+| `terraform/modules/vpc` | Bộ code VPC dùng lại. Root module sẽ gọi module này. |
+| `backend.tf` | Nói state của network dev lưu ở đâu. |
+| `terraform.tfvars` | Giá trị thật của môi trường dev, ví dụ region, CIDR, owner. |
+
+State của network dev sẽ lưu riêng tại key:
 
 ```text
 dev/network/terraform.tfstate
 ```
 
-Bước này phục vụ phần:
+Ở bước này, module VPC chỉ là bộ khung ban đầu: có thư mục và file cần thiết, nhưng chưa tạo VPC thật.
 
-```text
-Terraform
-AWS network
-Dev environment
-Nền tảng dùng lại cho EKS, RDS, MSK, ElastiCache sau này
-```
-
-### 2. Vì sao cần làm bước này
-
-Ở bước 3.1, ta mới tạo backend cho Terraform:
-
-```text
-S3 bucket      -> lưu state
-DynamoDB table -> lock state
-KMS key        -> mã hóa state
-```
-
-Nhưng backend chỉ là nơi lưu trạng thái. Nó chưa tạo VPC, subnet, route table, EKS, database hay service nào.
-
-Muốn bắt đầu dựng hạ tầng thật, ta cần root module đầu tiên.
-
-Root module là nơi Terraform được chạy trực tiếp bằng các lệnh:
-
-```powershell
-terraform init
-terraform plan
-terraform apply
-```
-
-Module dùng lại như `modules/vpc` không chạy trực tiếp. Nó giống một bộ linh kiện. Root module mới là nơi chọn linh kiện đó, truyền biến vào, cấu hình backend và tạo resource cho một phạm vi cụ thể.
-
-So sánh dễ hiểu:
-
-| Thành phần | Vai trò |
-|---|---|
-| `modules/vpc` | Công thức tạo VPC có thể dùng lại. |
-| `environments/dev/network` | Nơi gọi công thức đó để tạo network dev. |
-| `backend.tf` trong root module | Nơi nói state của network dev lưu ở đâu. |
-| `terraform.tfvars` | Giá trị cụ thể của dev, ví dụ CIDR, project, owner, region. |
-
-Nếu bỏ qua bước này:
-
-- Terraform backend đã có nhưng chưa có root module nào sử dụng backend đó.
-- Không có state riêng cho `dev/network`.
-- Dễ viết lẫn tài nguyên dev, shared-services, staging và production vào cùng một chỗ.
-- Sau này EKS, RDS, MSK, Redis không có network nền để gắn vào.
-- Module có thể bị viết hard-code cho dev, khó dùng lại cho staging/production.
-
-Nguyên tắc từ tài liệu `THUC-HANH-GITLAB-CI-ARGOCD-AWS-EKS.md` vẫn giữ nguyên:
-
-```text
-Nền tảng dùng chung hoàn thành
-  -> dev hoàn thành và được nghiệm thu
-  -> staging chỉ tạo sau khi dev đạt
-  -> production chỉ tạo sau khi staging đạt
-```
-
-Vì vậy bước này **không tạo staging** và **không tạo production**.
-
-### 3. Trước khi bắt đầu cần có gì
+### 2. Trước khi bắt đầu cần có gì
 
 Cần chuẩn bị:
 
@@ -2986,7 +2946,46 @@ Sau đó quay lại root repository:
 cd ..\..\..
 ```
 
-### 4. Thao tác chi tiết
+### 3. File Terraform đã chuẩn bị
+
+Các file của root module nằm ở:
+
+```text
+terraform/environments/dev/network
+```
+
+Gồm:
+
+| File | Vai trò ngắn gọn |
+|---|---|
+| `versions.tf` | Khai báo Terraform và AWS provider version. |
+| `backend.tf` | Cấu hình remote state riêng cho network dev. |
+| `providers.tf` | Cấu hình AWS provider và default tags. |
+| `variables.tf` | Khai báo input cần truyền vào. |
+| `locals.tf` | Gom tên chuẩn và tag chung. |
+| `main.tf` | Gọi module dùng lại `modules/vpc`. |
+| `outputs.tf` | In ra giá trị quan trọng của network dev. |
+| `terraform.tfvars.example` | File mẫu để tạo input thật. |
+| `README.md` | Ghi chú phạm vi root module. |
+
+Các file của module VPC dùng lại nằm ở:
+
+```text
+terraform/modules/vpc
+```
+
+Gồm:
+
+| File | Vai trò ngắn gọn |
+|---|---|
+| `variables.tf` | Khai báo input mà module VPC nhận từ root module. |
+| `main.tf` | Nơi sẽ tạo VPC, subnet, route table ở bước sau. |
+| `outputs.tf` | Output trả về cho root module. |
+| `README.md` | Tài liệu ngắn cho module VPC. |
+
+Không cần tạo `staging` hoặc `production` ở bước này.
+
+### 4. Tạo bộ khung root module và module dùng lại
 
 #### 4.1. Xác định root module đầu tiên sẽ tạo
 
@@ -3047,7 +3046,7 @@ New-Item -ItemType Directory -Force terraform\modules\vpc
 
 Module này là nơi đặt code tạo VPC thật sau này.
 
-Ở bước này, ta có thể tạo skeleton trước:
+Ở bước này, ta tạo bộ khung trước:
 
 ```text
 modules/vpc/
@@ -3243,7 +3242,7 @@ Các biến này chia làm hai nhóm:
 | Biến chung | `aws_region`, `project`, `environment`, `owner`, `account_id` | Provider, naming, tagging, audit. |
 | Biến network | `vpc_cidr`, `availability_zones` | Thiết kế VPC và subnet sau này. |
 
-Ở bước skeleton này, `vpc_cidr` và `availability_zones` có thể chưa được dùng trong resource thật. Nhưng khai báo trước giúp định hình interface của root module.
+Ở bước tạo bộ khung này, `vpc_cidr` và `availability_zones` có thể chưa được dùng trong resource thật. Nhưng khai báo trước giúp ta biết root module cần nhận những giá trị nào.
 
 #### 4.8. Tạo `locals.tf`
 
@@ -3367,7 +3366,7 @@ output "data_subnet_ids" {
 }
 ```
 
-Nhưng ở bước skeleton, chưa cần output các giá trị chưa tồn tại.
+Nhưng ở bước tạo bộ khung, chưa cần output các giá trị chưa tồn tại.
 
 #### 4.11. Tạo `terraform.tfvars.example`
 
@@ -3442,7 +3441,7 @@ Các tài nguyên dự kiến:
 Không đặt tài nguyên `staging` hoặc `production` trong root module này.
 ````
 
-#### 4.13. Tạo skeleton cho `modules/vpc`
+#### 4.13. Tạo bộ khung cho `modules/vpc`
 
 Tạo file:
 
@@ -3524,9 +3523,25 @@ Các root module sẽ truyền vào:
 - `tags`
 ```
 
-Vì module hiện chưa có resource AWS thật, `terraform plan` sẽ chưa tạo VPC. Đây là chủ ý của bước này: kiểm tra khung root module, backend và module wiring trước.
+Vì module hiện chưa có resource AWS thật, `terraform plan` sẽ chưa tạo VPC. Đây là chủ ý của bước này: kiểm tra root module, backend và đường dẫn tới module trước.
 
-#### 4.14. Copy file biến thật để chạy local
+### 5. Tạo file input thật
+
+Lúc này repo mới có file mẫu:
+
+```text
+terraform/environments/dev/network/terraform.tfvars.example
+```
+
+File mẫu được commit vào Git để người khác biết cần điền biến nào.
+
+File chạy thật là:
+
+```text
+terraform/environments/dev/network/terraform.tfvars
+```
+
+File này thường không commit vì nó có thể chứa giá trị riêng của account hoặc môi trường.
 
 Đi vào root module:
 
@@ -3548,20 +3563,58 @@ Get-Content terraform.tfvars
 
 Nếu account id, owner hoặc region khác thì sửa lại trước khi chạy Terraform.
 
-#### 4.15. Chạy `terraform fmt`
+### 6. Chạy Terraform cho root module `dev/network`
 
-Chạy:
+Khác với bước 3.1, bước này **không bootstrap backend nữa**.
+
+Ở bước 3.1:
+
+```text
+Lần đầu backend S3 chưa tồn tại
+  -> phải chạy bằng local state trước
+  -> sau đó mới migrate state lên S3
+```
+
+Ở bước 3.2:
+
+```text
+Backend S3 đã tồn tại
+  -> root module dev/network dùng remote state ngay từ đầu
+  -> không cần terraform init -migrate-state nếu chưa có local state cũ
+```
+
+Điểm cần kiểm tra kỹ nhất trước khi chạy là `backend.tf` của `dev/network` phải dùng key riêng:
+
+```hcl
+key = "dev/network/terraform.tfstate"
+```
+
+Không được dùng lại key của bootstrap:
+
+```hcl
+key = "bootstrap/backend/terraform.tfstate"
+```
+
+#### 6.1. `terraform fmt`
+
+Chạy từ thư mục `terraform` để format cả `environments` và `modules`:
 
 ```powershell
+cd C:\code\springboot-learning\terraform
 terraform fmt -recursive
 ```
 
-Lệnh này format cả root module và module con nếu chạy từ đúng thư mục có đường dẫn tới module.
+Lệnh này format các file `.tf` bên dưới thư mục hiện tại:
 
-Nếu chỉ muốn format trong root module hiện tại:
+```text
+terraform/environments/dev/network
+terraform/modules/vpc
+```
+
+Sau đó quay lại root module `dev/network` để chạy các lệnh tiếp theo:
 
 ```powershell
-terraform fmt
+cd environments\dev\network
 ```
 
 Kết quả mong đợi:
@@ -3569,7 +3622,23 @@ Kết quả mong đợi:
 - Nếu file đã đúng format, lệnh có thể không in gì.
 - Nếu file được format lại, Terraform in tên file vừa sửa.
 
-#### 4.16. Chạy `terraform init`
+Ví dụ output có thể gặp:
+
+```text
+main.tf
+```
+
+Ý nghĩa là Terraform vừa sửa format file `main.tf`.
+
+Nếu lệnh không in gì:
+
+```text
+Không có output
+```
+
+thì đó cũng là bình thường. Nó nghĩa là các file đã đúng format.
+
+#### 6.2. `terraform init`
 
 Chạy:
 
@@ -3603,7 +3672,39 @@ Nếu đây là lần đầu root module `dev/network` dùng backend key này, T
 
 Khác với bước bootstrap, root module này **không cần** `terraform init -migrate-state` nếu chưa từng có local state cũ.
 
-#### 4.17. Chạy `terraform validate`
+Giải thích từng dòng quan trọng:
+
+| Output | Ý nghĩa |
+|---|---|
+| `Initializing the backend...` | Terraform đọc `backend.tf` và kết nối S3 backend. |
+| `Initializing modules...` | Terraform đọc block `module "vpc"` trong `main.tf`. |
+| `Initializing provider plugins...` | Terraform chuẩn bị AWS provider theo `versions.tf`. |
+| `Terraform has been successfully initialized!` | Root module đã sẵn sàng để validate/plan/apply. |
+
+Sau lệnh này, Terraform thường tạo thư mục:
+
+```text
+.terraform/
+```
+
+và file:
+
+```text
+.terraform.lock.hcl
+```
+
+Ý nghĩa:
+
+| File/thư mục | Có commit không | Ý nghĩa |
+|---|---|---|
+| `.terraform/` | Không | Cache provider/module trên máy local. |
+| `.terraform.lock.hcl` | Có | Khóa version provider để team dùng nhất quán. |
+
+Nếu `terraform init` hỏi migrate state, cần dừng lại đọc kỹ.
+
+Với root module mới hoàn toàn, thường không cần migrate. Nếu trước đó bạn từng chạy nhầm bằng local state và đã có `terraform.tfstate`, lúc đó mới cân nhắc migrate.
+
+#### 6.3. `terraform validate`
 
 Chạy:
 
@@ -3624,7 +3725,16 @@ Lệnh này kiểm tra:
 - Biến truyền vào module phù hợp.
 - Output không tham chiếu tới giá trị không tồn tại.
 
-#### 4.18. Chạy `terraform plan`
+Giải thích output:
+
+| Output | Ý nghĩa |
+|---|---|
+| `Success! The configuration is valid.` | Terraform hiểu toàn bộ cấu hình hiện tại. |
+| `Error: Unsupported argument` | Root module truyền biến mà module VPC chưa khai báo. |
+| `Error: Reference to undeclared input variable` | Có `var.xxx` nhưng chưa khai báo biến. |
+| `Error: Module not found` | Đường dẫn `source = "../../../modules/vpc"` chưa đúng. |
+
+#### 6.4. `terraform plan`
 
 Chạy:
 
@@ -3632,243 +3742,83 @@ Chạy:
 terraform plan
 ```
 
-Vì module VPC hiện chỉ là skeleton chưa có resource AWS, kết quả mong đợi có thể là:
+Vì module VPC hiện chỉ là bộ khung chưa có resource AWS, `terraform plan` sẽ chưa tạo VPC, subnet hay route table.
+
+Nhưng root module vẫn có output:
+
+```hcl
+output "name_prefix" {
+  description = "Name prefix used by dev network resources."
+  value       = local.name_prefix
+}
+```
+
+Vì vậy nếu backend state của `dev/network` chưa từng lưu output này, kết quả mong đợi có thể là:
+
+```text
+Changes to Outputs:
+  + name_prefix = "newgate2601-dev"
+
+You can apply this plan to save these new output values to the Terraform state, without changing any real infrastructure.
+```
+
+Ý nghĩa:
+
+```text
+Terraform chưa tạo resource AWS nào
+Nhưng Terraform muốn lưu output name_prefix vào state
+Nếu apply plan này thì chỉ ghi output vào state, không tạo hạ tầng thật
+```
+
+Sau khi output đã được lưu vào state, chạy `terraform plan` lại mới có thể ra:
 
 ```text
 No changes. Your infrastructure matches the configuration.
 ```
 
-Điều này không có nghĩa là bước sai. Nó chỉ nói rằng:
+Điều này cũng không có nghĩa là bước sai. Nó chỉ nói rằng:
 
 ```text
 Root module đã đọc được
 Backend đã cấu hình được
 Module local đã nối được
-Nhưng chưa có resource AWS nào để tạo
+Chưa có resource AWS nào để tạo
+Output trong cấu hình đã khớp với state
 ```
 
 Nếu bạn đã thêm resource VPC thật vào `modules/vpc/main.tf`, lúc đó `terraform plan` sẽ hiện danh sách resource chuẩn bị tạo.
 
-### 5. File/config/lệnh liên quan
+Giải thích các output thường gặp trong bước này:
 
-Các file cần tạo cho root module:
-
-| File | Ý nghĩa |
+| Output | Ý nghĩa |
 |---|---|
-| `terraform/environments/dev/network/versions.tf` | Khai báo Terraform và provider version. |
-| `terraform/environments/dev/network/backend.tf` | Cấu hình remote state riêng cho network dev. |
-| `terraform/environments/dev/network/providers.tf` | Cấu hình AWS provider và default tags. |
-| `terraform/environments/dev/network/variables.tf` | Khai báo biến đầu vào của root module. |
-| `terraform/environments/dev/network/locals.tf` | Tạo `name_prefix` và tag chung. |
-| `terraform/environments/dev/network/main.tf` | Gọi module `modules/vpc`. |
-| `terraform/environments/dev/network/outputs.tf` | In giá trị quan trọng sau plan/apply. |
-| `terraform/environments/dev/network/terraform.tfvars.example` | File mẫu giá trị dev. |
-| `terraform/environments/dev/network/README.md` | Ghi chú phạm vi root module. |
+| `Warning: Deprecated Parameter` với `dynamodb_table` | Terraform version mới cảnh báo cơ chế lock DynamoDB đang deprecated. Đây là warning backend, chưa làm plan fail. |
+| `Changes to Outputs` | Có output mới, ví dụ `name_prefix`, chưa được lưu trong state của root module này. |
+| `You can apply this plan to save these new output values...` | Nếu apply, Terraform chỉ lưu output vào state, không tạo resource AWS thật. |
+| `No changes. Your infrastructure matches the configuration.` | Cấu hình, output và state đã khớp; module hiện chưa có resource AWS thật để tạo. |
+| `Plan: 0 to add, 0 to change, 0 to destroy.` | Không có tài nguyên nào sẽ bị tạo/sửa/xóa. |
+| `Note: You didn't use the -out option...` | Bạn chạy plan để xem trên màn hình, chưa lưu plan thành file. Đây là note bình thường. |
 
-Các file cần tạo cho module dùng lại:
-
-| File | Ý nghĩa |
-|---|---|
-| `terraform/modules/vpc/variables.tf` | Interface đầu vào của module VPC. |
-| `terraform/modules/vpc/main.tf` | Nơi sẽ tạo VPC, subnet, route table ở bước sau. |
-| `terraform/modules/vpc/outputs.tf` | Output trả về cho root module. |
-| `terraform/modules/vpc/README.md` | Tài liệu ngắn cho module VPC. |
-
-Các lệnh chính:
-
-```powershell
-New-Item -ItemType Directory -Force terraform\environments\dev\network
-New-Item -ItemType Directory -Force terraform\modules\vpc
-
-cd terraform\environments\dev\network
-Copy-Item terraform.tfvars.example terraform.tfvars
-
-terraform fmt -recursive
-terraform init
-terraform validate
-terraform plan
-```
-
-Các giá trị backend cần nhất quán với bước 3.1:
-
-```hcl
-bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-region         = "ap-southeast-1"
-dynamodb_table = "terraform-state-lock"
-kms_key_id     = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
-```
-
-Giá trị backend key riêng của bước này:
-
-```hcl
-key = "dev/network/terraform.tfstate"
-```
-
-### 6. Giải thích từng phần quan trọng
-
-#### Root module là gì?
-
-Root module là thư mục Terraform mà bạn trực tiếp chạy lệnh:
-
-```powershell
-terraform init
-terraform plan
-terraform apply
-```
-
-Trong bài này:
+Nếu sau này module VPC đã có resource thật, output sẽ chuyển thành dạng:
 
 ```text
-terraform/environments/dev/network
+Plan: 10 to add, 0 to change, 0 to destroy.
 ```
 
-là root module.
+Khi đó phải đọc kỹ từng resource trước khi `terraform apply`.
 
-Root module chịu trách nhiệm:
+Ở cuối bước 3.2, có hai cách đi tiếp:
 
-- Chọn backend state.
-- Chọn provider region.
-- Nhận giá trị `.tfvars`.
-- Gọi module dùng lại.
-- Xuất output cho root module khác hoặc người vận hành đọc.
+| Cách | Khi nào dùng | Ý nghĩa |
+|---|---|---|
+| Dừng sau `terraform plan` | Chỉ muốn kiểm tra bộ khung, backend và đường dẫn tới module. | Chưa ghi output vào state. |
+| Chạy `terraform apply` | Muốn lưu output `name_prefix` vào remote state ngay. | Không tạo hạ tầng thật nếu plan chỉ có `Changes to Outputs`. |
 
-#### Module dùng lại là gì?
-
-Module dùng lại là thư mục Terraform được gọi bằng:
-
-```hcl
-module "vpc" {
-  source = "../../../modules/vpc"
-}
-```
-
-Trong bài này:
-
-```text
-terraform/modules/vpc
-```
-
-là module dùng lại.
-
-Module không nên biết nó đang chạy cho `dev`, `staging` hay `production` bằng cách hard-code. Nó chỉ nhận biến.
-
-Ví dụ đúng:
-
-```hcl
-resource "aws_vpc" "this" {
-  cidr_block = var.vpc_cidr
-  tags       = var.tags
-}
-```
-
-Ví dụ không nên:
-
-```hcl
-resource "aws_vpc" "this" {
-  cidr_block = "10.20.0.0/16"
-}
-```
-
-#### Vì sao chọn `dev/network` trước?
-
-Network là nền của các tầng sau:
-
-```text
-dev/network
-  -> dev/eks
-  -> dev/data
-  -> dev/observability
-```
-
-EKS cần subnet để đặt node.
-
-RDS cần subnet group.
-
-MSK cần subnet và security group.
-
-ElastiCache cần subnet group.
-
-VPC endpoint giúp private subnet truy cập AWS service mà không phải đi public internet.
-
-Vì vậy network phải đi trước.
-
-#### Vì sao backend key phải tách theo root module?
-
-Terraform state là bộ nhớ của từng root module.
-
-Nếu `bootstrap/backend` và `dev/network` dùng chung state key, Terraform sẽ nghĩ tài nguyên của hai phạm vi này thuộc cùng một root module. Điều đó làm plan khó đọc và tăng nguy cơ sửa nhầm.
-
-Tách đúng:
-
-```text
-bootstrap/backend/terraform.tfstate
-dev/network/terraform.tfstate
-dev/eks/terraform.tfstate
-dev/data/terraform.tfstate
-```
-
-Tách như vậy giúp:
-
-- Plan nhỏ hơn.
-- Apply ít rủi ro hơn.
-- Lock độc lập hơn.
-- Dễ phân quyền CI theo từng phạm vi.
-- Dễ debug khi một phần hạ tầng lỗi.
-
-#### Vì sao chưa tạo staging/production?
-
-Theo nguyên tắc đã chốt:
-
-```text
-Dev chưa đạt nghiệm thu
-  -> chưa tạo staging
-
-Staging chưa đạt nghiệm thu
-  -> chưa tạo production
-```
-
-Ở bước này, ta chỉ tạo skeleton cho `dev/network`. Nếu cần giữ placeholder `staging` và `production`, chỉ để `README.md`, không có backend thật và không apply.
-
-#### Vì sao có `terraform.tfvars.example` nhưng không commit `terraform.tfvars`?
-
-`terraform.tfvars.example` là mẫu cho mọi người biết cần điền gì.
-
-`terraform.tfvars` là file chạy thật trên máy hoặc trong CI.
-
-File chạy thật có thể chứa:
-
-- Account id thật.
-- CIDR nội bộ.
-- Domain.
-- Tên owner.
-- Một số giá trị riêng của môi trường.
-
-Vì vậy nguyên tắc an toàn là:
-
-```text
-Commit terraform.tfvars.example
-Không commit terraform.tfvars
-```
-
-#### Vì sao plan có thể `No changes`?
-
-Ở bước này, module VPC mới là skeleton.
-
-Nếu `modules/vpc/main.tf` chưa có resource như:
-
-```hcl
-resource "aws_vpc" "this" {
-  ...
-}
-```
-
-thì Terraform không có gì để tạo. `No changes` trong tình huống này chỉ chứng minh cấu hình đọc được, backend chạy được và module nối được.
-
-Bước tiếp theo mới thêm resource VPC thật.
+Nếu chọn apply, đọc kỹ plan và chỉ tiếp tục khi chắc chắn không có dòng resource AWS nào dạng `will be created`.
 
 ### 7. Kiểm tra hoàn thành
 
-Bước này hoàn thành khi có đủ cấu trúc:
+Kiểm tra thư mục đã có đủ:
 
 ```text
 terraform/environments/dev/network
@@ -3906,11 +3856,12 @@ README.md
 variables.tf
 ```
 
-Kiểm tra Terraform:
+Kiểm tra Terraform trong root module:
 
 ```powershell
-cd terraform\environments\dev\network
+cd C:\code\springboot-learning\terraform
 terraform fmt -check -recursive
+cd environments\dev\network
 terraform init
 terraform validate
 terraform plan
@@ -3921,12 +3872,21 @@ Kết quả mong đợi:
 ```text
 Terraform has been successfully initialized!
 Success! The configuration is valid.
+Changes to Outputs:
+  + name_prefix = "newgate2601-dev"
+```
+
+Output trên là bình thường ở lần đầu, vì Terraform muốn lưu output `name_prefix` vào state. Nó chưa tạo resource AWS thật.
+
+Nếu output đã từng được lưu vào state trước đó, `terraform plan` có thể ra:
+
+```text
 No changes. Your infrastructure matches the configuration.
 ```
 
-Nếu đã thêm resource VPC thật, `terraform plan` sẽ không còn `No changes`, mà sẽ hiển thị các resource chuẩn bị tạo. Khi đó phải đọc kỹ plan trước khi apply.
+Nếu chọn `terraform apply` để lưu output, chỉ tiếp tục khi plan không có resource AWS nào dạng `will be created`.
 
-Kiểm tra state object trên S3 sau khi đã từng chạy plan/apply có ghi state:
+Kiểm tra state object trên S3 sau khi đã apply để ghi state:
 
 ```powershell
 aws s3 ls s3://newgate2601-terraform-state-150914615641-ap-southeast-1/dev/network/
@@ -3938,7 +3898,7 @@ Kết quả mong đợi sau khi state được ghi:
 terraform.tfstate
 ```
 
-Nếu chưa có object state nhưng `terraform init` và `terraform plan` vẫn thành công, chưa chắc là lỗi. Với skeleton không resource, Terraform có thể chưa cần ghi state có nội dung đáng kể.
+Nếu chưa có object state nhưng `terraform init` và `terraform plan` vẫn thành công, chưa chắc là lỗi. Với bộ khung chưa có resource, Terraform có thể chưa cần ghi state có nội dung đáng kể.
 
 ### 8. Lỗi thường gặp và cách xử lý
 
@@ -3952,6 +3912,8 @@ Nếu chưa có object state nhưng `terraform init` và `terraform plan` vẫn 
 | `AccessDenied` khi init backend | IAM user thiếu quyền đọc/ghi S3, DynamoDB hoặc KMS. | Kiểm tra quyền với bucket state, lock table và KMS key. |
 | `Error loading state: AccessDenied` | Backend bucket đúng nhưng credential không được đọc state key. | Kiểm tra policy S3/KMS và đúng account/region. |
 | `Failed to get existing workspaces` | Backend S3 không truy cập được hoặc sai bucket/region. | Kiểm tra `bucket`, `region`, AWS credential và network. |
+| Warning `dynamodb_table` deprecated | Terraform version mới khuyến nghị cơ chế lock mới hơn cho S3 backend. | Ghi nhận warning, bước này vẫn chạy được; refactor backend lock sau nếu muốn đồng bộ theo Terraform mới. |
+| `Changes to Outputs` với `name_prefix` | Output mới chưa được lưu vào state. | Đây là bình thường; có thể apply nếu plan không tạo/sửa/xóa resource AWS. |
 | Plan báo tạo resource staging/production | Đặt nhầm source, biến hoặc code của môi trường khác vào dev. | Dừng lại, sửa lại phạm vi root module; không apply. |
 | `terraform fmt -check` fail | File HCL chưa đúng format. | Chạy `terraform fmt -recursive`, xem file nào thay đổi. |
 
@@ -3983,7 +3945,7 @@ Trạng thái sau khi hoàn thành:
 [x] Đã có root module đầu tiên: terraform/environments/dev/network
 [x] Đã có backend key riêng: dev/network/terraform.tfstate
 [x] Đã có provider, variables, locals, outputs và tfvars example cho network dev
-[x] Đã có skeleton module dùng lại: terraform/modules/vpc
+[x] Đã có bộ khung module dùng lại: terraform/modules/vpc
 [x] Terraform init/validate/plan chạy được cho root module đầu tiên
 [x] Chưa tạo staging hoặc production
 [x] Chưa tạo EKS/RDS/MSK/ElastiCache
@@ -4007,6 +3969,570 @@ VPC Flow Logs
 ```
 
 Khi bước network dev chạy ổn, các root module sau mới lần lượt dùng output của network:
+
+```text
+dev/network
+  -> dev/eks
+  -> dev/data
+  -> dev/observability
+```
+
+## Bước 3.3 - Triển khai network dev thật bằng module VPC
+
+### 1. Mục tiêu của bước này
+
+Mục tiêu là biến bộ khung `modules/vpc` ở bước 3.2 thành module VPC có resource AWS thật.
+
+Sau bước này ta có network nền cho môi trường `dev`:
+
+```text
+VPC
+├── public subnet trên 3 AZ
+├── private application subnet trên 3 AZ
+└── isolated data subnet trên 3 AZ
+```
+
+Kèm theo:
+
+```text
+Internet Gateway : cho public subnet đi Internet
+NAT Gateway      : cho private subnet đi ra ngoài khi cần
+Route table      : điều hướng traffic theo từng loại subnet
+VPC endpoint     : đi tới một số AWS service qua private network
+Security group   : nhóm rule nền cho endpoint/internal traffic
+VPC Flow Logs    : ghi log network để audit và troubleshoot
+```
+
+Ở bước này **chưa tạo EKS, RDS, MSK, ElastiCache, staging hoặc production**.
+
+### 2. Trước khi bắt đầu cần có gì
+
+Cần chuẩn bị:
+
+- Đã hoàn thành bước 3.2.
+- `terraform/environments/dev/network` đã `terraform init` được.
+- `terraform/modules/vpc` đã có bộ khung ban đầu.
+- Backend key của network dev là:
+
+```hcl
+key = "dev/network/terraform.tfstate"
+```
+
+- AWS CLI đang dùng đúng account lab.
+- Terraform CLI chạy được.
+
+Kiểm tra nhanh:
+
+```powershell
+cd C:\code\springboot-learning\terraform\environments\dev\network
+aws sts get-caller-identity
+terraform validate
+terraform plan
+```
+
+Nếu `terraform plan` hiện `Changes to Outputs` với `name_prefix`, đó vẫn là trạng thái bình thường của bộ khung bước 3.2.
+
+### 3. File Terraform cần cập nhật
+
+Cập nhật root module:
+
+```text
+terraform/environments/dev/network
+```
+
+Gồm:
+
+| File | Vai trò ngắn gọn |
+|---|---|
+| `variables.tf` | Bổ sung input cho subnet CIDR, NAT và VPC endpoint. |
+| `terraform.tfvars.example` | Điền CIDR mẫu cho network dev. |
+| `terraform.tfvars` | Điền giá trị thật để chạy local. |
+| `main.tf` | Truyền biến mới vào `modules/vpc`. |
+| `outputs.tf` | Output VPC id, subnet ids và security group ids cần dùng sau. |
+
+Cập nhật module dùng lại:
+
+```text
+terraform/modules/vpc
+```
+
+Gồm:
+
+| File | Vai trò ngắn gọn |
+|---|---|
+| `variables.tf` | Bổ sung input của module VPC. |
+| `main.tf` | Tạo VPC, subnet, route table, NAT, endpoint và flow logs. |
+| `outputs.tf` | Trả VPC id, subnet ids, route table ids và security group ids. |
+| `README.md` | Ghi rõ module tạo gì và chưa tạo gì. |
+
+### 4. Cập nhật input network dev
+
+Mở file:
+
+```text
+terraform/environments/dev/network/variables.tf
+```
+
+Bổ sung các biến:
+
+```hcl
+variable "public_subnet_cidrs" {
+  description = "CIDR blocks for public subnets."
+  type        = list(string)
+}
+
+variable "private_app_subnet_cidrs" {
+  description = "CIDR blocks for private application subnets."
+  type        = list(string)
+}
+
+variable "isolated_data_subnet_cidrs" {
+  description = "CIDR blocks for isolated data subnets."
+  type        = list(string)
+}
+
+variable "nat_gateway_mode" {
+  description = "NAT Gateway mode. Use single for lab cost saving, one_per_az for higher availability."
+  type        = string
+  default     = "single"
+
+  validation {
+    condition     = contains(["single", "one_per_az"], var.nat_gateway_mode)
+    error_message = "nat_gateway_mode must be single or one_per_az."
+  }
+}
+
+variable "enable_vpc_flow_logs" {
+  description = "Whether to enable VPC Flow Logs."
+  type        = bool
+  default     = true
+}
+```
+
+Giải thích nhanh:
+
+| Biến | Dùng để làm gì |
+|---|---|
+| `public_subnet_cidrs` | CIDR cho subnet public, nơi đặt NAT Gateway hoặc Load Balancer public sau này. |
+| `private_app_subnet_cidrs` | CIDR cho workload private, ví dụ compute layer sau này. |
+| `isolated_data_subnet_cidrs` | CIDR cho data layer, không route trực tiếp ra Internet. |
+| `nat_gateway_mode` | Chọn tiết kiệm chi phí hoặc tăng khả dụng. |
+| `enable_vpc_flow_logs` | Bật/tắt log network. |
+
+### 5. Tạo file input thật
+
+Mở file mẫu:
+
+```text
+terraform/environments/dev/network/terraform.tfvars.example
+```
+
+Bổ sung CIDR theo VPC `10.20.0.0/16`:
+
+```hcl
+public_subnet_cidrs = [
+  "10.20.0.0/24",
+  "10.20.1.0/24",
+  "10.20.2.0/24"
+]
+
+private_app_subnet_cidrs = [
+  "10.20.10.0/24",
+  "10.20.11.0/24",
+  "10.20.12.0/24"
+]
+
+isolated_data_subnet_cidrs = [
+  "10.20.20.0/24",
+  "10.20.21.0/24",
+  "10.20.22.0/24"
+]
+
+nat_gateway_mode     = "single"
+enable_vpc_flow_logs = true
+```
+
+Ý nghĩa cách chia:
+
+| Nhóm subnet | CIDR mẫu | Mục đích |
+|---|---|---|
+| Public | `10.20.0.0/24` đến `10.20.2.0/24` | Tài nguyên cần route trực tiếp ra Internet. |
+| Private app | `10.20.10.0/24` đến `10.20.12.0/24` | Workload private sau này. |
+| Isolated data | `10.20.20.0/24` đến `10.20.22.0/24` | Data layer sau này, không đi Internet trực tiếp. |
+
+Với lab cá nhân, `nat_gateway_mode = "single"` giúp giảm chi phí. Với môi trường cần tính sẵn sàng cao hơn, dùng:
+
+```hcl
+nat_gateway_mode = "one_per_az"
+```
+
+Sau đó copy sang file chạy thật nếu chưa có:
+
+```powershell
+cd C:\code\springboot-learning\terraform\environments\dev\network
+Copy-Item terraform.tfvars.example terraform.tfvars
+```
+
+Nếu `terraform.tfvars` đã tồn tại, cập nhật thủ công các biến mới vào file đó.
+
+### 6. Cập nhật module VPC
+
+Mở file:
+
+```text
+terraform/modules/vpc/variables.tf
+```
+
+Bổ sung các biến tương ứng với root module:
+
+```hcl
+variable "public_subnet_cidrs" {
+  description = "CIDR blocks for public subnets."
+  type        = list(string)
+}
+
+variable "private_app_subnet_cidrs" {
+  description = "CIDR blocks for private application subnets."
+  type        = list(string)
+}
+
+variable "isolated_data_subnet_cidrs" {
+  description = "CIDR blocks for isolated data subnets."
+  type        = list(string)
+}
+
+variable "nat_gateway_mode" {
+  description = "NAT Gateway mode."
+  type        = string
+}
+
+variable "enable_vpc_flow_logs" {
+  description = "Whether to enable VPC Flow Logs."
+  type        = bool
+}
+```
+
+Sau đó cập nhật root module:
+
+```text
+terraform/environments/dev/network/main.tf
+```
+
+Truyền biến mới vào module:
+
+```hcl
+module "vpc" {
+  source = "../../../modules/vpc"
+
+  name_prefix               = local.name_prefix
+  vpc_cidr                  = var.vpc_cidr
+  availability_zones        = var.availability_zones
+  public_subnet_cidrs       = var.public_subnet_cidrs
+  private_app_subnet_cidrs  = var.private_app_subnet_cidrs
+  isolated_data_subnet_cidrs = var.isolated_data_subnet_cidrs
+  nat_gateway_mode          = var.nat_gateway_mode
+  enable_vpc_flow_logs      = var.enable_vpc_flow_logs
+  tags                      = local.common_tags
+}
+```
+
+Lưu ý format: nếu Terraform căn lại spacing khác, chạy `terraform fmt` là được.
+
+Trong:
+
+```text
+terraform/modules/vpc/main.tf
+```
+
+Triển khai các nhóm resource theo thứ tự:
+
+```text
+1. VPC
+2. Internet Gateway
+3. Public subnets
+4. Private application subnets
+5. Isolated data subnets
+6. Elastic IP cho NAT Gateway
+7. NAT Gateway
+8. Route tables
+9. Route table associations
+10. VPC endpoints
+11. Security group nền cho endpoint/internal traffic
+12. VPC Flow Logs
+```
+
+Không cần viết tất cả trong một block lớn. Nên chia rõ bằng comment ngắn:
+
+```hcl
+# VPC
+# Subnets
+# Internet egress
+# Route tables
+# VPC endpoints
+# Flow logs
+```
+
+Nguyên tắc quan trọng:
+
+- Module không hard-code giá trị riêng của `dev`.
+- Public subnet có route `0.0.0.0/0` qua Internet Gateway.
+- Private application subnet có route `0.0.0.0/0` qua NAT Gateway nếu cần egress.
+- Isolated data subnet không có route `0.0.0.0/0` ra Internet Gateway hoặc NAT Gateway.
+- Mọi resource có tag chung từ `var.tags`.
+- Output đủ thông tin để root module sau dùng lại.
+
+#### 6.1. Cập nhật outputs
+
+Mở file:
+
+```text
+terraform/modules/vpc/outputs.tf
+```
+
+Bổ sung output tối thiểu:
+
+```hcl
+output "vpc_id" {
+  description = "VPC id."
+  value       = aws_vpc.this.id
+}
+
+output "public_subnet_ids" {
+  description = "Public subnet ids."
+  value       = aws_subnet.public[*].id
+}
+
+output "private_app_subnet_ids" {
+  description = "Private application subnet ids."
+  value       = aws_subnet.private_app[*].id
+}
+
+output "isolated_data_subnet_ids" {
+  description = "Isolated data subnet ids."
+  value       = aws_subnet.isolated_data[*].id
+}
+```
+
+Mở file:
+
+```text
+terraform/environments/dev/network/outputs.tf
+```
+
+Output lại từ module:
+
+```hcl
+output "vpc_id" {
+  description = "Dev VPC id."
+  value       = module.vpc.vpc_id
+}
+
+output "public_subnet_ids" {
+  description = "Dev public subnet ids."
+  value       = module.vpc.public_subnet_ids
+}
+
+output "private_app_subnet_ids" {
+  description = "Dev private application subnet ids."
+  value       = module.vpc.private_app_subnet_ids
+}
+
+output "isolated_data_subnet_ids" {
+  description = "Dev isolated data subnet ids."
+  value       = module.vpc.isolated_data_subnet_ids
+}
+```
+
+Các output này sẽ được dùng ở những bước sau khi tạo compute layer, data layer và observability.
+
+### 7. Chạy Terraform và kiểm tra hoàn thành
+
+Format toàn bộ Terraform:
+
+```powershell
+cd C:\code\springboot-learning\terraform
+terraform fmt -recursive
+```
+
+Đi vào root module network dev:
+
+```powershell
+cd environments\dev\network
+```
+
+Chạy init lại để Terraform đọc thay đổi module:
+
+```powershell
+terraform init
+```
+
+Validate:
+
+```powershell
+terraform validate
+```
+
+Plan ra file để review:
+
+```powershell
+terraform plan -out=tfplan
+```
+
+Kết quả mong đợi lúc module VPC đã có resource thật:
+
+```text
+Plan: N to add, 0 to change, 0 to destroy.
+```
+
+Trong plan phải thấy các nhóm resource network như:
+
+```text
+aws_vpc
+aws_subnet
+aws_internet_gateway
+aws_route_table
+aws_route_table_association
+aws_nat_gateway
+aws_vpc_endpoint
+aws_cloudwatch_log_group
+aws_flow_log
+```
+
+Đọc kỹ plan trước khi apply.
+
+Chỉ apply khi:
+
+```text
+Không có resource staging
+Không có resource production
+Không có destroy ngoài ý muốn
+Backend key vẫn là dev/network/terraform.tfstate
+CIDR và AZ đúng như đã chọn
+```
+
+Apply:
+
+```powershell
+terraform apply "tfplan"
+```
+
+#### 7.1. Kiểm tra sau apply
+
+Kiểm tra output:
+
+```powershell
+terraform output
+```
+
+Kết quả mong đợi có các giá trị:
+
+```text
+vpc_id
+public_subnet_ids
+private_app_subnet_ids
+isolated_data_subnet_ids
+```
+
+Kiểm tra VPC:
+
+```powershell
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=newgate2601-dev-vpc" --region ap-southeast-1
+```
+
+Kiểm tra subnet:
+
+```powershell
+aws ec2 describe-subnets --filters "Name=vpc-id,Values=<vpc-id>" --region ap-southeast-1
+```
+
+Kết quả mong đợi:
+
+```text
+3 public subnets
+3 private application subnets
+3 isolated data subnets
+```
+
+Kiểm tra route table:
+
+```powershell
+aws ec2 describe-route-tables --filters "Name=vpc-id,Values=<vpc-id>" --region ap-southeast-1
+```
+
+Cần xác nhận:
+
+```text
+Public subnet
+  -> có route 0.0.0.0/0 tới Internet Gateway
+
+Private application subnet
+  -> có route 0.0.0.0/0 tới NAT Gateway nếu bật egress
+
+Isolated data subnet
+  -> không có route 0.0.0.0/0 tới Internet Gateway hoặc NAT Gateway
+```
+
+Kiểm tra state:
+
+```powershell
+aws s3 ls s3://newgate2601-terraform-state-150914615641-ap-southeast-1/dev/network/
+```
+
+Kết quả mong đợi:
+
+```text
+terraform.tfstate
+```
+
+### 8. Lỗi thường gặp và cách xử lý
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| `InvalidSubnet.Range` | CIDR subnet nằm ngoài `vpc_cidr`. | Kiểm tra lại các dải `10.20.x.0/24` có thuộc `10.20.0.0/16` không. |
+| `CIDR conflicts with another subnet` | Hai subnet bị trùng CIDR. | Mỗi subnet phải có CIDR riêng. |
+| `InvalidParameterValue: Value (...) for parameter availabilityZone is invalid` | AZ không tồn tại trong region đang dùng. | Kiểm tra region và AZ bằng `aws ec2 describe-availability-zones`. |
+| NAT Gateway tạo lâu hoặc fail | Elastic IP/NAT Gateway cần thời gian hoặc thiếu quota. | Đợi vài phút, kiểm tra quota Elastic IP và NAT Gateway. |
+| `AccessDenied` khi tạo Flow Logs | IAM user thiếu quyền CloudWatch Logs/IAM role cho flow logs. | Kiểm tra quyền tạo log group, IAM role và `ec2:CreateFlowLogs`. |
+| `Unsupported argument` | Root module truyền biến nhưng module chưa khai báo. | Thêm biến vào `terraform/modules/vpc/variables.tf`. |
+| `Reference to undeclared resource` | Output hoặc route đang tham chiếu resource chưa có. | Kiểm tra tên resource trong `main.tf` và `outputs.tf`. |
+| Plan có resource staging/production | Code hoặc biến bị đặt nhầm phạm vi. | Dừng lại, sửa về `dev/network`, không apply. |
+| Data subnet có route ra Internet | Route table gắn sai hoặc reuse route table private app. | Tách route table riêng cho isolated data subnet. |
+
+Lỗi cần đặc biệt chú ý:
+
+```text
+Isolated data subnet không được có default route ra Internet.
+```
+
+Nếu thấy route như sau trong route table của data subnet:
+
+```text
+0.0.0.0/0 -> igw-...
+0.0.0.0/0 -> nat-...
+```
+
+thì phải sửa trước khi tiếp tục các bước data service sau.
+
+### 9. Kết quả sau bước này
+
+Trạng thái sau khi hoàn thành:
+
+```text
+[x] Đã có VPC dev thật
+[x] Đã có 3 public subnets
+[x] Đã có 3 private application subnets
+[x] Đã có 3 isolated data subnets
+[x] Đã có route table đúng cho từng nhóm subnet
+[x] Private application subnet có egress theo thiết kế NAT
+[x] Isolated data subnet không có default route ra Internet
+[x] Đã có VPC endpoint nền cần thiết
+[x] Đã bật VPC Flow Logs nếu enable_vpc_flow_logs = true
+[x] State network dev lưu ở S3 key dev/network/terraform.tfstate
+[x] Chưa tạo EKS/RDS/MSK/ElastiCache
+[x] Chưa tạo staging hoặc production
+```
+
+Sau bước này, network dev đã đủ nền để các root module sau dùng output:
 
 ```text
 dev/network

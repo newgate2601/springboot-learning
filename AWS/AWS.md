@@ -98,7 +98,30 @@ Khi tạo tài nguyên, bạn thường phải chọn region. Chọn region ản
 
 ### 4.4. Availability Zone
 
-**Availability Zone**, thường viết tắt là **AZ**, là một hoặc nhiều data center độc lập bên trong một region.
+**Availability Zone**, thường viết tắt là **AZ**, là một khu vực hạ tầng độc lập bên trong một region. Một AZ có thể gồm một hoặc nhiều data center, nhưng được thiết kế để tách biệt với AZ khác về nguồn điện, mạng và hạ tầng vận hành.
+
+Về mặt vật lý, có thể hiểu một AZ là một cụm hạ tầng thật, không phải chỉ là một nhãn logic trong phần mềm. Cụm hạ tầng này có thể gồm:
+
+- Một hoặc nhiều tòa nhà data center.
+- Hệ thống điện riêng hoặc được tách biệt.
+- Hệ thống làm mát.
+- Thiết bị mạng.
+- Máy chủ vật lý.
+- Kết nối mạng tốc độ cao tới các AZ khác trong cùng region.
+
+AWS không công bố địa chỉ chính xác của từng AZ. Người dùng chỉ thấy tên AZ như `ap-southeast-1a`, `ap-southeast-1b`, `ap-southeast-1c` và chọn nơi đặt subnet hoặc tài nguyên.
+
+Điểm quan trọng là: nếu một tòa nhà, cụm điện, cụm mạng hoặc một phần hạ tầng trong một AZ gặp sự cố, AZ khác trong cùng region được thiết kế để ít bị ảnh hưởng hơn.
+
+Nói đơn giản:
+
+```text
+Region
+  -> một khu vực địa lý lớn, ví dụ Singapore
+
+Availability Zone
+  -> một cụm data center độc lập bên trong region đó
+```
 
 Ví dụ region Singapore có thể có nhiều AZ như:
 
@@ -109,6 +132,603 @@ ap-southeast-1c
 ```
 
 Mục tiêu của AZ là giúp hệ thống chịu lỗi tốt hơn. Nếu một AZ gặp sự cố, tài nguyên ở AZ khác vẫn có thể tiếp tục hoạt động nếu bạn thiết kế đúng.
+
+Ví dụ:
+
+```text
+Thiết kế yếu:
+  Tất cả server và database nằm trong 1 AZ
+  -> AZ đó lỗi
+  -> toàn bộ hệ thống có thể dừng
+
+Thiết kế tốt hơn:
+  Server nằm ở nhiều AZ
+  Database có cơ chế Multi-AZ
+  Load Balancer nhận traffic ở nhiều AZ
+  -> một AZ lỗi
+  -> hệ thống vẫn còn tài nguyên ở AZ khác để phục vụ
+```
+
+AZ không phải là region. Đây là điểm rất dễ nhầm:
+
+| Khái niệm | Phạm vi | Ví dụ | Dùng để làm gì |
+|---|---|---|---|
+| Region | Khu vực địa lý lớn | `ap-southeast-1` | Chọn nơi đặt hệ thống, dữ liệu và dịch vụ. |
+| Availability Zone | Vùng hạ tầng độc lập trong region | `ap-southeast-1a` | Trải tài nguyên để giảm rủi ro khi một khu vực hạ tầng lỗi. |
+
+Các AZ trong cùng một region **nằm trong cùng khu vực địa lý lớn**, nhưng **khác cụm hạ tầng/data center**.
+
+Ví dụ:
+
+```text
+ap-southeast-1
+  -> region Singapore
+
+ap-southeast-1a
+ap-southeast-1b
+ap-southeast-1c
+  -> các AZ khác nhau bên trong region Singapore
+```
+
+Như vậy:
+
+```text
+ap-southeast-1a và ap-southeast-1b
+  -> cùng region Singapore
+  -> khác Availability Zone
+
+ap-southeast-1 và ap-northeast-1
+  -> khác region
+  -> Singapore và Tokyo
+```
+
+Vì cùng region, các AZ thường có độ trễ thấp với nhau hơn so với hai region khác nhau. Vì khác AZ, chúng vẫn được tách biệt để giảm rủi ro khi một cụm hạ tầng gặp sự cố.
+
+### 4.4.1. VPC, subnet và AZ liên quan với nhau thế nào?
+
+Để hiểu AZ trong thực tế, cần hiểu thêm ba khái niệm đi cùng nhau:
+
+```text
+VPC
+CIDR
+Subnet
+```
+
+**VPC**, viết tắt của **Virtual Private Cloud**, là mạng riêng ảo của bạn trong AWS.
+
+Một VPC luôn thuộc về **một region**. Ví dụ nếu tạo VPC ở `ap-southeast-1`, VPC đó nằm trong region Singapore.
+
+Ví dụ:
+
+```text
+VPC newgate2601-dev
+Region: ap-southeast-1
+CIDR:   10.20.0.0/16
+```
+
+Trong VPC, bạn chia dải IP lớn thành nhiều subnet nhỏ hơn.
+
+**CIDR** là cách viết dải địa chỉ IP.
+
+Ví dụ:
+
+```text
+10.20.0.0/16
+```
+
+Nghĩa đơn giản:
+
+```text
+10.20.0.0/16
+  -> một dải IP lớn dùng cho cả VPC
+
+10.20.0.0/24
+  -> một dải IP nhỏ hơn, thường dùng cho một subnet
+```
+
+VPC giống phạm vi mạng lớn:
+
+```text
+VPC: 10.20.0.0/16
+```
+
+Subnet là phần nhỏ được cắt ra từ VPC:
+
+```text
+Subnet public-a:      10.20.0.0/24
+Subnet public-b:      10.20.1.0/24
+Subnet public-c:      10.20.2.0/24
+Subnet private-app-a: 10.20.10.0/24
+Subnet private-app-b: 10.20.11.0/24
+Subnet private-app-c: 10.20.12.0/24
+```
+
+Điểm quan trọng nhất:
+
+```text
+VPC nằm trong một region.
+Subnet nằm trong một Availability Zone cụ thể.
+```
+
+Một subnet **không trải qua nhiều AZ**. Nếu muốn hệ thống có tài nguyên ở 3 AZ, bạn phải tạo 3 subnet tương ứng.
+
+Ví dụ VPC trong region Singapore:
+
+```text
+VPC 10.20.0.0/16 trong region ap-southeast-1
+├── public subnet a      10.20.0.0/24   trong ap-southeast-1a
+├── public subnet b      10.20.1.0/24   trong ap-southeast-1b
+├── public subnet c      10.20.2.0/24   trong ap-southeast-1c
+├── private app subnet a 10.20.10.0/24  trong ap-southeast-1a
+├── private app subnet b 10.20.11.0/24  trong ap-southeast-1b
+└── private app subnet c 10.20.12.0/24  trong ap-southeast-1c
+```
+
+Nếu cần thêm subnet cho data layer, ta tạo thêm nhóm subnet riêng:
+
+```text
+isolated data subnet a 10.20.20.0/24 trong ap-southeast-1a
+isolated data subnet b 10.20.21.0/24 trong ap-southeast-1b
+isolated data subnet c 10.20.22.0/24 trong ap-southeast-1c
+```
+
+Như vậy, trong một AZ có thể có nhiều subnet khác nhau. Ví dụ trong `ap-southeast-1a` có thể có:
+
+```text
+public subnet a
+private app subnet a
+isolated data subnet a
+```
+
+Ba subnet này cùng nằm trong `ap-southeast-1a`, nhưng khác dải IP và khác mục đích sử dụng.
+
+### 4.4.2. Public subnet, private subnet và isolated subnet
+
+Subnet không tự public hay private chỉ vì tên của nó. Tên `public`, `private` hoặc `isolated` chỉ là cách mình đặt để dễ hiểu. AWS xác định đường đi của traffic bằng **route table** gắn với subnet đó.
+
+Nói chính xác hơn:
+
+```text
+Subnet thuộc loại nào
+  -> phụ thuộc vào route table
+  -> phụ thuộc vào subnet đó có đường ra Internet Gateway, NAT Gateway hay chỉ có route nội bộ
+```
+
+**Route table** là bảng định tuyến. Nó nói traffic từ subnet nên đi đâu.
+
+Mỗi route table có nhiều dòng route. Mỗi dòng route thường gồm:
+
+```text
+Destination -> Target
+```
+
+Trong đó:
+
+| Thành phần | Ý nghĩa |
+|---|---|
+| `Destination` | Dải IP đích mà traffic muốn đi tới. |
+| `Target` | Nơi AWS sẽ gửi traffic nếu destination khớp. |
+
+Ví dụ:
+
+```text
+10.20.0.0/16 -> local
+0.0.0.0/0    -> Internet Gateway
+```
+
+Đọc như sau:
+
+```text
+Traffic tới 10.20.0.0/16
+  -> ở lại trong VPC
+
+Traffic tới các IP còn lại
+  -> đi ra Internet Gateway
+```
+
+Route `local` luôn có trong route table của VPC:
+
+```text
+10.20.0.0/16 -> local
+```
+
+Route này cho phép các tài nguyên trong cùng VPC giao tiếp nội bộ với nhau nếu security group và network ACL cho phép.
+
+Route đặc biệt hay gặp là:
+
+```text
+0.0.0.0/0
+```
+
+Nghĩa là mọi địa chỉ IPv4 không khớp route cụ thể hơn. Đây thường được gọi là **default route**.
+
+Ví dụ nếu một server trong subnet muốn gọi:
+
+```text
+8.8.8.8
+```
+
+và route table không có route cụ thể cho `8.8.8.8`, AWS sẽ dùng route:
+
+```text
+0.0.0.0/0
+```
+
+Sau đó xem target của route này là gì.
+
+Ví dụ thực tế:
+
+```text
+Một workload trong private subnet cần tải package từ Internet.
+
+Workload gọi tới IP bên ngoài VPC
+  -> route table không thấy IP đó thuộc 10.20.0.0/16
+  -> dùng route 0.0.0.0/0
+  -> nếu target là NAT Gateway thì traffic đi qua NAT Gateway
+  -> nếu không có route 0.0.0.0/0 thì request không ra Internet được
+```
+
+#### Public subnet
+
+**Public subnet** là subnet có route đi ra Internet Gateway:
+
+```text
+0.0.0.0/0 -> Internet Gateway
+```
+
+**Internet Gateway**, viết tắt là **IGW**, là thành phần giúp VPC kết nối với Internet.
+
+Nhưng chỉ có route ra Internet Gateway chưa đủ để một tài nguyên thật sự truy cập được từ Internet. Ví dụ một EC2 trong public subnet cần đồng thời có:
+
+- Subnet route tới Internet Gateway.
+- EC2 có public IPv4 hoặc Elastic IP.
+- Security group cho phép traffic phù hợp.
+- Network ACL không chặn traffic.
+- Hệ điều hành hoặc ứng dụng bên trong EC2 đang lắng nghe đúng port.
+
+Nếu thiếu public IP, EC2 nằm trong public subnet vẫn không nhận kết nối trực tiếp từ Internet.
+
+Flow đơn giản:
+
+```text
+Internet
+  -> Internet Gateway
+  -> route table của public subnet
+  -> EC2 có public IP
+  -> security group cho phép
+```
+
+Public subnet thường dùng cho:
+
+- Load Balancer public.
+- NAT Gateway.
+- Bastion host nếu thật sự cần.
+
+Không nên đặt database hoặc workload nội bộ nhạy cảm trong public subnet.
+
+Ví dụ thực tế:
+
+```text
+Người dùng mở https://app.example.com
+  -> DNS trỏ tới public Load Balancer
+  -> Load Balancer nằm trong public subnet
+  -> public subnet có route 0.0.0.0/0 tới Internet Gateway
+  -> Load Balancer nhận request từ Internet
+  -> Load Balancer forward request vào application ở private subnet
+```
+
+Ví dụ khác:
+
+```text
+NAT Gateway thường đặt trong public subnet.
+
+Private application subnet muốn đi Internet
+  -> gửi traffic tới NAT Gateway
+  -> NAT Gateway cần nằm ở public subnet
+  -> NAT Gateway dùng Internet Gateway để đi ra Internet
+```
+
+#### Một NAT Gateway và mỗi AZ một NAT Gateway khác nhau thế nào?
+
+Khi VPC có nhiều AZ, có hai cách đặt NAT Gateway thường gặp.
+
+Cách 1: dùng **một NAT Gateway duy nhất**.
+
+```text
+ap-southeast-1a
+  public subnet a
+  NAT Gateway
+
+ap-southeast-1b
+  private app subnet b
+  -> route 0.0.0.0/0 tới NAT Gateway ở AZ-a
+
+ap-southeast-1c
+  private app subnet c
+  -> route 0.0.0.0/0 tới NAT Gateway ở AZ-a
+```
+
+Ý nghĩa:
+
+- Chi phí thấp hơn vì chỉ chạy một NAT Gateway.
+- Dễ dùng cho dev/lab.
+- Private subnet ở AZ khác vẫn có thể đi Internet qua NAT Gateway này.
+- Nhưng nếu AZ chứa NAT Gateway gặp sự cố, private subnet ở các AZ khác có thể mất đường outbound ra Internet.
+- Traffic từ AZ khác đi qua NAT Gateway ở AZ-a có thể phát sinh cross-AZ data processing/transfer tùy luồng traffic.
+
+Cách 2: dùng **mỗi AZ một NAT Gateway**.
+
+```text
+ap-southeast-1a
+  public subnet a
+  NAT Gateway a
+  private app subnet a
+  -> route 0.0.0.0/0 tới NAT Gateway a
+
+ap-southeast-1b
+  public subnet b
+  NAT Gateway b
+  private app subnet b
+  -> route 0.0.0.0/0 tới NAT Gateway b
+
+ap-southeast-1c
+  public subnet c
+  NAT Gateway c
+  private app subnet c
+  -> route 0.0.0.0/0 tới NAT Gateway c
+```
+
+Ý nghĩa:
+
+- Chi phí cao hơn vì có nhiều NAT Gateway.
+- Mỗi AZ tự có đường outbound riêng.
+- Nếu một AZ gặp sự cố, private subnet ở AZ khác vẫn dùng NAT Gateway trong AZ của chính nó.
+- Giảm phụ thuộc cross-AZ cho outbound traffic.
+- Phù hợp hơn cho staging/production hoặc hệ thống cần tính sẵn sàng cao.
+
+So sánh nhanh:
+
+| Thiết kế | Chi phí | Khả năng chịu lỗi AZ | Phù hợp |
+|---|---|---|---|
+| Một NAT Gateway | Thấp hơn | Thấp hơn, vì phụ thuộc một AZ chứa NAT Gateway | Dev, lab, môi trường tiết kiệm chi phí |
+| Mỗi AZ một NAT Gateway | Cao hơn | Tốt hơn, vì mỗi AZ có NAT riêng | Production hoặc môi trường cần HA hơn |
+
+Trong môi trường dev, có thể dùng:
+
+```hcl
+nat_gateway_mode = "single"
+```
+
+Nghĩa là subnet vẫn trải trên nhiều AZ, nhưng NAT Gateway chỉ có một để tiết kiệm chi phí.
+
+Trong môi trường cần tính sẵn sàng cao hơn, có thể dùng:
+
+```hcl
+nat_gateway_mode = "one_per_az"
+```
+
+Nghĩa là mỗi AZ có NAT Gateway riêng và route table của private subnet trong AZ đó trỏ tới NAT Gateway cùng AZ.
+
+#### Private application subnet
+
+**Private application subnet** là subnet không có route trực tiếp ra Internet Gateway. Nếu cần đi ra Internet để tải package, gọi API bên ngoài hoặc update hệ thống, nó thường đi qua NAT Gateway:
+
+```text
+0.0.0.0/0 -> NAT Gateway
+```
+
+**NAT Gateway** cho phép tài nguyên private đi ra Internet theo chiều outbound. Internet không dùng NAT Gateway để chủ động mở kết nối trực tiếp vào tài nguyên private.
+
+Flow outbound:
+
+```text
+EC2 hoặc workload trong private subnet
+  -> route table của private subnet
+  -> NAT Gateway trong public subnet
+  -> Internet Gateway
+  -> Internet
+```
+
+Flow inbound trực tiếp từ Internet vào private subnet:
+
+```text
+Internet
+  -> không kết nối trực tiếp vào private subnet
+```
+
+Private application subnet thường dùng cho:
+
+- Application server.
+- Container workload.
+- Internal service.
+- Worker xử lý background job.
+
+Trong thiết kế production phổ biến, người dùng Internet không đi thẳng vào private application subnet. Traffic thường đi qua Load Balancer ở public subnet, rồi Load Balancer forward vào private application subnet.
+
+Ví dụ thực tế:
+
+```text
+Người dùng Internet
+  -> public Load Balancer trong public subnet
+  -> application server trong private application subnet
+```
+
+Application server không cần public IP.
+
+Khi application server cần gọi API bên ngoài:
+
+```text
+Application server
+  -> route table của private subnet
+  -> 0.0.0.0/0 tới NAT Gateway
+  -> Internet Gateway
+  -> API bên ngoài
+```
+
+Khi người dùng Internet cố gọi trực tiếp vào application server:
+
+```text
+Internet
+  -> không có public IP của application server
+  -> không có route inbound trực tiếp vào private subnet
+  -> kết nối trực tiếp không thành công
+```
+
+#### Isolated data subnet
+
+**Isolated data subnet** là subnet dành cho data layer hoặc tài nguyên nhạy cảm hơn. Nó thường không có default route ra Internet Gateway hoặc NAT Gateway:
+
+```text
+Không có:
+0.0.0.0/0 -> Internet Gateway
+0.0.0.0/0 -> NAT Gateway
+```
+
+Nó vẫn có route local bên trong VPC:
+
+```text
+10.20.0.0/16 -> local
+```
+
+Điều này nghĩa là tài nguyên trong isolated subnet vẫn có thể giao tiếp với tài nguyên khác trong cùng VPC nếu được phép, nhưng không tự có đường đi Internet mặc định.
+
+Flow nội bộ:
+
+```text
+Application trong private app subnet
+  -> route local trong VPC
+  -> data service trong isolated data subnet
+```
+
+Flow ra Internet:
+
+```text
+Data service trong isolated subnet
+  -> không có default route ra Internet
+```
+
+Isolated data subnet thường dùng cho:
+
+- Database subnet.
+- Cache subnet.
+- Message broker subnet.
+- Tài nguyên chỉ nên nhận traffic nội bộ.
+
+Nếu một tài nguyên trong isolated subnet cần truy cập AWS service mà không đi Internet, có thể dùng **VPC endpoint** nếu dịch vụ đó hỗ trợ.
+
+Ví dụ thực tế:
+
+```text
+Application trong private application subnet
+  -> kết nối tới database trong isolated data subnet
+  -> traffic đi qua route local trong VPC
+  -> security group của database chỉ cho phép traffic từ application security group
+```
+
+Database trong isolated data subnet không cần public IP.
+
+Nếu database cố đi ra Internet:
+
+```text
+Database
+  -> route table của isolated subnet
+  -> chỉ có route 10.20.0.0/16 -> local
+  -> không có 0.0.0.0/0
+  -> không có đường Internet mặc định
+```
+
+Nếu tài nguyên trong isolated subnet cần ghi log hoặc truy cập một AWS service riêng tư:
+
+```text
+Isolated subnet
+  -> VPC endpoint nếu dịch vụ hỗ trợ
+  -> không cần mở default route ra Internet
+```
+
+#### Bảng so sánh
+
+Tóm tắt:
+
+| Loại subnet | Default route thường gặp | Internet vào trực tiếp được không? | Đi Internet outbound được không? | Thường dùng cho |
+|---|---|---|---|---|
+| Public subnet | `0.0.0.0/0 -> Internet Gateway` | Có thể, nếu resource có public IP và rule cho phép. | Có. | Public Load Balancer, NAT Gateway, bastion nếu cần. |
+| Private application subnet | `0.0.0.0/0 -> NAT Gateway` | Không trực tiếp. | Có, qua NAT Gateway. | Application server, container workload, worker. |
+| Isolated data subnet | Không có default route ra Internet/NAT | Không trực tiếp. | Không mặc định. | Database, cache, message broker, data service. |
+
+#### Ví dụ route table theo từng loại subnet
+
+Public subnet route table:
+
+```text
+10.20.0.0/16 -> local
+0.0.0.0/0    -> Internet Gateway
+```
+
+Private application subnet route table:
+
+```text
+10.20.0.0/16 -> local
+0.0.0.0/0    -> NAT Gateway
+```
+
+Isolated data subnet route table:
+
+```text
+10.20.0.0/16 -> local
+```
+
+#### Những điểm dễ nhầm
+
+| Dễ nhầm | Đúng hơn là |
+|---|---|
+| Đặt tên subnet là `public` thì nó tự public. | Không. Route table mới quyết định đường đi. |
+| EC2 trong public subnet chắc chắn truy cập được từ Internet. | Không. EC2 còn cần public IP, security group, network ACL và app lắng nghe port. |
+| NAT Gateway cho phép Internet gọi vào private subnet. | Không. NAT Gateway chủ yếu phục vụ outbound từ private subnet ra Internet. |
+| Private subnet và isolated subnet giống nhau. | Không. Private subnet thường có outbound qua NAT; isolated subnet không có default route ra Internet/NAT. |
+| Route `local` nghĩa là Internet local. | Không. `local` nghĩa là traffic nội bộ trong VPC CIDR. |
+
+### 4.4.3. Vì sao dev vẫn nên tạo subnet ở nhiều AZ?
+
+Lý do không nên chỉ dùng một AZ cho hệ thống nghiêm túc:
+
+- Một AZ có thể gặp sự cố hạ tầng.
+- Một số dịch vụ cần subnet ở nhiều AZ để bật tính năng high availability.
+- Load Balancer, Auto Scaling, Kubernetes, database managed service và cache thường phát huy tốt hơn khi có nhiều AZ.
+- Nếu dev chỉ có một AZ, nhiều lỗi thiết kế network sẽ không lộ ra cho tới staging hoặc production.
+
+Tuy nhiên, nhiều AZ không có nghĩa là mọi thứ đều phải nhân ba chi phí. Có thể giữ cấu trúc nhiều AZ nhưng chọn cấu hình tiết kiệm cho dev:
+
+```text
+Dev:
+  subnet trải trên 3 AZ
+  NAT Gateway có thể dùng 1 cái để tiết kiệm
+
+Production:
+  subnet trải trên 3 AZ
+  NAT Gateway thường nên có theo từng AZ
+  database/cache/message broker bật cơ chế Multi-AZ phù hợp
+```
+
+Cần phân biệt:
+
+```text
+Nhiều AZ
+  -> có hạ tầng trải qua nhiều AZ
+
+High Availability thật sự
+  -> ứng dụng, database, load balancer, autoscaling, backup, retry và failover đều được thiết kế đúng
+```
+
+Chỉ tạo subnet ở 3 AZ chưa tự động làm hệ thống HA. Nó mới là nền mạng để các dịch vụ phía trên có thể triển khai HA.
+
+Một số hiểu nhầm thường gặp:
+
+| Hiểu nhầm | Đúng hơn là |
+|---|---|
+| Có 3 AZ là chắc chắn không downtime. | 3 AZ chỉ giảm rủi ro hạ tầng; ứng dụng vẫn cần thiết kế retry, replica, health check và failover. |
+| Dev thì chỉ cần 1 AZ. | Dev có thể giảm capacity, nhưng nên giữ topology gần production để bắt lỗi sớm. |
+| Subnet có thể trải qua nhiều AZ. | Một subnet chỉ nằm trong một AZ. Muốn nhiều AZ thì tạo nhiều subnet. |
+| Multi-AZ luôn dùng để scale read. | Multi-AZ thường phục vụ HA/failover; scale read thường cần read replica hoặc cơ chế riêng tùy dịch vụ. |
 
 ### 4.5. Edge Location
 
@@ -669,54 +1289,52 @@ Trên tài nguyên nào?
 
 Nếu câu trả lời là "ai cũng được làm mọi thứ trên mọi tài nguyên", policy đó gần như chắc chắn quá rộng.
 
-## 11. VPC là gì?
+## 11. VPC, CIDR và subnet
 
-**VPC**, viết tắt của Virtual Private Cloud, là mạng riêng ảo của bạn trong AWS.
-
-Nếu EC2 là máy chủ, RDS là database, Load Balancer là cổng vào, thì VPC là phần mạng kết nối các thành phần đó.
-
-Một VPC thường chứa:
-
-- CIDR block.
-- Subnet.
-- Route table.
-- Internet Gateway.
-- NAT Gateway.
-- Security Group.
-- Network ACL.
-
-Ví dụ:
+VPC, CIDR và subnet đã được giải thích kỹ ở mục **4.4. Availability Zone**, vì ba khái niệm này gắn trực tiếp với AZ:
 
 ```text
-VPC: 10.0.0.0/16
-  Public subnet A:  10.0.1.0/24
-  Public subnet B:  10.0.2.0/24
-  Private subnet A: 10.0.11.0/24
-  Private subnet B: 10.0.12.0/24
+VPC nằm trong một region.
+Subnet nằm trong một Availability Zone cụ thể.
+CIDR là dải IP dùng để chia VPC và subnet.
 ```
+
+Nhắc lại ngắn:
+
+| Khái niệm | Hiểu ngắn gọn |
+|---|---|
+| VPC | Mạng riêng ảo của bạn trong AWS, thuộc một region. |
+| CIDR | Cách viết dải địa chỉ IP, ví dụ `10.20.0.0/16`. |
+| Subnet | Mạng con được cắt ra từ VPC, nằm trong một AZ. |
+| Public subnet | Subnet có route ra Internet Gateway. |
+| Private subnet | Subnet không nhận kết nối trực tiếp từ Internet. |
+| Isolated subnet | Subnet không có default route ra Internet hoặc NAT Gateway. |
+
+Khi thiết kế network, đọc lại mục 4.4 trước, sau đó mới đi tiếp các phần route table, Internet Gateway, NAT Gateway, Security Group và Network ACL.
 
 ## 12. CIDR và subnet
 
-**CIDR** là cách viết dải địa chỉ IP. Ví dụ `10.0.0.0/16` nghĩa là một dải IP riêng khá lớn.
+CIDR và subnet đã được giải thích chi tiết trong mục **4.4. Availability Zone** vì subnet luôn gắn với AZ.
 
-**Subnet** là phần nhỏ hơn được chia ra từ VPC. Subnet luôn nằm trong một Availability Zone.
+Nhắc lại ngắn:
+
+```text
+CIDR
+  -> dải địa chỉ IP, ví dụ 10.20.0.0/16
+
+Subnet
+  -> một phần nhỏ cắt ra từ VPC
+  -> luôn nằm trong một Availability Zone cụ thể
+```
 
 Ví dụ:
 
 ```text
-VPC 10.0.0.0/16
-  -> subnet 10.0.1.0/24
-  -> subnet 10.0.2.0/24
-  -> subnet 10.0.11.0/24
+VPC 10.20.0.0/16
+  -> public subnet 10.20.0.0/24 trong ap-southeast-1a
+  -> public subnet 10.20.1.0/24 trong ap-southeast-1b
+  -> public subnet 10.20.2.0/24 trong ap-southeast-1c
 ```
-
-Người mới cần hiểu đơn giản:
-
-- VPC là mạng lớn.
-- Subnet là mạng con.
-- Resource như EC2 thường được đặt trong subnet.
-- Public subnet dùng cho tài nguyên cần nhận traffic trực tiếp từ Internet.
-- Private subnet dùng cho tài nguyên không nên lộ trực tiếp ra Internet.
 
 ## 13. Public subnet và private subnet
 
@@ -737,7 +1355,7 @@ Internet
 
 ## 14. Route Table, Internet Gateway và NAT Gateway
 
-### 13.1. Route Table
+### 14.1. Route Table
 
 **Route Table** là bảng định tuyến. Nó nói cho AWS biết traffic từ subnet nên đi đâu.
 
@@ -750,7 +1368,7 @@ Ví dụ route:
 
 `0.0.0.0/0` nghĩa là mọi địa chỉ IPv4 không khớp route cụ thể hơn.
 
-### 13.2. Internet Gateway
+### 14.2. Internet Gateway
 
 **Internet Gateway**, thường viết tắt là **IGW**, là cổng giúp VPC kết nối với Internet.
 
@@ -760,7 +1378,7 @@ Public subnet thường có route:
 0.0.0.0/0 -> Internet Gateway
 ```
 
-### 13.3. NAT Gateway
+### 14.3. NAT Gateway
 
 **NAT Gateway** giúp tài nguyên trong private subnet đi ra Internet nhưng không cho Internet chủ động đi vào tài nguyên đó.
 
@@ -777,7 +1395,7 @@ NAT Gateway thường tốn chi phí đáng kể, nên khi học và làm lab c�
 
 ## 15. Security Group và Network ACL
 
-### 14.1. Security Group
+### 15.1. Security Group
 
 **Security Group** là firewall ở mức resource, thường gắn với EC2, RDS, Load Balancer.
 
@@ -802,7 +1420,7 @@ Database security group:
 
 Điểm hay là security group có thể tham chiếu security group khác. Nhờ vậy bạn không cần hard-code IP của app server.
 
-### 14.2. Network ACL
+### 15.2. Network ACL
 
 **Network ACL**, thường viết tắt là **NACL**, là firewall ở mức subnet.
 
@@ -842,7 +1460,7 @@ Chọn AMI
 
 ## 17. AMI, Instance Type, Key Pair và User Data
 
-### 16.1. AMI
+### 17.1. AMI
 
 **AMI**, viết tắt của Amazon Machine Image, là image dùng để tạo EC2 instance.
 
@@ -855,7 +1473,7 @@ Ví dụ:
 - Windows Server AMI.
 - Custom AMI của công ty.
 
-### 16.2. Instance Type
+### 17.2. Instance Type
 
 **Instance type** là cấu hình phần cứng ảo của EC2.
 
@@ -868,7 +1486,7 @@ Ví dụ:
 
 Tên instance thường có họ máy và kích thước. Người mới không cần thuộc hết, chỉ cần hiểu mỗi loại tối ưu cho workload khác nhau.
 
-### 16.3. Key Pair
+### 17.3. Key Pair
 
 **Key Pair** dùng để SSH vào EC2 Linux hoặc lấy password Windows.
 
@@ -880,7 +1498,7 @@ ssh -i my-key.pem ec2-user@<public-ip>
 
 Không nên commit private key vào Git.
 
-### 16.4. User Data
+### 17.4. User Data
 
 **User Data** là script chạy khi EC2 khởi động lần đầu.
 
@@ -898,7 +1516,7 @@ User Data hữu ích để bootstrap server, nhưng với hệ thống lớn nê
 
 ## 18. EBS và Instance Store
 
-### 17.1. EBS
+### 18.1. EBS
 
 **EBS**, viết tắt của Elastic Block Store, là ổ đĩa block gắn với EC2.
 
@@ -912,7 +1530,7 @@ EBS thường dùng cho:
 
 EBS có snapshot để backup.
 
-### 17.2. Instance Store
+### 18.2. Instance Store
 
 **Instance Store** là ổ đĩa vật lý tạm thời gắn với host chạy EC2. Nó rất nhanh nhưng dữ liệu có thể mất khi instance stop hoặc bị terminate.
 
