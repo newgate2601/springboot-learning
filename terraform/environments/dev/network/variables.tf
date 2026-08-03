@@ -32,3 +32,35 @@ variable "availability_zones" {
   description = "Availability zones used by the dev network."
   type        = list(string)
 }
+
+variable "public_subnet_cidrs" {
+  description = "CIDR blocks for public subnets."
+  type        = list(string)
+}
+
+variable "private_app_subnet_cidrs" {
+  description = "CIDR blocks for private application subnets."
+  type        = list(string)
+}
+
+variable "isolated_data_subnet_cidrs" {
+  description = "CIDR blocks for isolated data subnets."
+  type        = list(string)
+}
+
+variable "nat_gateway_mode" {
+  description = "NAT Gateway mode. Use single for lab cost saving, one_per_az for higher availability."
+  type        = string
+  default     = "single"
+
+  validation {
+    condition     = contains(["single", "one_per_az"], var.nat_gateway_mode)
+    error_message = "nat_gateway_mode must be single or one_per_az."
+  }
+}
+
+variable "enable_vpc_flow_logs" {
+  description = "Whether to enable VPC Flow Logs."
+  type        = bool
+  default     = true
+}

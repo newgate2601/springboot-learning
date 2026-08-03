@@ -1393,6 +1393,315 @@ EC2 private subnet
 
 NAT Gateway thường tốn chi phí đáng kể, nên khi học và làm lab cần chú ý xóa nếu không dùng.
 
+### 14.4. Internet Gateway và NAT Gateway khác nhau thế nào?
+
+Hai thành phần này đều liên quan tới Internet, nhưng vai trò không giống nhau.
+
+| Thành phần | Dùng để làm gì | Đặt ở đâu | Chiều traffic chính |
+|---|---|---|---|
+| Internet Gateway | Cho VPC có đường kết nối trực tiếp với Internet. | Gắn vào VPC, route từ public subnet trỏ tới nó. | Internet vào resource public và resource public đi ra Internet. |
+| NAT Gateway | Cho resource trong private subnet đi ra Internet mà không mở chiều vào trực tiếp từ Internet. | Nằm trong public subnet, có Elastic IP. | Private subnet đi ra Internet. Internet không chủ động đi vào private subnet qua NAT Gateway. |
+
+Hiểu đơn giản:
+
+```text
+Internet Gateway = cửa chính của VPC ra/vào Internet
+NAT Gateway      = cửa đi ra ngoài cho private subnet, không phải cửa đi vào
+```
+
+Ví dụ public subnet:
+
+```text
+User Internet
+  -> Internet Gateway
+  -> public subnet
+  -> Load Balancer hoặc EC2 có public IP
+```
+
+Ví dụ private application subnet đi ra Internet:
+
+```text
+Application trong private subnet
+  -> NAT Gateway nằm trong public subnet
+  -> Internet Gateway
+  -> Internet
+```
+
+Chiều ngược lại không tự mở:
+
+```text
+User Internet
+  -> NAT Gateway
+  -> private application subnet
+  -> không dùng được theo kiểu này
+```
+
+Vì vậy:
+
+- Public subnet có route `0.0.0.0/0` tới Internet Gateway.
+- Private application subnet có route `0.0.0.0/0` tới NAT Gateway nếu cần tải package, gọi API ngoài hoặc update hệ thống.
+- Isolated data subnet không có route `0.0.0.0/0` tới Internet Gateway hoặc NAT Gateway.
+- Database thường đặt ở isolated/private subnet, không đặt ở public subnet.
+
+### 14.5. Elastic IP của NAT Gateway là gì?
+
+**Elastic IP** là địa chỉ IPv4 public cố định do AWS cấp cho account.
+
+Với NAT Gateway, Elastic IP là public IP đại diện khi tài nguyên trong private subnet đi ra Internet.
+
+Ví dụ:
+
+```text
+Private EC2 IP:          10.20.10.15
+NAT Gateway Elastic IP:  13.x.x.x
+Server bên ngoài thấy:   13.x.x.x
+```
+
+Luồng traffic:
+
+```text
+EC2 hoặc app trong private subnet
+  -> NAT Gateway
+  -> dùng Elastic IP của NAT Gateway
+  -> Internet
+```
+
+Server bên ngoài không thấy private IP `10.20.10.15`. Nó chỉ thấy request đến từ Elastic IP của NAT Gateway.
+
+Elastic IP của NAT Gateway khác với public IP của resource khác:
+
+```text
+EC2 trong public subnet có public IP riêng
+NAT Gateway có Elastic IP riêng
+Application Load Balancer public có DNS/public IP riêng
+```
+
+NAT Gateway IP chỉ đại diện cho traffic outbound từ private subnet. Nó không phải public IP của toàn bộ AWS account và cũng không phải public IP của mọi resource trong VPC.
+
+### 14.6. Subnet IP là public IP hay private IP?
+
+CIDR của VPC và subnet thường là private IP nội bộ VPC.
+
+Ví dụ:
+
+```text
+VPC:                         10.20.0.0/16
+public subnet:               10.20.0.0/24
+private application subnet:  10.20.10.0/24
+isolated data subnet:        10.20.20.0/24
+```
+
+Các dải `10.20.x.x` ở trên đều là private IP. Tên **public subnet** không có nghĩa IP trong subnet là public IP.
+
+Subnet được gọi là public vì route table của nó có route:
+
+```text
+0.0.0.0/0 -> Internet Gateway
+```
+
+Subnet được gọi là private vì nó không route trực tiếp ra Internet Gateway. Nếu cần đi ra Internet, nó thường đi qua NAT Gateway:
+
+```text
+0.0.0.0/0 -> NAT Gateway
+```
+
+Tóm tắt:
+
+| Khái niệm | Là public IP hay private IP? | Ý nghĩa |
+|---|---|---|
+| `10.20.0.0/16` của VPC | Private IP range | Dải IP nội bộ của VPC. |
+| `10.20.0.0/24` của public subnet | Private IP range | Subnet nội bộ nhưng có route ra Internet Gateway. |
+| `10.20.10.0/24` của private subnet | Private IP range | Subnet nội bộ, không nhận Internet trực tiếp. |
+| Elastic IP của NAT Gateway | Public IP | IP đại diện khi private subnet đi ra Internet. |
+| Public IP của EC2 | Public IP | IP riêng của EC2 nếu EC2 được gán public IP. |
+
+Ghi nhớ ngắn:
+
+```text
+"Public subnet" không có nghĩa IP trong subnet là public.
+Nó chỉ nghĩa là subnet đó có đường trực tiếp ra Internet Gateway.
+```
+
+### 14.7. VPC Endpoint là gì?
+
+**VPC Endpoint** là một đường kết nối riêng để resource trong VPC gọi tới một số AWS service mà không cần đi qua Internet public.
+
+Ví dụ app trong private subnet cần gọi S3, ECR, CloudWatch Logs hoặc Secrets Manager. Nếu không có VPC Endpoint, traffic thường đi theo một trong các đường:
+
+```text
+Private subnet
+  -> NAT Gateway
+  -> Internet Gateway
+  -> AWS service public endpoint
+```
+
+Khi có VPC Endpoint, traffic có thể đi theo đường riêng trong AWS:
+
+```text
+Private subnet
+  -> VPC Endpoint
+  -> AWS service
+```
+
+Nói dễ hiểu:
+
+```text
+NAT Gateway  = cửa để private subnet đi ra Internet
+VPC Endpoint = cửa riêng trong VPC để gọi AWS service được hỗ trợ
+```
+
+VPC Endpoint không thay thế mọi kết nối Internet. Nó chỉ dùng được cho các AWS service có hỗ trợ endpoint.
+
+#### Vì sao cần VPC Endpoint?
+
+VPC Endpoint giúp:
+
+- Resource private gọi AWS service mà không cần public IP.
+- Giảm phụ thuộc vào NAT Gateway cho một số traffic AWS service.
+- Giữ traffic trong mạng AWS thay vì đi qua Internet public.
+- Dễ kiểm soát route và security hơn.
+- Có thể giảm chi phí NAT Gateway data processing cho traffic tới dịch vụ hỗ trợ endpoint.
+
+Ví dụ EKS node trong private subnet cần pull image từ ECR:
+
+```text
+EKS node private subnet
+  -> ECR API endpoint
+  -> ECR DKR endpoint
+  -> S3 endpoint nếu layer image nằm ở S3 backend
+```
+
+Nếu không có endpoint, node có thể phải đi qua NAT Gateway để gọi các service đó.
+
+#### Gateway Endpoint và Interface Endpoint
+
+Có hai loại VPC Endpoint thường gặp:
+
+| Loại endpoint | Dùng cho service nào | Gắn vào đâu | Có security group không? |
+|---|---|---|---|
+| Gateway Endpoint | S3, DynamoDB | Route table | Không dùng security group. |
+| Interface Endpoint | ECR, CloudWatch Logs, Secrets Manager, SSM, KMS và nhiều service khác | Elastic Network Interface trong subnet | Có dùng security group. |
+
+**Gateway Endpoint** hoạt động qua route table.
+
+Ví dụ S3 Gateway Endpoint:
+
+```text
+Private subnet
+  -> route table
+  -> S3 Gateway Endpoint
+  -> S3
+```
+
+Terraform thường gắn Gateway Endpoint vào route table:
+
+```hcl
+route_table_ids = [
+  private_app_route_table_id,
+  isolated_data_route_table_id
+]
+```
+
+Nghĩa là các subnet dùng route table đó có đường private để gọi S3.
+
+**Interface Endpoint** tạo một ENI trong subnet.
+
+ENI có private IP trong VPC và có security group kiểm soát ai được gọi vào endpoint.
+
+Ví dụ Secrets Manager Interface Endpoint:
+
+```text
+App trong private subnet
+  -> gọi HTTPS tới private IP của endpoint
+  -> Security Group của endpoint kiểm tra rule
+  -> endpoint chuyển request tới Secrets Manager
+```
+
+#### Security group của Interface Endpoint dùng để làm gì?
+
+Security group của Interface Endpoint trả lời câu hỏi:
+
+```text
+Ai trong VPC được gọi vào endpoint?
+Được gọi bằng port nào?
+```
+
+Ví dụ rule:
+
+```hcl
+from_port   = 443
+to_port     = 443
+protocol    = "tcp"
+cidr_blocks = [var.vpc_cidr]
+```
+
+Đọc thành câu:
+
+```text
+Cho phép IP nội bộ trong VPC gọi HTTPS TCP/443 vào endpoint.
+```
+
+Nếu:
+
+```hcl
+vpc_cidr = "10.20.0.0/16"
+```
+
+thì rule nghĩa là:
+
+```text
+Các IP 10.20.x.x trong VPC được gọi endpoint qua port 443.
+IP ngoài VPC không được phép gọi endpoint qua rule này.
+```
+
+Nội bộ vẫn dùng HTTPS vì AWS API vẫn cần mã hóa và xác thực service. Private network là đường đi riêng hơn, còn HTTPS là lớp bảo vệ dữ liệu.
+
+#### Luồng chi tiết khi app gọi AWS service qua Interface Endpoint
+
+Ví dụ app gọi Secrets Manager:
+
+```text
+1. App trong private subnet gọi https://secretsmanager...
+2. DNS trong VPC resolve domain đó về private IP của Interface Endpoint.
+3. App gửi request TCP/443 tới endpoint.
+4. Security group của endpoint kiểm tra ingress:
+   - source IP có nằm trong VPC CIDR không?
+   - port có phải 443 không?
+   - protocol có phải TCP không?
+5. Nếu đúng, request được phép đi vào endpoint.
+6. Endpoint chuyển request tới AWS Secrets Manager qua mạng AWS.
+7. Secrets Manager trả response.
+8. Vì security group là stateful, response được cho quay lại app theo connection đã mở.
+```
+
+Tóm tắt:
+
+```text
+Ingress endpoint = cho app trong VPC gọi vào endpoint
+Egress endpoint  = cho endpoint gửi tiếp request hoặc trả response
+```
+
+#### S3 Gateway Endpoint trong module VPC hiện tại
+
+Trong module Terraform hiện tại, ta tạo S3 Gateway Endpoint:
+
+```hcl
+resource "aws_vpc_endpoint" "s3" {
+  vpc_endpoint_type = "Gateway"
+}
+```
+
+Vì là Gateway Endpoint nên nó không dùng security group. Nó được gắn vào route table của private app subnet và isolated data subnet:
+
+```text
+private app route table
+isolated data route table
+  -> S3 Gateway Endpoint
+  -> S3
+```
+
+Kết quả là workload trong private/isolated subnet có thể gọi S3 qua endpoint mà không cần đi ra Internet qua NAT Gateway.
+
 ## 15. Security Group và Network ACL
 
 ### 15.1. Security Group
@@ -2568,7 +2877,6 @@ Khi đã qua cơ bản, nên học tiếp:
 - Multi-account strategy với AWS Organizations.
 - IAM Identity Center.
 - Permission boundary và Service Control Policy.
-- VPC endpoint để truy cập AWS service không qua Internet.
 - PrivateLink.
 - Transit Gateway.
 - Centralized logging.
