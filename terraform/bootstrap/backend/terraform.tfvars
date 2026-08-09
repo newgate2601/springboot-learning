@@ -1,0 +1,7 @@
+aws_region        = "ap-southeast-1"
+project           = "newgate2601"
+environment       = "bootstrap"
+account_id        = "150914615641"
+state_bucket_name = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+lock_table_name   = "terraform-state-lock"
+owner             = "tony"

@@ -3977,6 +3977,7 @@ dev/network
   -> dev/observability
 ```
 
+
 ## Bước 3.3 - Triển khai network dev thật bằng module VPC
 
 ### 1. Mục tiêu của bước này
@@ -4540,3 +4541,610 @@ dev/network
   -> dev/data
   -> dev/observability
 ```
+
+## Bước 3.4 - Dựng network shared-services bằng lại module VPC
+
+### 1. Mục tiêu của bước này
+
+Mục tiêu là tạo network riêng cho nhóm tài nguyên dùng chung, gọi là `shared-services`.
+
+Sau bước này ta có thêm một VPC nền để đặt các thành phần platform dùng chung như:
+
+```text
+GitLab Self-Managed
+GitLab Runner
+Amazon ECR
+Các thành phần CI/CD nền tảng
+```
+
+Network này tách khỏi network `dev` để tránh trộn lẫn tài nguyên nền tảng với workload ứng dụng.
+
+Trạng thái mong muốn sau bước này:
+
+```text
+terraform/environments/shared-services/network
+  -> gọi lại terraform/modules/vpc
+  -> tạo VPC shared-services thật
+  -> lưu state riêng ở shared-services/network/terraform.tfstate
+```
+
+Ở bước này **chưa dựng GitLab, chưa dựng Runner, chưa dựng ECR, chưa tạo EKS, RDS, MSK hoặc ElastiCache**.
+
+### 2. Vì sao cần làm bước này
+
+Trong kiến trúc doanh nghiệp, các thành phần nền tảng dùng chung không nên nằm chung network với môi trường ứng dụng `dev`.
+
+Lý do:
+
+- GitLab là hệ thống quản lý source code, pipeline và quyền truy cập quan trọng.
+- GitLab Runner cần network ổn định để build, pull/push image và truy cập AWS service.
+- ECR là nơi lưu container image dùng cho nhiều môi trường.
+- Các tài nguyên dùng chung có vòng đời khác với tài nguyên `dev`.
+- Khi sau này tạo `staging` hoặc `production`, ta không muốn phải dựng lại GitLab/Runner từ đầu.
+
+Nếu bỏ qua bước này và đặt GitLab vào VPC `dev`, hệ thống sẽ có các rủi ro:
+
+```text
+Xóa dev có thể ảnh hưởng GitLab
+Thay đổi route/security group của dev có thể làm hỏng CI/CD
+Khó phân quyền Terraform state theo phạm vi
+Khó tách chi phí và audit giữa platform và workload
+Khó nâng cấp lên mô hình nhiều account sau này
+```
+
+Trong lab cá nhân, vẫn dùng một AWS account để tiết kiệm chi phí. Tuy nhiên ta vẫn tách bằng VPC, backend key, tag và root module để giữ đúng tư duy vận hành.
+
+### 3. Trước khi bắt đầu cần có gì
+
+Cần chuẩn bị:
+
+- Đã hoàn thành bước 3.3.
+- Module dùng lại đã có ở:
+
+```text
+terraform/modules/vpc
+```
+
+- Terraform remote state backend đã hoạt động.
+- AWS CLI đang trỏ đúng account lab.
+- Region đang dùng là:
+
+```text
+ap-southeast-1
+```
+
+- Đã biết account id, ví dụ:
+
+```text
+150914615641
+```
+
+- Đã chọn CIDR không trùng với `dev`.
+
+Network `dev` hiện đang dùng:
+
+```text
+10.20.0.0/16
+```
+
+Vì vậy network `shared-services` nên dùng dải khác, ví dụ:
+
+```text
+10.10.0.0/16
+```
+
+Kiểm tra nhanh AWS identity:
+
+```powershell
+aws sts get-caller-identity
+```
+
+Kết quả phải đúng account lab, không phải account khác.
+
+### 4. Thao tác chi tiết
+
+#### 4.1. Tạo thư mục root module network cho shared-services
+
+Đi vào thư mục Terraform:
+
+```powershell
+cd C:\code\springboot-learning\terraform
+```
+
+Tạo thư mục:
+
+```powershell
+New-Item -ItemType Directory -Force environments\shared-services\network
+```
+
+Sau bước này cấu trúc sẽ có:
+
+```text
+terraform/
+└── environments/
+    └── shared-services/
+        ├── README.md
+        └── network/
+```
+
+`network` là root module riêng cho VPC dùng chung.
+
+#### 4.2. Copy bộ khung từ dev network
+
+Vì `shared-services/network` cũng gọi lại module VPC giống `dev/network`, có thể copy bộ khung từ root module dev:
+
+```powershell
+Copy-Item environments\dev\network\versions.tf environments\shared-services\network\versions.tf
+Copy-Item environments\dev\network\providers.tf environments\shared-services\network\providers.tf
+Copy-Item environments\dev\network\variables.tf environments\shared-services\network\variables.tf
+Copy-Item environments\dev\network\locals.tf environments\shared-services\network\locals.tf
+Copy-Item environments\dev\network\main.tf environments\shared-services\network\main.tf
+Copy-Item environments\dev\network\outputs.tf environments\shared-services\network\outputs.tf
+Copy-Item environments\dev\network\terraform.tfvars.example environments\shared-services\network\terraform.tfvars.example
+```
+
+Không copy file state local, không copy `.terraform`, không copy `tfplan`.
+
+Nếu có các file sau trong `dev/network`, không đưa sang `shared-services/network`:
+
+```text
+.terraform/
+.terraform.lock.hcl nếu muốn init lại theo root module mới
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
+tfplan
+```
+
+Lý do: mỗi root module phải có state và input thật riêng.
+
+#### 4.3. Tạo backend riêng cho shared-services network
+
+Tạo file:
+
+```text
+terraform/environments/shared-services/network/backend.tf
+```
+
+Nội dung mẫu:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+    key            = "shared-services/network/terraform.tfstate"
+    region         = "ap-southeast-1"
+    dynamodb_table = "terraform-state-lock"
+    encrypt        = true
+    kms_key_id     = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
+  }
+}
+```
+
+Điểm quan trọng nhất là `key` phải khác với `dev/network`:
+
+```hcl
+key = "shared-services/network/terraform.tfstate"
+```
+
+Không dùng:
+
+```hcl
+key = "dev/network/terraform.tfstate"
+```
+
+Nếu dùng nhầm key của dev, Terraform có thể đọc nhầm state và tưởng đang quản lý VPC dev.
+
+#### 4.4. Cập nhật input mẫu cho shared-services
+
+Mở file:
+
+```text
+terraform/environments/shared-services/network/terraform.tfvars.example
+```
+
+Sửa nội dung theo shared-services:
+
+```hcl
+aws_region  = "ap-southeast-1"
+project     = "newgate2601"
+environment = "shared-services"
+owner       = "tony"
+account_id  = "150914615641"
+
+vpc_cidr = "10.10.0.0/16"
+
+availability_zones = [
+  "ap-southeast-1a",
+  "ap-southeast-1b",
+  "ap-southeast-1c"
+]
+
+public_subnet_cidrs = [
+  "10.10.0.0/24",
+  "10.10.1.0/24",
+  "10.10.2.0/24"
+]
+
+private_app_subnet_cidrs = [
+  "10.10.10.0/24",
+  "10.10.11.0/24",
+  "10.10.12.0/24"
+]
+
+isolated_data_subnet_cidrs = [
+  "10.10.20.0/24",
+  "10.10.21.0/24",
+  "10.10.22.0/24"
+]
+
+nat_gateway_mode     = "single"
+enable_vpc_flow_logs = true
+```
+
+Ý nghĩa cách chọn CIDR:
+
+| Network | CIDR | Vai trò |
+|---|---|---|
+| `shared-services` | `10.10.0.0/16` | GitLab, Runner, ECR, CI/CD nền tảng. |
+| `dev` | `10.20.0.0/16` | Workload ứng dụng dev. |
+
+Không để hai VPC dùng cùng CIDR. Nếu sau này cần peering, Transit Gateway hoặc VPN, CIDR trùng nhau sẽ gây lỗi routing.
+
+#### 4.5. Tạo file input thật
+
+Đi vào root module:
+
+```powershell
+cd C:\code\springboot-learning\terraform\environments\shared-services\network
+```
+
+Copy file mẫu:
+
+```powershell
+Copy-Item terraform.tfvars.example terraform.tfvars
+```
+
+Mở `terraform.tfvars` và kiểm tra lại:
+
+```text
+environment = "shared-services"
+vpc_cidr    = "10.10.0.0/16"
+```
+
+Nếu account id, bucket name hoặc KMS ARN của bạn khác ví dụ, sửa lại trước khi chạy Terraform.
+
+#### 4.6. Kiểm tra local name prefix
+
+Mở file:
+
+```text
+terraform/environments/shared-services/network/locals.tf
+```
+
+Nếu đang dùng logic giống `dev/network`, cần bảo đảm tag và name prefix lấy từ biến:
+
+```hcl
+locals {
+  name_prefix = "${var.project}-${var.environment}"
+
+  common_tags = {
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    Owner       = var.owner
+    AccountId   = var.account_id
+    Component   = "network"
+  }
+}
+```
+
+Khi `environment = "shared-services"`, resource name sẽ có dạng:
+
+```text
+newgate2601-shared-services-vpc
+newgate2601-shared-services-public-ap-southeast-1a
+newgate2601-shared-services-private-app-ap-southeast-1a
+```
+
+Tên này giúp nhìn trên AWS Console biết ngay resource thuộc platform shared-services.
+
+### 5. File/config/lệnh liên quan
+
+Các file cần tạo hoặc sửa:
+
+| File | Trạng thái | Vai trò |
+|---|---|---|
+| `terraform/environments/shared-services/network/versions.tf` | Tạo mới | Khai báo Terraform/provider version. |
+| `terraform/environments/shared-services/network/providers.tf` | Tạo mới | Cấu hình AWS provider. |
+| `terraform/environments/shared-services/network/backend.tf` | Tạo mới | Lưu state riêng cho shared-services network. |
+| `terraform/environments/shared-services/network/variables.tf` | Tạo mới | Khai báo input cho root module. |
+| `terraform/environments/shared-services/network/locals.tf` | Tạo mới | Tạo name prefix và tag chung. |
+| `terraform/environments/shared-services/network/main.tf` | Tạo mới | Gọi `modules/vpc`. |
+| `terraform/environments/shared-services/network/outputs.tf` | Tạo mới | Trả VPC id và subnet ids. |
+| `terraform/environments/shared-services/network/terraform.tfvars.example` | Tạo mới | Input mẫu có thể commit. |
+| `terraform/environments/shared-services/network/terraform.tfvars` | Tạo local | Input thật, không nên commit. |
+
+Các lệnh chính:
+
+```powershell
+cd C:\code\springboot-learning\terraform
+terraform fmt -recursive
+cd environments\shared-services\network
+terraform init
+terraform validate
+terraform plan -out=tfplan
+terraform apply "tfplan"
+```
+
+Các backend key sau bước này:
+
+```text
+bootstrap/backend/terraform.tfstate
+dev/network/terraform.tfstate
+shared-services/network/terraform.tfstate
+```
+
+Tách key như vậy giúp mỗi phần hạ tầng có vòng đời riêng.
+
+### 6. Giải thích từng phần quan trọng
+
+#### 6.1. Vì sao không dùng lại state của dev
+
+Terraform state là bản ghi Terraform đang quản lý resource nào.
+
+Nếu `shared-services/network` dùng chung state với `dev/network`, Terraform sẽ không hiểu đây là hai VPC độc lập. Khi đó có thể xảy ra tình huống nguy hiểm:
+
+```text
+Bạn muốn tạo VPC shared-services
+Terraform lại thấy state của dev
+Plan có thể update hoặc destroy nhầm resource dev
+```
+
+Vì vậy mỗi root module cần backend key riêng.
+
+#### 6.2. Vì sao `shared-services` cần VPC riêng
+
+`shared-services` là nơi đặt công cụ nền tảng.
+
+Ví dụ:
+
+```text
+GitLab lưu source code
+Runner chạy CI job
+ECR lưu image
+Backup GitLab lưu vào S3
+Monitoring đọc log và metric nền
+```
+
+Các thành phần này phục vụ nhiều môi trường. Chúng không thuộc riêng `dev`.
+
+Nếu sau này `dev` bị xóa để tiết kiệm chi phí, GitLab và Runner vẫn nên tồn tại.
+
+#### 6.3. Vì sao vẫn tạo public, private app và isolated data subnet
+
+GitLab Self-Managed trong bước sau cần nhiều lớp:
+
+```text
+Public subnet
+  -> đặt public Load Balancer hoặc NAT Gateway
+
+Private application subnet
+  -> đặt GitLab EC2, Runner Manager, service nội bộ
+
+Isolated data subnet
+  -> đặt RDS PostgreSQL hoặc Redis/Valkey nếu dùng managed service
+```
+
+Với lab tiết kiệm chi phí, có thể chưa dùng đủ mọi subnet ngay. Tuy nhiên tạo cấu trúc đúng từ đầu giúp không phải sửa kiến trúc network khi dựng GitLab.
+
+#### 6.4. Vì sao chọn `nat_gateway_mode = "single"` cho lab
+
+`single` nghĩa là dùng ít NAT Gateway hơn để giảm chi phí.
+
+Phù hợp khi:
+
+```text
+Lab cá nhân
+Chưa yêu cầu High Availability thật
+Muốn bảo vệ free credit
+Chấp nhận nếu AZ chứa NAT Gateway lỗi thì private subnet có thể mất egress
+```
+
+Với môi trường doanh nghiệp hoặc production, nên cân nhắc:
+
+```hcl
+nat_gateway_mode = "one_per_az"
+```
+
+Đổi lại chi phí NAT Gateway sẽ cao hơn.
+
+#### 6.5. Vì sao CIDR shared-services là `10.10.0.0/16`
+
+Ta đang phân vùng đơn giản:
+
+```text
+10.10.0.0/16 -> shared-services
+10.20.0.0/16 -> dev
+10.30.0.0/16 -> staging sau này
+10.40.0.0/16 -> production sau này
+```
+
+Cách này dễ nhớ, dễ audit và tránh trùng dải mạng.
+
+### 7. Kiểm tra hoàn thành
+
+Format Terraform:
+
+```powershell
+cd C:\code\springboot-learning\terraform
+terraform fmt -recursive
+```
+
+Đi vào root module:
+
+```powershell
+cd environments\shared-services\network
+```
+
+Init:
+
+```powershell
+terraform init
+```
+
+Kết quả mong đợi:
+
+```text
+Terraform has been successfully initialized!
+```
+
+Validate:
+
+```powershell
+terraform validate
+```
+
+Kết quả mong đợi:
+
+```text
+Success! The configuration is valid.
+```
+
+Plan:
+
+```powershell
+terraform plan -out=tfplan
+```
+
+Trước khi apply, kiểm tra kỹ:
+
+```text
+Backend key là shared-services/network/terraform.tfstate
+Name/tag có shared-services
+CIDR là 10.10.0.0/16
+Không có resource dev bị change/destroy
+Không có resource staging/production
+```
+
+Apply:
+
+```powershell
+terraform apply "tfplan"
+```
+
+Kiểm tra output:
+
+```powershell
+terraform output
+```
+
+Kết quả mong đợi có:
+
+```text
+vpc_id
+public_subnet_ids
+private_app_subnet_ids
+isolated_data_subnet_ids
+```
+
+Kiểm tra VPC trên AWS:
+
+```powershell
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=newgate2601-shared-services-vpc" --region ap-southeast-1
+```
+
+Kiểm tra subnet:
+
+```powershell
+aws ec2 describe-subnets --filters "Name=tag:Environment,Values=shared-services" --region ap-southeast-1
+```
+
+Kết quả mong đợi:
+
+```text
+3 public subnets
+3 private application subnets
+3 isolated data subnets
+```
+
+Kiểm tra state trên S3:
+
+```powershell
+aws s3 ls s3://newgate2601-terraform-state-150914615641-ap-southeast-1/shared-services/network/
+```
+
+Kết quả mong đợi:
+
+```text
+terraform.tfstate
+```
+
+Kiểm tra không đụng state dev:
+
+```powershell
+aws s3 ls s3://newgate2601-terraform-state-150914615641-ap-southeast-1/dev/network/
+```
+
+State `dev/network/terraform.tfstate` vẫn tồn tại riêng và không bị thay đổi ngoài ý muốn.
+
+### 8. Lỗi thường gặp và cách xử lý
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| `Backend configuration changed` | Copy backend từ dev sang nhưng chưa init lại. | Chạy `terraform init -reconfigure` trong `shared-services/network`. |
+| Plan hiện resource `dev` | Backend key hoặc tfvars vẫn đang dùng giá trị của dev. | Dừng lại, sửa `backend.tf`, `terraform.tfvars`, `environment`. Không apply. |
+| `CIDR conflicts with another subnet` | Dải subnet shared-services bị trùng. | Dùng dải `10.10.x.0/24`, không dùng lại `10.20.x.0/24`. |
+| Resource name vẫn có `dev` | `terraform.tfvars` hoặc `locals.tf` chưa sửa đúng. | Kiểm tra `environment = "shared-services"` và `name_prefix`. |
+| `AccessDenied` khi tạo resource | IAM user lab thiếu quyền EC2/VPC/CloudWatch/IAM liên quan. | Kiểm tra policy của IAM user/group lab. |
+| `InvalidParameterValue` về AZ | AZ không đúng region. | Chạy `aws ec2 describe-availability-zones --region ap-southeast-1`. |
+| `Error acquiring the state lock` | Terraform run khác đang giữ lock. | Kiểm tra có terminal/pipeline khác đang chạy không, đợi hoặc xử lý lock cẩn thận. |
+| NAT Gateway tạo lâu | NAT Gateway và Elastic IP cần thời gian. | Đợi vài phút, kiểm tra quota Elastic IP/NAT Gateway. |
+| S3 state không thấy file | Apply chưa thành công hoặc backend key sai. | Kiểm tra output `terraform init`, `terraform state list`, và `backend.tf`. |
+
+Lỗi cần đặc biệt chú ý:
+
+```text
+Không được apply nếu plan có destroy hoặc change tài nguyên dev.
+```
+
+Nếu thấy Terraform định sửa VPC có tên:
+
+```text
+newgate2601-dev-vpc
+```
+
+thì đang nhầm state hoặc nhầm input. Phải dừng lại và sửa trước.
+
+### 9. Kết quả sau bước này
+
+Trạng thái sau khi hoàn thành:
+
+```text
+[x] Đã có root module terraform/environments/shared-services/network
+[x] Đã gọi lại module terraform/modules/vpc
+[x] Đã có VPC shared-services thật
+[x] Đã có 3 public subnets cho shared-services
+[x] Đã có 3 private application subnets cho shared-services
+[x] Đã có 3 isolated data subnets cho shared-services
+[x] Đã có route table đúng cho từng nhóm subnet
+[x] Đã bật VPC Flow Logs nếu enable_vpc_flow_logs = true
+[x] State lưu riêng ở shared-services/network/terraform.tfstate
+[x] State dev/network vẫn tách riêng
+[x] Chưa dựng GitLab
+[x] Chưa dựng GitLab Runner
+[x] Chưa dựng ECR
+[x] Chưa dựng staging hoặc production
+```
+
+Sau bước này, phần network nền đã có đủ hai VPC quan trọng:
+
+```text
+shared-services/network
+  -> dùng cho GitLab, Runner, ECR, CI/CD nền tảng
+
+dev/network
+  -> dùng cho EKS dev, data service dev, observability dev
+```
+
+Bước tiếp theo nên làm là dựng GitLab Self-Managed trên network `shared-services`.

@@ -38,11 +38,3 @@ build/
 *.tfstate.*
 crash.log
 crash.*.log
-*.tfvars
-!*.tfvars.example
-tfplan
-*.tfplan
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json

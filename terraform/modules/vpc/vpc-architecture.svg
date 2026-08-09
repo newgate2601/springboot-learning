@@ -1,0 +1,200 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1040" viewBox="0 0 1500 1040" role="img" aria-labelledby="title desc">
+  <title id="title">Sơ đồ kiến trúc VPC Terraform module</title>
+  <desc id="desc">Sơ đồ thể hiện VPC chứa các Availability Zone; mỗi AZ chứa public, private application và isolated data subnet; NAT Gateway nằm trong public subnet; Elastic IP gắn với NAT Gateway; route table, Internet Gateway, S3 Gateway Endpoint, Flow Logs và CloudWatch Logs được nối bằng dependency và route.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#294f57"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#6d4aa3"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#4d64a8"/>
+    </marker>
+    <style>
+      .bg { fill: #f8f8f4; }
+      .vpc { fill: #edf7ef; stroke: #287047; stroke-width: 3; }
+      .az { fill: #ffffff; stroke: #7e9d8c; stroke-width: 2; stroke-dasharray: 9 7; }
+      .public { fill: #e8f3ff; stroke: #2f72b8; stroke-width: 2; }
+      .private { fill: #fff3da; stroke: #bd7d1f; stroke-width: 2; }
+      .data { fill: #f4eafe; stroke: #7551a8; stroke-width: 2; }
+      .route { fill: #f0f6f5; stroke: #4e7472; stroke-width: 2; }
+      .service { fill: #ffffff; stroke: #53606a; stroke-width: 2; }
+      .log { fill: #edf0ff; stroke: #5568b4; stroke-width: 2; }
+      .note { fill: #ffffff; stroke: #b9c1ba; stroke-width: 1.5; }
+      .text { font-family: Arial, Helvetica, sans-serif; fill: #213233; }
+      .title { font-size: 30px; font-weight: 700; }
+      .subtitle { font-size: 16px; }
+      .h1 { font-size: 22px; font-weight: 700; }
+      .h2 { font-size: 18px; font-weight: 700; }
+      .body { font-size: 14px; }
+      .small { font-size: 12.5px; }
+      .tiny { font-size: 11.5px; }
+      .route-line { stroke: #294f57; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .dependency-line { stroke: #6d4aa3; stroke-width: 2.4; fill: none; marker-end: url(#arrow-purple); stroke-dasharray: 8 6; }
+      .log-line { stroke: #4d64a8; stroke-width: 2.4; fill: none; marker-end: url(#arrow-blue); }
+      .association-line { stroke: #557b62; stroke-width: 2; fill: none; marker-end: url(#arrow); stroke-dasharray: 4 5; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1500" height="1040"/>
+  <text class="text title" x="44" y="50">Terraform VPC Module - containment, route và dependency</text>
+  <text class="text subtitle" x="44" y="78">VPC bao ngoài, bên trong chia theo Availability Zone. Mỗi AZ có public, private app và isolated data subnet. Route table quyết định subnet đi ra đâu.</text>
+
+  <rect class="note" x="1050" y="28" width="390" height="78" rx="8"/>
+  <line class="route-line" x1="1075" y1="52" x2="1140" y2="52"/>
+  <text class="text small" x="1155" y="56">Route traffic</text>
+  <line class="dependency-line" x1="1075" y1="76" x2="1140" y2="76"/>
+  <text class="text small" x="1155" y="80">Phụ thuộc hoặc được gắn vào</text>
+  <line class="log-line" x1="1255" y1="52" x2="1320" y2="52"/>
+  <text class="text small" x="1335" y="56">Gửi log</text>
+
+  <rect class="vpc" x="40" y="130" width="1040" height="780" rx="14"/>
+  <text class="text h1" x="66" y="166">VPC - aws_vpc.this</text>
+  <text class="text body" x="66" y="190">Chứa toàn bộ subnet, route table, security group và VPC Endpoint. CIDR lấy từ var.vpc_cidr.</text>
+
+  <rect class="az" x="70" y="220" width="475" height="640" rx="12"/>
+  <text class="text h2" x="94" y="252">Availability Zone 1</text>
+  <text class="text small" x="94" y="274">var.availability_zones[0]</text>
+
+  <rect class="az" x="575" y="220" width="475" height="640" rx="12"/>
+  <text class="text h2" x="599" y="252">Availability Zone N</text>
+  <text class="text small" x="599" y="274">var.availability_zones[count.index]</text>
+
+  <rect class="public" x="100" y="305" width="415" height="155" rx="8"/>
+  <text class="text h2" x="122" y="335">Public subnet</text>
+  <text class="text small" x="122" y="358">aws_subnet.public[0]</text>
+  <text class="text small" x="122" y="378">CIDR: var.public_subnet_cidrs[0]</text>
+  <text class="text small" x="122" y="398">map_public_ip_on_launch = true</text>
+
+  <rect class="service" x="300" y="325" width="185" height="52" rx="7"/>
+  <text class="text body" x="318" y="348">NAT Gateway</text>
+  <text class="text tiny" x="318" y="366">aws_nat_gateway.this[0]</text>
+
+  <rect class="service" x="300" y="392" width="185" height="45" rx="7"/>
+  <text class="text body" x="318" y="420">Elastic IP - aws_eip.nat[0]</text>
+
+  <rect class="private" x="100" y="500" width="415" height="115" rx="8"/>
+  <text class="text h2" x="122" y="532">Private application subnet</text>
+  <text class="text small" x="122" y="556">aws_subnet.private_app[0]</text>
+  <text class="text small" x="122" y="578">CIDR: var.private_app_subnet_cidrs[0]</text>
+  <text class="text small" x="122" y="598">Workload private: EKS node, ECS task, EC2 app</text>
+
+  <rect class="data" x="100" y="660" width="415" height="115" rx="8"/>
+  <text class="text h2" x="122" y="692">Isolated data subnet</text>
+  <text class="text small" x="122" y="716">aws_subnet.isolated_data[0]</text>
+  <text class="text small" x="122" y="738">CIDR: var.isolated_data_subnet_cidrs[0]</text>
+  <text class="text small" x="122" y="758">Data layer: RDS, MSK, Redis sau này</text>
+
+  <rect class="public" x="605" y="305" width="415" height="155" rx="8"/>
+  <text class="text h2" x="627" y="335">Public subnet</text>
+  <text class="text small" x="627" y="358">aws_subnet.public[count.index]</text>
+  <text class="text small" x="627" y="378">Một public subnet trên mỗi AZ</text>
+  <text class="text small" x="627" y="398">Gắn public route table chung</text>
+
+  <rect class="service" x="805" y="325" width="185" height="52" rx="7"/>
+  <text class="text body" x="823" y="348">NAT Gateway</text>
+  <text class="text tiny" x="823" y="366">khi one_per_az</text>
+
+  <rect class="service" x="805" y="392" width="185" height="45" rx="7"/>
+  <text class="text body" x="823" y="420">Elastic IP tương ứng</text>
+
+  <rect class="private" x="605" y="500" width="415" height="115" rx="8"/>
+  <text class="text h2" x="627" y="532">Private application subnet</text>
+  <text class="text small" x="627" y="556">aws_subnet.private_app[count.index]</text>
+  <text class="text small" x="627" y="578">Route ra Internet qua NAT Gateway</text>
+  <text class="text small" x="627" y="598">Không nhận public IP mặc định</text>
+
+  <rect class="data" x="605" y="660" width="415" height="115" rx="8"/>
+  <text class="text h2" x="627" y="692">Isolated data subnet</text>
+  <text class="text small" x="627" y="716">aws_subnet.isolated_data[count.index]</text>
+  <text class="text small" x="627" y="738">Không có default route ra Internet</text>
+  <text class="text small" x="627" y="758">Có route private đến S3 qua Gateway Endpoint</text>
+
+  <rect class="route" x="1125" y="150" width="315" height="82" rx="8"/>
+  <text class="text h2" x="1148" y="181">Internet Gateway</text>
+  <text class="text small" x="1148" y="204">aws_internet_gateway.this</text>
+  <text class="text tiny" x="1148" y="220">Gắn vào VPC bằng vpc_id</text>
+
+  <rect class="route" x="1125" y="270" width="315" height="92" rx="8"/>
+  <text class="text h2" x="1148" y="302">Public route table</text>
+  <text class="text small" x="1148" y="326">aws_route_table.public</text>
+  <text class="text small" x="1148" y="346">0.0.0.0/0 -> Internet Gateway</text>
+
+  <rect class="route" x="1125" y="402" width="315" height="102" rx="8"/>
+  <text class="text h2" x="1148" y="434">Private app route table</text>
+  <text class="text small" x="1148" y="458">aws_route_table.private_app[*]</text>
+  <text class="text small" x="1148" y="478">0.0.0.0/0 -> NAT Gateway</text>
+  <text class="text tiny" x="1148" y="494">single: dùng NAT[0], one_per_az: dùng NAT cùng index</text>
+
+  <rect class="route" x="1125" y="544" width="315" height="92" rx="8"/>
+  <text class="text h2" x="1148" y="576">Isolated route table</text>
+  <text class="text small" x="1148" y="600">aws_route_table.isolated_data[*]</text>
+  <text class="text small" x="1148" y="620">Không có 0.0.0.0/0</text>
+
+  <rect class="service" x="1125" y="676" width="315" height="92" rx="8"/>
+  <text class="text h2" x="1148" y="708">S3 Gateway Endpoint</text>
+  <text class="text small" x="1148" y="732">aws_vpc_endpoint.s3</text>
+  <text class="text small" x="1148" y="752">Gắn vào private + isolated route tables</text>
+
+  <rect class="service" x="1125" y="808" width="315" height="82" rx="8"/>
+  <text class="text h2" x="1148" y="840">Endpoint Security Group</text>
+  <text class="text small" x="1148" y="864">aws_security_group.vpc_endpoint</text>
+  <text class="text tiny" x="1148" y="880">Dùng cho Interface Endpoint sau này</text>
+
+  <rect class="log" x="145" y="940" width="260" height="64" rx="8"/>
+  <text class="text h2" x="168" y="970">VPC Flow Logs</text>
+  <text class="text small" x="168" y="990">aws_flow_log.this | traffic_type = ALL</text>
+
+  <rect class="log" x="455" y="940" width="285" height="64" rx="8"/>
+  <text class="text h2" x="478" y="970">CloudWatch Log Group</text>
+  <text class="text small" x="478" y="990">/aws/vpc-flow-logs/${var.name_prefix}</text>
+
+  <rect class="log" x="790" y="940" width="260" height="64" rx="8"/>
+  <text class="text h2" x="813" y="970">IAM role/policy</text>
+  <text class="text small" x="813" y="990">Cho phép Flow Logs ghi CloudWatch</text>
+
+  <path class="dependency-line" d="M300 416 L392 379"/>
+  <text class="text tiny" x="360" y="407">gắn EIP</text>
+
+  <path class="dependency-line" d="M805 416 L897 379"/>
+  <text class="text tiny" x="865" y="407">gắn EIP</text>
+
+  <path class="dependency-line" d="M1080 176 L1123 190"/>
+  <text class="text tiny" x="1090" y="166">IGW gắn VPC</text>
+
+  <path class="association-line" d="M515 365 C730 312, 935 312, 1123 316"/>
+  <path class="association-line" d="M1020 365 C1060 348, 1090 330, 1123 318"/>
+  <text class="text tiny" x="895" y="300">association public subnet -> public RT</text>
+
+  <path class="route-line" d="M1440 316 C1470 260, 1470 210, 1442 190"/>
+  <text class="text tiny" x="1320" y="256">default route</text>
+
+  <path class="association-line" d="M515 558 C735 520, 930 455, 1123 454"/>
+  <path class="association-line" d="M1020 558 C1060 510, 1095 460, 1123 454"/>
+  <text class="text tiny" x="840" y="518">private app subnet -> private RT</text>
+
+  <path class="route-line" d="M1125 454 C900 455, 625 407, 486 354"/>
+  <text class="text tiny" x="770" y="438">0.0.0.0/0 qua NAT</text>
+
+  <path class="association-line" d="M515 718 C735 655, 930 590, 1123 590"/>
+  <path class="association-line" d="M1020 718 C1060 670, 1095 600, 1123 590"/>
+  <text class="text tiny" x="835" y="658">isolated subnet -> isolated RT</text>
+
+  <path class="dependency-line" d="M1125 722 C1045 722, 1045 596, 1123 590"/>
+  <path class="dependency-line" d="M1125 722 C1045 722, 1045 458, 1123 454"/>
+  <text class="text tiny" x="1038" y="700">endpoint gắn route table</text>
+
+  <path class="route-line" d="M515 718 C725 738, 920 735, 1123 722"/>
+  <path class="route-line" d="M1020 718 C1060 720, 1090 722, 1123 722"/>
+  <text class="text tiny" x="755" y="755">gọi S3 qua AWS private network</text>
+
+  <path class="log-line" d="M275 940 C250 875, 245 815, 245 775"/>
+  <text class="text tiny" x="255" y="922">thu thập traffic trong VPC</text>
+
+  <path class="log-line" d="M405 972 L453 972"/>
+  <path class="dependency-line" d="M790 972 L742 972"/>
+
+  <path class="dependency-line" d="M1125 850 C1075 850, 1080 800, 1045 790"/>
+  <text class="text tiny" x="1060" y="835">nằm trong VPC</text>
+</svg>

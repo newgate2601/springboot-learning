@@ -1526,7 +1526,7 @@ Nó chỉ nghĩa là subnet đó có đường trực tiếp ra Internet Gateway
 
 **VPC Endpoint** là một đường kết nối riêng để resource trong VPC gọi tới một số AWS service mà không cần đi qua Internet public.
 
-Ví dụ app trong private subnet cần gọi S3, ECR, CloudWatch Logs hoặc Secrets Manager. Nếu không có VPC Endpoint, traffic thường đi theo một trong các đường:
+Ví dụ app trong private subnet cần gọi S3, ECR, CloudWatch Logs hoặc Secrets Manager. Nếu không có VPC Endpoint, traffic thường phải đi ra ngoài VPC qua NAT Gateway:
 
 ```text
 Private subnet
@@ -1539,15 +1539,8 @@ Khi có VPC Endpoint, traffic có thể đi theo đường riêng trong AWS:
 
 ```text
 Private subnet
-  -> VPC Endpoint
+  -> VPC Endpoint trong VPC
   -> AWS service
-```
-
-Nói dễ hiểu:
-
-```text
-NAT Gateway  = cửa để private subnet đi ra Internet
-VPC Endpoint = cửa riêng trong VPC để gọi AWS service được hỗ trợ
 ```
 
 VPC Endpoint không thay thế mọi kết nối Internet. Nó chỉ dùng được cho các AWS service có hỗ trợ endpoint.
@@ -1573,7 +1566,14 @@ EKS node private subnet
 
 Nếu không có endpoint, node có thể phải đi qua NAT Gateway để gọi các service đó.
 
-#### Gateway Endpoint và Interface Endpoint
+#### Vì sao lại có Gateway Endpoint và Interface Endpoint?
+
+Trong Terraform, cả hai đều có thể được khai báo bằng resource `aws_vpc_endpoint`, nên nhìn qua sẽ dễ nghĩ chúng giống nhau. Nhưng ở tầng network AWS, chúng là hai thiết kế khác nhau.
+
+Lý do chính: **không phải AWS service nào cũng được expose vào VPC theo cùng một cách**.
+
+- S3 và DynamoDB là service regional rất lớn, không chạy như một ENI riêng trong subnet của từng VPC. AWS cho phép VPC đi tới chúng bằng route đặc biệt trong route table.
+- Nhiều service API khác như ECR, STS, Secrets Manager, CloudWatch Logs, SSM, KMS được expose qua AWS PrivateLink. AWS đặt một ENI có private IP vào subnet của bạn để app gọi service qua IP private đó.
 
 Có hai loại VPC Endpoint thường gặp:
 
@@ -1582,7 +1582,25 @@ Có hai loại VPC Endpoint thường gặp:
 | Gateway Endpoint | S3, DynamoDB | Route table | Không dùng security group. |
 | Interface Endpoint | ECR, CloudWatch Logs, Secrets Manager, SSM, KMS và nhiều service khác | Elastic Network Interface trong subnet | Có dùng security group. |
 
-**Gateway Endpoint** hoạt động qua route table.
+Nói chính xác theo network behavior:
+
+```text
+Gateway Endpoint
+  -> không tạo private IP trong subnet
+  -> không tạo ENI trong subnet
+  -> không dùng security group
+  -> hoạt động bằng route table
+
+Interface Endpoint
+  -> tạo ENI trong subnet
+  -> ENI có private IP
+  -> dùng security group
+  -> thường app gọi vào private IP đó bằng HTTPS/TCP 443
+```
+
+#### Gateway Endpoint hoạt động như thế nào?
+
+Gateway Endpoint hoạt động qua route table. Nó không phải là một máy chủ, không phải EC2, không phải ENI nằm trong subnet.
 
 Ví dụ S3 Gateway Endpoint:
 
@@ -1593,7 +1611,7 @@ Private subnet
   -> S3
 ```
 
-Terraform thường gắn Gateway Endpoint vào route table:
+Terraform thường gắn Gateway Endpoint vào route table bằng `route_table_ids`:
 
 ```hcl
 route_table_ids = [
@@ -1602,11 +1620,60 @@ route_table_ids = [
 ]
 ```
 
-Nghĩa là các subnet dùng route table đó có đường private để gọi S3.
+Nghĩa là các subnet đang dùng những route table đó sẽ có đường private để gọi S3.
 
-**Interface Endpoint** tạo một ENI trong subnet.
+Ví dụ cụ thể:
 
-ENI có private IP trong VPC và có security group kiểm soát ai được gọi vào endpoint.
+```text
+VPC CIDR: 10.20.0.0/16
+Private app subnet: 10.20.11.0/24
+Isolated data subnet: 10.20.21.0/24
+Private app route table: private-app-rt
+Isolated data route table: isolated-data-rt
+S3 Gateway Endpoint được gắn vào:
+  - private-app-rt
+  - isolated-data-rt
+```
+
+Khi app trong private subnet gọi S3:
+
+```text
+App IP: 10.20.11.25
+Destination: s3.ap-southeast-1.amazonaws.com
+Subnet đang dùng route table: private-app-rt
+private-app-rt có route do S3 Gateway Endpoint thêm vào
+Traffic đi tới S3 qua mạng private của AWS
+Không đi qua NAT Gateway
+Không đi qua Internet Gateway
+```
+
+Khi database job trong isolated subnet cần đọc file backup từ S3:
+
+```text
+Job IP: 10.20.21.30
+Destination: S3 bucket
+Subnet đang dùng route table: isolated-data-rt
+isolated-data-rt có S3 Gateway Endpoint route
+Traffic đi tới S3 qua mạng private của AWS
+Không cần default route 0.0.0.0/0
+```
+
+Điểm quan trọng cho người mới:
+
+```text
+Gateway Endpoint kiểm soát bằng:
+  - route table nào được gắn endpoint
+  - endpoint policy nếu có
+  - IAM policy của caller
+  - S3 bucket policy nếu có
+
+Gateway Endpoint không kiểm soát bằng security group,
+vì nó không có ENI/private IP trong subnet để gắn security group.
+```
+
+#### Interface Endpoint hoạt động như thế nào?
+
+Interface Endpoint tạo một ENI trong subnet. ENI này có private IP trong VPC và có security group kiểm soát ai được gọi vào endpoint.
 
 Ví dụ Secrets Manager Interface Endpoint:
 
@@ -1615,6 +1682,238 @@ App trong private subnet
   -> gọi HTTPS tới private IP của endpoint
   -> Security Group của endpoint kiểm tra rule
   -> endpoint chuyển request tới Secrets Manager
+```
+
+Ví dụ cụ thể:
+
+```text
+VPC CIDR: 10.20.0.0/16
+Private app subnet: 10.20.11.0/24
+App IP: 10.20.11.25
+Secrets Manager Interface Endpoint ENI IP: 10.20.11.80
+Security group của endpoint:
+  ingress TCP 443 từ 10.20.0.0/16
+```
+
+Khi app gọi Secrets Manager:
+
+```text
+1. App gọi domain của Secrets Manager bằng HTTPS.
+2. Private DNS trong VPC resolve domain đó về private IP 10.20.11.80.
+3. App gửi packet:
+   10.20.11.25:random_port -> 10.20.11.80:443 TCP
+4. Security group gắn với endpoint ENI kiểm tra ingress:
+   - source 10.20.11.25 có nằm trong 10.20.0.0/16 không? Có.
+   - destination port có phải 443 không? Có.
+   - protocol có phải TCP không? Có.
+5. Request được cho vào endpoint.
+6. Endpoint chuyển request tới AWS Secrets Manager qua AWS PrivateLink.
+7. Secrets Manager trả response về app.
+```
+
+Nếu app gọi sai port:
+
+```text
+10.20.11.25 -> 10.20.11.80:80 TCP
+```
+
+Security group kiểm tra:
+
+```text
+Port có phải 443 không? Không.
+=> Bị chặn.
+```
+
+Nếu source nằm ngoài VPC CIDR:
+
+```text
+203.0.113.10 -> 10.20.11.80:443 TCP
+```
+
+Security group kiểm tra:
+
+```text
+Source có nằm trong 10.20.0.0/16 không? Không.
+=> Bị chặn.
+```
+
+Điểm quan trọng cho người mới:
+
+```text
+Interface Endpoint kiểm soát bằng:
+  - subnet nơi endpoint ENI được tạo
+  - security group gắn với endpoint ENI
+  - endpoint policy nếu có
+  - IAM policy của caller
+
+Interface Endpoint cần security group,
+vì nó có ENI/private IP nằm trong subnet của VPC.
+```
+
+#### Vì sao S3 thường dùng Gateway Endpoint, còn ECR/Secrets Manager dùng Interface Endpoint?
+
+Vì AWS service phía sau được AWS thiết kế và expose khác nhau.
+
+S3 là service regional quy mô rất lớn. Khi resource trong VPC gọi S3, AWS có thể định tuyến traffic tới S3 bằng route table và prefix list của S3. Không cần tạo một private IP riêng trong subnet cho từng VPC để đại diện cho S3.
+
+Ví dụ S3:
+
+```text
+10.20.11.25
+  -> route table nhận ra destination thuộc S3
+  -> S3 Gateway Endpoint route
+  -> S3
+```
+
+ECR API, ECR Docker, Secrets Manager, STS, CloudWatch Logs lại là nhóm service API thường được expose qua PrivateLink. Với PrivateLink, AWS tạo endpoint ENI trong subnet của bạn để app có một private IP cụ thể mà nó có thể kết nối tới.
+
+Ví dụ Secrets Manager:
+
+```text
+10.20.11.25
+  -> DNS resolve secretsmanager endpoint thành 10.20.11.80
+  -> app kết nối tới 10.20.11.80:443
+  -> Interface Endpoint chuyển request tới Secrets Manager
+```
+
+Vì vậy không phải do Terraform muốn chia làm hai loại. Terraform chỉ mô tả lại thiết kế thật của AWS.
+
+```text
+Terraform resource giống nhau ở mức khai báo:
+  aws_vpc_endpoint
+
+Nhưng AWS network behavior khác nhau:
+  Gateway Endpoint  -> route table
+  Interface Endpoint -> ENI + private IP + security group
+```
+
+#### So sánh bằng ví dụ thực tế
+
+Giả sử có một app trong private subnet:
+
+```text
+App IP: 10.20.11.25
+Subnet: private app subnet
+Không có public IP
+```
+
+App cần gọi hai service:
+
+```text
+1. S3 để đọc file upload.
+2. Secrets Manager để lấy database password.
+```
+
+Với S3 Gateway Endpoint:
+
+```text
+App 10.20.11.25
+  -> gọi S3
+  -> route table của private subnet có S3 Gateway Endpoint route
+  -> traffic đi tới S3
+```
+
+Không có bước security group của endpoint vì S3 Gateway Endpoint không có ENI.
+
+Với Secrets Manager Interface Endpoint:
+
+```text
+App 10.20.11.25
+  -> gọi secretsmanager domain
+  -> DNS trả về private IP của endpoint ENI, ví dụ 10.20.11.80
+  -> app kết nối 10.20.11.80:443
+  -> security group của endpoint kiểm tra ingress
+  -> traffic đi tới Secrets Manager
+```
+
+Bảng tóm tắt:
+
+| Câu hỏi | S3 Gateway Endpoint | Secrets Manager Interface Endpoint |
+|---|---|---|
+| App gửi traffic tới đâu? | Tới S3, route table bắt route S3. | Tới private IP của endpoint ENI. |
+| Có private IP trong subnet không? | Không. | Có. |
+| Có ENI trong subnet không? | Không. | Có. |
+| Có security group không? | Không. | Có. |
+| Kiểm soát network chính ở đâu? | Route table. | Security group của endpoint ENI. |
+| Service thường gặp | S3, DynamoDB. | ECR, STS, Secrets Manager, CloudWatch Logs, SSM, KMS. |
+| App có cần NAT Gateway để gọi service không? | Không, nếu route table đã gắn Gateway Endpoint. | Không, nếu Interface Endpoint và DNS/private route hoạt động đúng. |
+
+#### Vì sao thiết kế này tối ưu cho AWS?
+
+AWS không chọn một kiểu endpoint duy nhất vì workload phía sau các service khác nhau.
+
+**S3/DynamoDB có traffic cực lớn và là service regional.** Nếu mỗi VPC muốn gọi S3 đều phải tạo ENI riêng trong subnet giống Interface Endpoint, AWS sẽ phải quản lý số lượng ENI/private IP rất lớn.
+
+Ví dụ nếu dùng Interface Endpoint cho S3 theo kiểu ENI:
+
+```text
+1 account có 20 VPC
+Mỗi VPC có 3 AZ
+Mỗi AZ cần endpoint ENI cho S3
+
+=> 20 x 3 = 60 ENI chỉ để gọi S3
+```
+
+Nếu có 100.000 account tương tự:
+
+```text
+100.000 x 60 = 6.000.000 ENI
+```
+
+Đó là rất nhiều private IP, ENI lifecycle, DNS mapping, health check và capacity theo AZ chỉ cho một service có traffic khổng lồ như S3.
+
+Vì vậy với S3/DynamoDB, AWS chọn **Gateway Endpoint**:
+
+```text
+Không tạo ENI trong subnet
+Không cấp private IP riêng cho endpoint
+Không cần security group
+Chỉ thêm route vào route table để traffic tới S3/DynamoDB đi vào mạng AWS
+```
+
+Thiết kế này tối ưu vì route table/prefix-list phù hợp hơn với service regional có traffic lớn:
+
+```text
+App 10.20.11.25 gọi S3
+-> route table match destination thuộc S3 prefix list
+-> chuyển traffic vào AWS backbone tới S3
+```
+
+Ngược lại, các service như ECR, STS, Secrets Manager, CloudWatch Logs là các API service nhỏ hơn, thường gọi qua HTTPS. Với nhóm này, AWS dùng **Interface Endpoint / PrivateLink**:
+
+```text
+Tạo ENI có private IP trong subnet của khách hàng
+App gọi private IP đó qua TCP/443
+Security group kiểm soát ai được gọi endpoint
+Endpoint chuyển request tới service phía sau
+```
+
+Thiết kế này tối ưu cho API service vì AWS có một mô hình chung để expose nhiều service vào VPC:
+
+```text
+ECR API
+Secrets Manager
+STS
+CloudWatch Logs
+SSM
+KMS
+
+=> đều có thể dùng mô hình:
+private DNS -> endpoint ENI private IP -> PrivateLink -> AWS service
+```
+
+Tóm lại:
+
+```text
+Gateway Endpoint tối ưu cho S3/DynamoDB:
+  ít per-VPC resource hơn
+  không cần ENI/private IP/security group
+  phù hợp traffic lớn, regional, route-table based
+
+Interface Endpoint tối ưu cho nhiều API service:
+  có private IP rõ ràng trong VPC
+  kiểm soát được bằng security group
+  dùng chung mô hình PrivateLink cho nhiều service
 ```
 
 #### Security group của Interface Endpoint dùng để làm gì?
