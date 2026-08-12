@@ -5148,3 +5148,615 @@ dev/network
 ```
 
 Bước tiếp theo nên làm là dựng GitLab Self-Managed trên network `shared-services`.
+
+## Bước 3.5 - Chốt phương án GitLab Self-Managed theo hướng doanh nghiệp trên shared-services
+
+### 1. Mục tiêu của bước này
+
+Mục tiêu là chốt rõ phương án triển khai **GitLab Self-Managed** theo hướng doanh nghiệp trước khi viết Terraform và tạo tài nguyên AWS thật.
+
+Sau bước này ta phải trả lời được:
+
+```text
+GitLab chạy trong VPC nào?
+GitLab public entrypoint là gì?
+TLS và domain xử lý ở đâu?
+GitLab application chạy ở subnet nào?
+PostgreSQL nằm ở đâu?
+Redis/Valkey nằm ở đâu?
+Gitaly lưu repository ở đâu?
+Artifact, upload, LFS và backup lưu ở đâu?
+Security group tách theo lớp nào?
+Terraform state của GitLab nằm ở backend key nào?
+```
+
+Ở bước này **chưa tạo EC2, RDS, ElastiCache, Load Balancer, Route 53 record, S3 bucket GitLab hoặc chạy GitLab installer**.
+
+Đây là bước chốt kiến trúc và phạm vi trước khi dựng hạ tầng thật.
+
+### 2. Vì sao cần làm bước này
+
+GitLab Self-Managed là control plane của toàn bộ bài thực hành CI/CD và GitOps.
+
+GitLab sẽ lưu:
+
+- Source code ứng dụng.
+- Terraform code.
+- GitOps repository.
+- Merge Request.
+- Pipeline definition.
+- Code Owners.
+- Token và cấu hình CI/CD.
+- Lịch sử thay đổi hạ tầng và ứng dụng.
+
+Nếu dựng GitLab như một EC2 public đơn lẻ rồi để PostgreSQL, Redis, repository, artifact và backup lẫn hết trên cùng máy, ta sẽ học sai mô hình vận hành doanh nghiệp.
+
+Các rủi ro thường gặp:
+
+```text
+EC2 lỗi là mất cả app, DB, repository và backup
+Không tách được security group theo lớp
+Không có database backup/maintenance đúng chuẩn
+Không có object storage riêng cho artifact, upload, LFS
+Không kiểm thử restore được rõ ràng
+Khó scale Runner và CI/CD sau này
+Khó audit chi phí và quyền truy cập
+```
+
+Vì vậy hướng chốt trong tài liệu này là:
+
+```text
+GitLab Self-Managed theo hướng doanh nghiệp
+Tách application, database, cache, repository storage và object storage
+Vẫn nằm trong một AWS account lab để dễ thực hành
+Không dựng staging/production ở giai đoạn này
+```
+
+### 3. Trước khi bắt đầu cần có gì
+
+Cần chuẩn bị:
+
+- Đã hoàn thành bước 3.4.
+- Đã có VPC `shared-services`.
+- Có output từ root module network:
+
+```text
+vpc_id
+public_subnet_ids
+private_app_subnet_ids
+isolated_data_subnet_ids
+```
+
+- AWS CLI đang trỏ đúng account lab.
+- Terraform CLI chạy được.
+- Có domain hoặc subdomain dự kiến cho GitLab.
+
+Ví dụ:
+
+```text
+gitlab.newgate2601.com
+```
+
+Nếu chưa có domain thật, có thể chuẩn bị Terraform trước, nhưng phần nghiệm thu GitLab chưa được coi là hoàn chỉnh cho đến khi có DNS/TLS ổn định.
+
+Kiểm tra network shared-services:
+
+```powershell
+cd C:\code\springboot-learning\terraform\environments\shared-services\network
+terraform output
+```
+
+Kết quả mong đợi phải có VPC và subnet ids.
+
+### 4. Thao tác chi tiết
+
+#### 4.1. Chốt kiến trúc doanh nghiệp làm hướng mặc định
+
+Kiến trúc GitLab Self-Managed được chốt theo tài liệu tổng:
+
+```text
+Route 53 + Application Load Balancer + ACM TLS
+  -> GitLab application trên EC2 trong private application subnet
+  -> RDS for PostgreSQL trong isolated data subnet
+  -> ElastiCache Redis/Valkey trong isolated data subnet
+  -> Gitaly trên EC2 riêng + EBS SSD trong private application subnet
+  -> S3 cho artifact, upload, LFS và backup
+```
+
+Đây là hướng chính của bài thực hành.
+
+Không chốt GitLab single-node làm phương án mặc định.
+
+Phương án single-node Omnibus chỉ được coi là phương án giảm chi phí tạm thời nếu người học chủ động muốn cắt bớt tài nguyên. Nếu dùng phương án tạm, phải ghi rõ là không đạt mục tiêu doanh nghiệp của bước này.
+
+#### 4.2. Chốt sơ đồ triển khai
+
+Sơ đồ triển khai:
+
+```text
+Developer/User
+  -> gitlab.<domain>
+  -> Route 53
+  -> ACM certificate
+  -> Public Application Load Balancer
+  -> GitLab application EC2
+  -> RDS PostgreSQL
+  -> ElastiCache Redis/Valkey
+  -> Gitaly EC2 + EBS
+  -> S3 object buckets
+```
+
+Luồng request web:
+
+```text
+Browser/Git client
+  -> HTTPS 443 tới ALB
+  -> ALB forward tới GitLab application EC2
+  -> GitLab đọc/ghi metadata ở RDS PostgreSQL
+  -> GitLab dùng Redis/Valkey cho cache/session/queue
+  -> GitLab gọi Gitaly để đọc/ghi Git repository
+  -> GitLab lưu object như artifact/LFS/upload/backup lên S3
+```
+
+#### 4.3. Chốt vị trí subnet
+
+Tất cả tài nguyên GitLab nằm trong network `shared-services`.
+
+| Thành phần | Subnet | Public IP | Ghi chú |
+|---|---|---|---|
+| Application Load Balancer | Public subnets | Có DNS public của ALB | Entry point HTTPS cho người dùng. |
+| GitLab application EC2 | Private application subnet | Không | Chỉ nhận traffic từ ALB. |
+| Gitaly EC2 | Private application subnet | Không | Chỉ nhận traffic từ GitLab application. |
+| RDS PostgreSQL | Isolated data subnets | Không | Không route Internet trực tiếp. |
+| ElastiCache Redis/Valkey | Isolated data subnets | Không | Không route Internet trực tiếp. |
+| S3 buckets | Regional service | Không áp dụng | Dùng VPC endpoint nếu module VPC đã bật. |
+
+Với hướng doanh nghiệp, subnet được thiết kế 3 AZ từ đầu. Tuy nhiên số lượng instance ở lab có thể bắt đầu nhỏ:
+
+```text
+GitLab application: 1 EC2 trước
+Gitaly: 1 EC2 trước
+RDS: Single-AZ hoặc Multi-AZ tùy ngân sách
+ElastiCache: 1 node hoặc replication group tùy ngân sách
+```
+
+Điểm quan trọng: dù số node ban đầu ít, **kiến trúc vẫn tách lớp đúng**.
+
+#### 4.4. Chốt domain, Route 53 và TLS
+
+Phương án chuẩn:
+
+```text
+Route 53 hosted zone quản lý domain
+Record gitlab.<domain> trỏ tới ALB
+ACM certificate cấp cho gitlab.<domain>
+ALB listener HTTPS 443 dùng ACM certificate
+ALB listener HTTP 80 redirect sang HTTPS 443
+```
+
+Ví dụ:
+
+```text
+gitlab.newgate2601.com
+```
+
+Không dùng public IP EC2 làm GitLab URL chính.
+
+GitLab cần domain ổn định vì:
+
+- Git remote URL phải bền.
+- GitLab Runner đăng ký vào URL này.
+- Webhook và callback cần URL cố định.
+- TLS certificate gắn với domain.
+- Sau này đổi EC2 hoặc target group không làm đổi URL người dùng.
+
+#### 4.5. Chốt các lớp security group
+
+Tối thiểu cần các security group:
+
+```text
+gitlab-alb-sg
+gitlab-app-sg
+gitlab-gitaly-sg
+gitlab-rds-sg
+gitlab-redis-sg
+```
+
+Rule dự kiến:
+
+```text
+gitlab-alb-sg
+  inbound  80/443 từ Internet hoặc IP được phép
+  outbound tới gitlab-app-sg
+
+gitlab-app-sg
+  inbound  HTTP/HTTPS từ gitlab-alb-sg
+  inbound  SSH từ IP quản trị hoặc bastion/SSM nếu dùng
+  outbound tới gitlab-rds-sg port PostgreSQL
+  outbound tới gitlab-redis-sg port Redis
+  outbound tới gitlab-gitaly-sg port Gitaly
+  outbound tới S3/CloudWatch/package repo qua NAT hoặc VPC endpoint
+
+gitlab-gitaly-sg
+  inbound  Gitaly port từ gitlab-app-sg
+  inbound  SSH từ IP quản trị hoặc bastion/SSM nếu dùng
+  outbound cần thiết cho update/monitoring/backup
+
+gitlab-rds-sg
+  inbound  PostgreSQL từ gitlab-app-sg
+
+gitlab-redis-sg
+  inbound  Redis/Valkey từ gitlab-app-sg
+```
+
+Không mở SSH từ toàn Internet:
+
+```text
+0.0.0.0/0 -> 22
+```
+
+Nếu chưa có bastion, giới hạn CIDR IP cá nhân trong lúc lab. Hướng tốt hơn là dùng AWS Systems Manager Session Manager.
+
+#### 4.6. Chốt sizing ban đầu
+
+Sizing ban đầu theo hướng thực hành doanh nghiệp nhưng vẫn kiểm soát chi phí:
+
+| Thành phần | Gợi ý lab doanh nghiệp | Ghi chú |
+|---|---|---|
+| GitLab application EC2 | `t3.large` hoặc `t3.xlarge` | Chạy GitLab web/API/Sidekiq. |
+| Gitaly EC2 | `t3.medium` hoặc `t3.large` | Phụ thuộc số repository. |
+| RDS PostgreSQL | `db.t3.micro`/`db.t3.small` cho lab, tăng dần khi cần | Có backup retention. |
+| ElastiCache Redis/Valkey | node nhỏ cho lab | Có subnet group và SG riêng. |
+| GitLab app root EBS | 30-50 GB gp3 | OS và package. |
+| Gitaly EBS | 100 GB gp3 trở lên | Lưu Git repository. |
+| S3 buckets | Theo object type | Artifact, upload, LFS, backup. |
+
+Với doanh nghiệp thật, sizing phải dựa trên:
+
+```text
+Số user
+Số repository
+Kích thước repository
+Số pipeline/ngày
+Artifact retention
+RPO/RTO
+```
+
+Trong bài thực hành này, ta bắt đầu nhỏ nhưng đúng cấu trúc.
+
+#### 4.7. Chốt data và backup
+
+Data GitLab được tách theo loại:
+
+| Loại data | Nơi lưu |
+|---|---|
+| Metadata GitLab | RDS PostgreSQL |
+| Cache/session/queue | ElastiCache Redis/Valkey |
+| Git repository | Gitaly EC2 + EBS |
+| Artifact | S3 |
+| Upload | S3 |
+| LFS object | S3 |
+| Backup archive | S3 |
+| GitLab config/secrets | Backup riêng, mã hóa và kiểm soát truy cập |
+
+Backup tối thiểu cần có:
+
+```text
+RDS automated backup/snapshot
+Gitaly repository backup hoặc GitLab backup archive
+S3 object versioning/lifecycle nếu phù hợp
+GitLab secrets file
+GitLab config file
+Restore test định kỳ
+```
+
+Không chỉ backup repository. Nếu mất `gitlab-secrets.json`, restore có thể lỗi decrypt token/secret.
+
+#### 4.8. Chốt Terraform root module sẽ tạo ở bước sau
+
+Root module dự kiến:
+
+```text
+terraform/environments/shared-services/gitlab
+```
+
+State key dự kiến:
+
+```text
+shared-services/gitlab/terraform.tfstate
+```
+
+Module dùng lại dự kiến:
+
+```text
+terraform/modules/gitlab-self-managed
+```
+
+Cấu trúc dự kiến:
+
+```text
+terraform/
+├── environments/
+│   └── shared-services/
+│       └── gitlab/
+│           ├── versions.tf
+│           ├── backend.tf
+│           ├── providers.tf
+│           ├── variables.tf
+│           ├── locals.tf
+│           ├── main.tf
+│           ├── outputs.tf
+│           ├── terraform.tfvars.example
+│           └── README.md
+└── modules/
+    └── gitlab-self-managed/
+        ├── variables.tf
+        ├── main.tf
+        ├── outputs.tf
+        └── README.md
+```
+
+Không tạo module staging hoặc production ở giai đoạn này.
+
+#### 4.9. Ghi lại quyết định kiến trúc
+
+Tạo hoặc cập nhật ghi chú kiến trúc sau này nếu có thư mục ADR:
+
+```text
+docs/adr/007-gitlab-self-managed-on-aws.md
+```
+
+Nội dung cần ghi:
+
+```text
+GitLab Self-Managed đặt trong VPC shared-services
+Public entrypoint là ALB + ACM TLS + Route 53
+GitLab application chạy trên EC2 private subnet
+PostgreSQL dùng Amazon RDS
+Redis/Valkey dùng Amazon ElastiCache
+Repository storage tách qua Gitaly EC2 + EBS
+Artifact/upload/LFS/backup dùng S3
+Không dùng GitLab public SaaS cho bài thực hành này
+```
+
+### 5. File/config/lệnh liên quan
+
+Ở bước này chủ yếu là thiết kế, chưa tạo tài nguyên AWS.
+
+Các thông tin cần chốt:
+
+| Thông tin | Giá trị doanh nghiệp đã chốt |
+|---|---|
+| VPC | `newgate2601-shared-services-vpc` |
+| Root module sau này | `terraform/environments/shared-services/gitlab` |
+| State key sau này | `shared-services/gitlab/terraform.tfstate` |
+| Module sau này | `terraform/modules/gitlab-self-managed` |
+| Domain | `gitlab.<domain-cua-ban>` |
+| TLS | ACM certificate gắn vào ALB |
+| Public entrypoint | Application Load Balancer |
+| GitLab application | EC2 trong private application subnet |
+| PostgreSQL | Amazon RDS trong isolated data subnet |
+| Redis/Valkey | Amazon ElastiCache trong isolated data subnet |
+| Repository storage | Gitaly EC2 + EBS |
+| Artifact/upload/LFS | S3 |
+| Backup | S3 + RDS snapshot + config/secrets backup |
+
+Lệnh kiểm tra output network shared-services:
+
+```powershell
+cd C:\code\springboot-learning\terraform\environments\shared-services\network
+terraform output
+```
+
+Lệnh kiểm tra VPC:
+
+```powershell
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=newgate2601-shared-services-vpc" --region ap-southeast-1
+```
+
+Lệnh kiểm tra subnet:
+
+```powershell
+aws ec2 describe-subnets --filters "Name=tag:Environment,Values=shared-services" --region ap-southeast-1
+```
+
+Lệnh kiểm tra domain nếu đã có:
+
+```powershell
+aws route53 list-hosted-zones
+```
+
+Lệnh kiểm tra ACM certificate nếu đã có:
+
+```powershell
+aws acm list-certificates --region ap-southeast-1
+```
+
+### 6. Giải thích từng phần quan trọng
+
+#### 6.1. Vì sao không dùng GitLab public repository
+
+Tài liệu tổng cố ý chọn GitLab Self-Managed để mô phỏng doanh nghiệp.
+
+Trong doanh nghiệp, source code, pipeline, token, IaC và GitOps config thường cần kiểm soát chặt:
+
+```text
+Private network
+Backup do mình quản lý
+Audit rõ ràng
+Runner do mình quản lý
+Không phụ thuộc GitLab public SaaS cho bài lab kiến trúc nội bộ
+```
+
+Vì vậy GitLab không chỉ là nơi lưu code. Nó là control plane của toàn bộ flow CI/CD trong bài thực hành.
+
+#### 6.2. Vì sao GitLab application EC2 nằm private subnet
+
+GitLab EC2 không nên có public IP trực tiếp.
+
+Luồng đúng:
+
+```text
+User
+  -> HTTPS tới ALB
+  -> ALB forward tới GitLab application private IP
+```
+
+Lợi ích:
+
+- Chỉ ALB expose ra Internet.
+- GitLab application chỉ nhận traffic từ ALB.
+- Dễ bật TLS, redirect và health check ở ALB.
+- Sau này thay EC2 hoặc scale target không đổi URL người dùng.
+
+#### 6.3. Vì sao tách RDS PostgreSQL
+
+PostgreSQL lưu metadata quan trọng của GitLab như user, project, permission, merge request, pipeline metadata và nhiều cấu hình hệ thống.
+
+Tách PostgreSQL sang RDS giúp:
+
+- Có automated backup.
+- Có snapshot.
+- Có maintenance window.
+- Có monitoring riêng.
+- Có đường nâng cấp Multi-AZ.
+- Không mất DB khi GitLab application EC2 lỗi.
+
+#### 6.4. Vì sao tách Redis/Valkey
+
+Redis/Valkey phục vụ cache, session, queue và một số cơ chế runtime của GitLab.
+
+Tách Redis/Valkey sang ElastiCache giúp:
+
+- Không phụ thuộc vòng đời EC2 GitLab application.
+- Có subnet group và security group riêng.
+- Có metric vận hành riêng.
+- Có đường nâng cấp replication group nếu cần.
+
+#### 6.5. Vì sao tách Gitaly
+
+Gitaly là lớp xử lý Git repository.
+
+Nếu repository nằm chung với GitLab application EC2, việc scale, backup và phục hồi sẽ lẫn lộn.
+
+Tách Gitaly giúp:
+
+- Repository storage có EBS riêng.
+- Có thể sizing IOPS/dung lượng riêng.
+- Có thể backup/restore repository rõ hơn.
+- Có đường nâng cấp lên nhiều Gitaly node hoặc Praefect sau này.
+
+#### 6.6. Vì sao dùng S3 cho artifact, upload, LFS và backup
+
+Artifact, upload, LFS và backup là object data. Lưu chúng trên local disk của EC2 sẽ khó scale và dễ mất khi EC2 lỗi.
+
+S3 giúp:
+
+- Tách object data khỏi compute.
+- Có versioning/lifecycle nếu cần.
+- Có encryption bằng KMS.
+- Có thể dùng VPC endpoint.
+- Dễ restore sang hạ tầng mới.
+
+### 7. Kiểm tra hoàn thành
+
+Bước này hoàn thành khi đã chốt được bảng quyết định sau:
+
+| Hạng mục | Quyết định |
+|---|---|
+| VPC | `shared-services` |
+| Public entrypoint | ALB |
+| TLS | ACM certificate |
+| DNS | Route 53 record `gitlab.<domain>` |
+| GitLab application | EC2 private subnet |
+| PostgreSQL | RDS private/isolated subnet |
+| Redis/Valkey | ElastiCache private/isolated subnet |
+| Repository storage | Gitaly EC2 + EBS |
+| Artifact/upload/LFS | S3 |
+| Backup | S3 + RDS snapshot + GitLab config/secrets |
+| EC2 public IP | Không dùng |
+| Terraform root module sau | `terraform/environments/shared-services/gitlab` |
+| Terraform state key sau | `shared-services/gitlab/terraform.tfstate` |
+| Terraform module sau | `terraform/modules/gitlab-self-managed` |
+
+Kiểm tra network đã sẵn sàng:
+
+```powershell
+cd C:\code\springboot-learning\terraform\environments\shared-services\network
+terraform output
+```
+
+Phải có:
+
+```text
+vpc_id
+public_subnet_ids
+private_app_subnet_ids
+isolated_data_subnet_ids
+```
+
+Kiểm tra chưa có tài nguyên GitLab được tạo sớm:
+
+```powershell
+aws ec2 describe-instances --filters "Name=tag:Component,Values=gitlab" --region ap-southeast-1
+aws rds describe-db-instances --region ap-southeast-1
+aws elasticache describe-cache-clusters --region ap-southeast-1
+```
+
+Nếu bước này mới là bước thiết kế, chưa có tài nguyên GitLab là đúng.
+
+### 8. Lỗi thường gặp và cách xử lý
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| Chốt GitLab single-node làm mặc định | Muốn tiết kiệm chi phí nên bỏ tách lớp. | Sửa lại: hướng chính là ALB + EC2 app + RDS + ElastiCache + Gitaly + S3. |
+| Mở public IP cho GitLab EC2 | Muốn truy cập nhanh. | Không dùng public IP EC2; truy cập qua ALB. |
+| Đặt RDS/Redis ở public subnet | Chưa phân biệt app subnet và data subnet. | Đặt RDS/Redis trong isolated data subnet. |
+| Lưu artifact/LFS trên EC2 | Dễ làm nhanh lúc đầu. | Chốt S3 cho object storage ngay từ thiết kế. |
+| Không tách Gitaly | Nghĩ repository chỉ là thư mục local. | Tách Gitaly để repository storage có vòng đời riêng. |
+| Không có domain | Chưa mua hoặc chưa trỏ Route 53. | Có thể chuẩn bị Terraform, nhưng nghiệm thu GitLab cần domain/TLS ổn định. |
+| Mở SSH `0.0.0.0/0` | Tiện truy cập từ mọi nơi. | Giới hạn IP cá nhân hoặc dùng bastion/SSM. |
+| Không ghi backup config/secrets | Chỉ nghĩ tới repository và DB. | Backup cả GitLab config và secrets file. |
+| Lẫn GitLab vào VPC dev | Chưa tách platform và workload. | GitLab phải nằm ở `shared-services`. |
+
+Lỗi cần đặc biệt chú ý:
+
+```text
+RDS, Redis/Valkey và Gitaly không phải phần phụ.
+```
+
+Với GitLab Self-Managed theo hướng doanh nghiệp, đây là các lớp dữ liệu chính. Nếu bỏ qua, tài liệu sẽ lệch khỏi mục tiêu thực hành chuẩn.
+
+### 9. Kết quả sau bước này
+
+Trạng thái sau khi hoàn thành:
+
+```text
+[x] Đã chốt GitLab chạy trong VPC shared-services
+[x] Đã chốt ALB public làm entrypoint
+[x] Đã chốt TLS dùng ACM và DNS dùng Route 53
+[x] Đã chốt GitLab application chạy trên EC2 private subnet
+[x] Đã chốt PostgreSQL dùng Amazon RDS
+[x] Đã chốt Redis/Valkey dùng Amazon ElastiCache
+[x] Đã chốt repository storage dùng Gitaly EC2 + EBS
+[x] Đã chốt artifact/upload/LFS/backup dùng S3
+[x] Đã chốt không dùng public IP trực tiếp cho GitLab EC2
+[x] Đã chốt Terraform root module shared-services/gitlab
+[x] Đã chốt Terraform module gitlab-self-managed
+[x] Chưa tạo tài nguyên AWS GitLab thật
+[x] Chưa tạo staging hoặc production
+```
+
+Bước tiếp theo nên làm là tạo Terraform root module:
+
+```text
+terraform/environments/shared-services/gitlab
+```
+
+và module dùng lại:
+
+```text
+terraform/modules/gitlab-self-managed
+```
+
+để bắt đầu dựng hạ tầng GitLab Self-Managed bằng Terraform theo hướng doanh nghiệp.
