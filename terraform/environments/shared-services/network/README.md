@@ -4,10 +4,10 @@ Root module này quản lý network nền cho nhóm tài nguyên dùng chung `sh
 
 Network này dùng cho các thành phần platform như:
 
-- GitLab Self-Managed.
-- GitLab Runner.
 - Amazon ECR.
-- Các thành phần CI/CD nền tảng.
+- CI/CD integration.
+- Observability nền tảng.
+- Artifact/cache/service dùng chung nếu cần.
 
 Không đặt workload riêng của `dev`, `staging` hoặc `production` trong root module này.
 

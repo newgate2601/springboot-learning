@@ -1,12 +1,12 @@
 locals {
-  name_prefix = "${var.project}-${var.environment}-gitlab"
+  name_prefix = "${var.project}-${var.environment}"
 
   common_tags = {
     Project     = var.project
     Environment = var.environment
     ManagedBy   = "Terraform"
     Owner       = var.owner
-    Component   = "gitlab"
+    Component   = "ecr"
     AccountId   = var.account_id
   }
 }

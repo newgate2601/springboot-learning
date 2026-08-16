@@ -2688,7 +2688,7 @@ Terraform local
 Giá trị tạo ra:
 
 - State không còn phụ thuộc vào một laptop.
-- GitLab Runner sau này có thể dùng cùng backend.
+- CI pipeline sau này có thể dùng cùng backend nếu được cấp quyền phù hợp.
 - Nếu chạy Terraform từ máy khác, chỉ cần có code + credential + backend config là đọc được state.
 - DynamoDB lock giúp tránh hai terminal/CI cùng sửa một state.
 
@@ -4551,10 +4551,10 @@ Mục tiêu là tạo network riêng cho nhóm tài nguyên dùng chung, gọi l
 Sau bước này ta có thêm một VPC nền để đặt các thành phần platform dùng chung như:
 
 ```text
-GitLab Self-Managed
-GitLab Runner
 Amazon ECR
-Các thành phần CI/CD nền tảng
+CI/CD integration
+Observability nền tảng
+Artifact/cache/service dùng chung nếu cần
 ```
 
 Network này tách khỏi network `dev` để tránh trộn lẫn tài nguyên nền tảng với workload ứng dụng.
@@ -4568,7 +4568,7 @@ terraform/environments/shared-services/network
   -> lưu state riêng ở shared-services/network/terraform.tfstate
 ```
 
-Ở bước này **chưa dựng GitLab, chưa dựng Runner, chưa dựng ECR, chưa tạo EKS, RDS, MSK hoặc ElastiCache**.
+Ở bước này **chưa dựng source control/CI self-hosted, chưa dựng ECR, chưa tạo EKS, RDS, MSK hoặc ElastiCache**.
 
 ### 2. Vì sao cần làm bước này
 
@@ -4576,16 +4576,16 @@ Trong kiến trúc doanh nghiệp, các thành phần nền tảng dùng chung k
 
 Lý do:
 
-- GitLab là hệ thống quản lý source code, pipeline và quyền truy cập quan trọng.
-- GitLab Runner cần network ổn định để build, pull/push image và truy cập AWS service.
 - ECR là nơi lưu container image dùng cho nhiều môi trường.
+- CI/CD cần vùng hạ tầng dùng chung để tích hợp với AWS service mà không phụ thuộc vòng đời của `dev`.
+- Observability nền tảng có thể phục vụ nhiều môi trường.
 - Các tài nguyên dùng chung có vòng đời khác với tài nguyên `dev`.
-- Khi sau này tạo `staging` hoặc `production`, ta không muốn phải dựng lại GitLab/Runner từ đầu.
+- Khi sau này tạo `staging` hoặc `production`, ta không muốn phải dựng lại các thành phần platform dùng chung từ đầu.
 
-Nếu bỏ qua bước này và đặt GitLab vào VPC `dev`, hệ thống sẽ có các rủi ro:
+Nếu bỏ qua bước này và đặt toàn bộ platform dùng chung vào VPC `dev`, hệ thống sẽ có các rủi ro:
 
 ```text
-Xóa dev có thể ảnh hưởng GitLab
+Xóa dev có thể ảnh hưởng thành phần dùng chung
 Thay đổi route/security group của dev có thể làm hỏng CI/CD
 Khó phân quyền Terraform state theo phạm vi
 Khó tách chi phí và audit giữa platform và workload
@@ -4786,7 +4786,7 @@ enable_vpc_flow_logs = true
 
 | Network | CIDR | Vai trò |
 |---|---|---|
-| `shared-services` | `10.10.0.0/16` | GitLab, Runner, ECR, CI/CD nền tảng. |
+| `shared-services` | `10.10.0.0/16` | ECR, CI/CD integration, observability và platform dùng chung. |
 | `dev` | `10.20.0.0/16` | Workload ứng dụng dev. |
 
 Không để hai VPC dùng cùng CIDR. Nếu sau này cần peering, Transit Gateway hoặc VPN, CIDR trùng nhau sẽ gây lỗi routing.
@@ -4910,33 +4910,32 @@ Vì vậy mỗi root module cần backend key riêng.
 Ví dụ:
 
 ```text
-GitLab lưu source code
-Runner chạy CI job
 ECR lưu image
-Backup GitLab lưu vào S3
+CI/CD integration gọi AWS service
+Artifact/cache dùng chung nếu cần
 Monitoring đọc log và metric nền
 ```
 
 Các thành phần này phục vụ nhiều môi trường. Chúng không thuộc riêng `dev`.
 
-Nếu sau này `dev` bị xóa để tiết kiệm chi phí, GitLab và Runner vẫn nên tồn tại.
+Nếu sau này `dev` bị xóa để tiết kiệm chi phí, các thành phần platform dùng chung vẫn nên tồn tại.
 
 #### 6.3. Vì sao vẫn tạo public, private app và isolated data subnet
 
-GitLab Self-Managed trong bước sau cần nhiều lớp:
+Platform shared-services vẫn nên có đủ các lớp mạng chuẩn:
 
 ```text
 Public subnet
   -> đặt public Load Balancer hoặc NAT Gateway
 
 Private application subnet
-  -> đặt GitLab EC2, Runner Manager, service nội bộ
+  -> đặt service nội bộ hoặc controller dùng chung nếu cần
 
 Isolated data subnet
-  -> đặt RDS PostgreSQL hoặc Redis/Valkey nếu dùng managed service
+  -> đặt data service dùng chung nếu sau này thật sự cần
 ```
 
-Với lab tiết kiệm chi phí, có thể chưa dùng đủ mọi subnet ngay. Tuy nhiên tạo cấu trúc đúng từ đầu giúp không phải sửa kiến trúc network khi dựng GitLab.
+Với lab tiết kiệm chi phí, có thể chưa dùng đủ mọi subnet ngay. Tuy nhiên tạo cấu trúc đúng từ đầu giúp không phải sửa kiến trúc network khi thêm ECR integration, observability hoặc platform service khác.
 
 #### 6.4. Vì sao chọn `nat_gateway_mode = "single"` cho lab
 
@@ -5131,8 +5130,6 @@ Trạng thái sau khi hoàn thành:
 [x] Đã bật VPC Flow Logs nếu enable_vpc_flow_logs = true
 [x] State lưu riêng ở shared-services/network/terraform.tfstate
 [x] State dev/network vẫn tách riêng
-[x] Chưa dựng GitLab
-[x] Chưa dựng GitLab Runner
 [x] Chưa dựng ECR
 [x] Chưa dựng staging hoặc production
 ```
@@ -5141,743 +5138,198 @@ Sau bước này, phần network nền đã có đủ hai VPC quan trọng:
 
 ```text
 shared-services/network
-  -> dùng cho GitLab, Runner, ECR, CI/CD nền tảng
+  -> dùng cho ECR, CI/CD integration, observability và platform dùng chung
 
 dev/network
   -> dùng cho EKS dev, data service dev, observability dev
 ```
 
-Bước tiếp theo nên làm là dựng GitLab Self-Managed trên network `shared-services`.
+Bước tiếp theo là chốt lại quyết định không self-host GitLab trong lab AWS credit 100$ để tránh tốn tài nguyên không cần thiết.
 
-## Bước 3.5 - Chốt phương án GitLab Self-Managed theo hướng doanh nghiệp trên shared-services
+## Bước 3.5 - Chốt không self-host GitLab trong lab AWS credit 100$
 
 ### 1. Mục tiêu của bước này
 
-Mục tiêu là chốt rõ phương án triển khai **GitLab Self-Managed** theo hướng doanh nghiệp trước khi viết Terraform và tạo tài nguyên AWS thật.
+Mục tiêu là dừng nhánh GitLab Self-Managed trong bài thực hành chính để tránh tiêu tốn tài nguyên AWS không cần thiết.
 
-Sau bước này ta phải trả lời được:
-
-```text
-GitLab chạy trong VPC nào?
-GitLab public entrypoint là gì?
-TLS và domain xử lý ở đâu?
-GitLab application chạy ở subnet nào?
-PostgreSQL nằm ở đâu?
-Redis/Valkey nằm ở đâu?
-Gitaly lưu repository ở đâu?
-Artifact, upload, LFS và backup lưu ở đâu?
-Security group tách theo lớp nào?
-Terraform state của GitLab nằm ở backend key nào?
-```
-
-Ở bước này **chưa tạo EC2, RDS, ElastiCache, Load Balancer, Route 53 record, S3 bucket GitLab hoặc chạy GitLab installer**.
-
-Đây là bước chốt kiến trúc và phạm vi trước khi dựng hạ tầng thật.
-
-### 2. Vì sao cần làm bước này
-
-GitLab Self-Managed là control plane của toàn bộ bài thực hành CI/CD và GitOps.
-
-GitLab sẽ lưu:
-
-- Source code ứng dụng.
-- Terraform code.
-- GitOps repository.
-- Merge Request.
-- Pipeline definition.
-- Code Owners.
-- Token và cấu hình CI/CD.
-- Lịch sử thay đổi hạ tầng và ứng dụng.
-
-Nếu dựng GitLab như một EC2 public đơn lẻ rồi để PostgreSQL, Redis, repository, artifact và backup lẫn hết trên cùng máy, ta sẽ học sai mô hình vận hành doanh nghiệp.
-
-Các rủi ro thường gặp:
+Từ thời điểm này, bài lab dùng:
 
 ```text
-EC2 lỗi là mất cả app, DB, repository và backup
-Không tách được security group theo lớp
-Không có database backup/maintenance đúng chuẩn
-Không có object storage riêng cho artifact, upload, LFS
-Không kiểm thử restore được rõ ràng
-Khó scale Runner và CI/CD sau này
-Khó audit chi phí và quyền truy cập
+GitLab.com hoặc GitHub
+  -> CI pipeline
+  -> Amazon ECR
+  -> GitOps repository
+  -> Argo CD
+  -> Amazon EKS
 ```
 
-Vì vậy hướng chốt trong tài liệu này là:
+Phần GitLab Self-Managed đã được chuyển sang tài liệu riêng:
 
 ```text
-GitLab Self-Managed theo hướng doanh nghiệp
-Tách application, database, cache, repository storage và object storage
-Vẫn nằm trong một AWS account lab để dễ thực hành
-Không dựng staging/production ở giai đoạn này
+AWS/ARCHIVE-GITLAB-SELF-MANAGED-STEP-BY-STEP.md
 ```
 
-### 3. Trước khi bắt đầu cần có gì
+### 2. Quyết định kiến trúc
 
-Cần chuẩn bị:
+Không dựng các tài nguyên GitLab Self-Managed trong account lab:
 
-- Đã hoàn thành bước 3.4.
-- Đã có VPC `shared-services`.
-- Có output từ root module network:
+- Không tạo EC2 GitLab application.
+- Không tạo EC2 Gitaly.
+- Không tạo RDS PostgreSQL riêng cho GitLab.
+- Không tạo ElastiCache Redis riêng cho GitLab.
+- Không tạo ALB riêng cho GitLab.
+- Không tạo S3 buckets GitLab artifacts/uploads/LFS/backups.
+- Không tạo Terraform root module `shared-services/gitlab` trong luồng chính.
+- Không tạo module `gitlab-self-managed` trong luồng chính.
+
+Lý do: mục tiêu hiện tại là học DevOps deployment topology cho hệ thống Spring Boot trên AWS, không phải học vận hành GitLab như một platform riêng.
+
+### 3. Những gì vẫn giữ nguyên
+
+Các phần không thuộc GitLab vẫn giữ nguyên:
+
+- Terraform backend và remote state.
+- `shared-services/network`.
+- `dev/network`.
+- Module VPC dùng chung.
+- Budget/cost alert.
+- CloudTrail audit.
+- IAM lab account setup.
+
+`shared-services` vẫn có giá trị cho các thành phần dùng chung sau này như ECR, CI/CD integration, artifact/cache hoặc observability. Chỉ bỏ riêng nhánh GitLab Self-Managed.
+
+### 4. Cổng nghiệm thu sau khi dọn GitLab
+
+Hoàn thành khi:
 
 ```text
-vpc_id
-public_subnet_ids
-private_app_subnet_ids
-isolated_data_subnet_ids
+[x] Terraform state shared-services/gitlab không còn resource GitLab
+[x] Không còn root module terraform/environments/shared-services/gitlab trong luồng chính
+[x] Không còn module terraform/modules/gitlab-self-managed trong luồng chính
+[x] Step-by-step chính không còn hướng dẫn dựng GitLab Self-Managed
+[x] Network/backend/dev/shared-services khác được giữ nguyên
 ```
 
-- AWS CLI đang trỏ đúng account lab.
-- Terraform CLI chạy được.
-- Có domain hoặc subdomain dự kiến cho GitLab.
+Bước tiếp theo nên làm là chuẩn bị source control/CI bằng GitLab.com hoặc GitHub, sau đó tạo ECR và pipeline build image cho các service Spring Boot.
 
-Ví dụ:
-
-```text
-gitlab.newgate2601.com
-```
-
-Nếu chưa có domain thật, có thể chuẩn bị Terraform trước, nhưng phần nghiệm thu GitLab chưa được coi là hoàn chỉnh cho đến khi có DNS/TLS ổn định.
-
-Kiểm tra network shared-services:
-
-```powershell
-cd C:\code\springboot-learning\terraform\environments\shared-services\network
-terraform output
-```
-
-Kết quả mong đợi phải có VPC và subnet ids.
-
-### 4. Thao tác chi tiết
-
-#### 4.1. Chốt kiến trúc doanh nghiệp làm hướng mặc định
-
-Kiến trúc GitLab Self-Managed được chốt theo tài liệu tổng:
-
-```text
-Route 53 + Application Load Balancer + ACM TLS
-  -> GitLab application trên EC2 trong private application subnet
-  -> RDS for PostgreSQL trong isolated data subnet
-  -> ElastiCache Redis/Valkey trong isolated data subnet
-  -> Gitaly trên EC2 riêng + EBS SSD trong private application subnet
-  -> S3 cho artifact, upload, LFS và backup
-```
-
-Đây là hướng chính của bài thực hành.
-
-Không chốt GitLab single-node làm phương án mặc định.
-
-Phương án single-node Omnibus chỉ được coi là phương án giảm chi phí tạm thời nếu người học chủ động muốn cắt bớt tài nguyên. Nếu dùng phương án tạm, phải ghi rõ là không đạt mục tiêu doanh nghiệp của bước này.
-
-#### 4.2. Chốt sơ đồ triển khai
-
-Sơ đồ triển khai:
-
-```text
-Developer/User
-  -> gitlab.<domain>
-  -> Route 53
-  -> ACM certificate
-  -> Public Application Load Balancer
-  -> GitLab application EC2
-  -> RDS PostgreSQL
-  -> ElastiCache Redis/Valkey
-  -> Gitaly EC2 + EBS
-  -> S3 object buckets
-```
-
-Luồng request web:
-
-```text
-Browser/Git client
-  -> HTTPS 443 tới ALB
-  -> ALB forward tới GitLab application EC2
-  -> GitLab đọc/ghi metadata ở RDS PostgreSQL
-  -> GitLab dùng Redis/Valkey cho cache/session/queue
-  -> GitLab gọi Gitaly để đọc/ghi Git repository
-  -> GitLab lưu object như artifact/LFS/upload/backup lên S3
-```
-
-#### 4.3. Chốt vị trí subnet
-
-Tất cả tài nguyên GitLab nằm trong network `shared-services`.
-
-| Thành phần | Subnet | Public IP | Ghi chú |
-|---|---|---|---|
-| Application Load Balancer | Public subnets | Có DNS public của ALB | Entry point HTTPS cho người dùng. |
-| GitLab application EC2 | Private application subnet | Không | Chỉ nhận traffic từ ALB. |
-| Gitaly EC2 | Private application subnet | Không | Chỉ nhận traffic từ GitLab application. |
-| RDS PostgreSQL | Isolated data subnets | Không | Không route Internet trực tiếp. |
-| ElastiCache Redis/Valkey | Isolated data subnets | Không | Không route Internet trực tiếp. |
-| S3 buckets | Regional service | Không áp dụng | Dùng VPC endpoint nếu module VPC đã bật. |
-
-Với hướng doanh nghiệp, subnet được thiết kế 3 AZ từ đầu. Tuy nhiên số lượng instance ở lab có thể bắt đầu nhỏ:
-
-```text
-GitLab application: 1 EC2 trước
-Gitaly: 1 EC2 trước
-RDS: Single-AZ hoặc Multi-AZ tùy ngân sách
-ElastiCache: 1 node hoặc replication group tùy ngân sách
-```
-
-Điểm quan trọng: dù số node ban đầu ít, **kiến trúc vẫn tách lớp đúng**.
-
-#### 4.4. Chốt domain, Route 53 và TLS
-
-Phương án chuẩn:
-
-```text
-Route 53 hosted zone quản lý domain
-Record gitlab.<domain> trỏ tới ALB
-ACM certificate cấp cho gitlab.<domain>
-ALB listener HTTPS 443 dùng ACM certificate
-ALB listener HTTP 80 redirect sang HTTPS 443
-```
-
-Ví dụ:
-
-```text
-gitlab.newgate2601.com
-```
-
-Không dùng public IP EC2 làm GitLab URL chính.
-
-GitLab cần domain ổn định vì:
-
-- Git remote URL phải bền.
-- GitLab Runner đăng ký vào URL này.
-- Webhook và callback cần URL cố định.
-- TLS certificate gắn với domain.
-- Sau này đổi EC2 hoặc target group không làm đổi URL người dùng.
-
-#### 4.5. Chốt các lớp security group
-
-Tối thiểu cần các security group:
-
-```text
-gitlab-alb-sg
-gitlab-app-sg
-gitlab-gitaly-sg
-gitlab-rds-sg
-gitlab-redis-sg
-```
-
-Rule dự kiến:
-
-```text
-gitlab-alb-sg
-  inbound  80/443 từ Internet hoặc IP được phép
-  outbound tới gitlab-app-sg
-
-gitlab-app-sg
-  inbound  HTTP/HTTPS từ gitlab-alb-sg
-  inbound  SSH từ IP quản trị hoặc bastion/SSM nếu dùng
-  outbound tới gitlab-rds-sg port PostgreSQL
-  outbound tới gitlab-redis-sg port Redis
-  outbound tới gitlab-gitaly-sg port Gitaly
-  outbound tới S3/CloudWatch/package repo qua NAT hoặc VPC endpoint
-
-gitlab-gitaly-sg
-  inbound  Gitaly port từ gitlab-app-sg
-  inbound  SSH từ IP quản trị hoặc bastion/SSM nếu dùng
-  outbound cần thiết cho update/monitoring/backup
-
-gitlab-rds-sg
-  inbound  PostgreSQL từ gitlab-app-sg
-
-gitlab-redis-sg
-  inbound  Redis/Valkey từ gitlab-app-sg
-```
-
-Không mở SSH từ toàn Internet:
-
-```text
-0.0.0.0/0 -> 22
-```
-
-Nếu chưa có bastion, giới hạn CIDR IP cá nhân trong lúc lab. Hướng tốt hơn là dùng AWS Systems Manager Session Manager.
-
-#### 4.6. Chốt sizing ban đầu
-
-Sizing ban đầu theo hướng thực hành doanh nghiệp nhưng vẫn kiểm soát chi phí:
-
-| Thành phần | Gợi ý lab doanh nghiệp | Ghi chú |
-|---|---|---|
-| GitLab application EC2 | `t3.large` hoặc `t3.xlarge` | Chạy GitLab web/API/Sidekiq. |
-| Gitaly EC2 | `t3.medium` hoặc `t3.large` | Phụ thuộc số repository. |
-| RDS PostgreSQL | `db.t3.micro`/`db.t3.small` cho lab, tăng dần khi cần | Có backup retention. |
-| ElastiCache Redis/Valkey | node nhỏ cho lab | Có subnet group và SG riêng. |
-| GitLab app root EBS | 30-50 GB gp3 | OS và package. |
-| Gitaly EBS | 100 GB gp3 trở lên | Lưu Git repository. |
-| S3 buckets | Theo object type | Artifact, upload, LFS, backup. |
-
-Với doanh nghiệp thật, sizing phải dựa trên:
-
-```text
-Số user
-Số repository
-Kích thước repository
-Số pipeline/ngày
-Artifact retention
-RPO/RTO
-```
-
-Trong bài thực hành này, ta bắt đầu nhỏ nhưng đúng cấu trúc.
-
-#### 4.7. Chốt data và backup
-
-Data GitLab được tách theo loại:
-
-| Loại data | Nơi lưu |
-|---|---|
-| Metadata GitLab | RDS PostgreSQL |
-| Cache/session/queue | ElastiCache Redis/Valkey |
-| Git repository | Gitaly EC2 + EBS |
-| Artifact | S3 |
-| Upload | S3 |
-| LFS object | S3 |
-| Backup archive | S3 |
-| GitLab config/secrets | Backup riêng, mã hóa và kiểm soát truy cập |
-
-Backup tối thiểu cần có:
-
-```text
-RDS automated backup/snapshot
-Gitaly repository backup hoặc GitLab backup archive
-S3 object versioning/lifecycle nếu phù hợp
-GitLab secrets file
-GitLab config file
-Restore test định kỳ
-```
-
-Không chỉ backup repository. Nếu mất `gitlab-secrets.json`, restore có thể lỗi decrypt token/secret.
-
-#### 4.8. Chốt Terraform root module sẽ tạo ở bước sau
-
-Root module dự kiến:
-
-```text
-terraform/environments/shared-services/gitlab
-```
-
-State key dự kiến:
-
-```text
-shared-services/gitlab/terraform.tfstate
-```
-
-Module dùng lại dự kiến:
-
-```text
-terraform/modules/gitlab-self-managed
-```
-
-Cấu trúc dự kiến:
-
-```text
-terraform/
-├── environments/
-│   └── shared-services/
-│       └── gitlab/
-│           ├── versions.tf
-│           ├── backend.tf
-│           ├── providers.tf
-│           ├── variables.tf
-│           ├── locals.tf
-│           ├── main.tf
-│           ├── outputs.tf
-│           ├── terraform.tfvars.example
-│           └── README.md
-└── modules/
-    └── gitlab-self-managed/
-        ├── variables.tf
-        ├── main.tf
-        ├── outputs.tf
-        └── README.md
-```
-
-Không tạo module staging hoặc production ở giai đoạn này.
-
-#### 4.9. Ghi lại quyết định kiến trúc
-
-Tạo hoặc cập nhật ghi chú kiến trúc sau này nếu có thư mục ADR:
-
-```text
-docs/adr/007-gitlab-self-managed-on-aws.md
-```
-
-Nội dung cần ghi:
-
-```text
-GitLab Self-Managed đặt trong VPC shared-services
-Public entrypoint là ALB + ACM TLS + Route 53
-GitLab application chạy trên EC2 private subnet
-PostgreSQL dùng Amazon RDS
-Redis/Valkey dùng Amazon ElastiCache
-Repository storage tách qua Gitaly EC2 + EBS
-Artifact/upload/LFS/backup dùng S3
-Không dùng GitLab public SaaS cho bài thực hành này
-```
-
-### 5. File/config/lệnh liên quan
-
-Ở bước này chủ yếu là thiết kế, chưa tạo tài nguyên AWS.
-
-Các thông tin cần chốt:
-
-| Thông tin | Giá trị doanh nghiệp đã chốt |
-|---|---|
-| VPC | `newgate2601-shared-services-vpc` |
-| Root module sau này | `terraform/environments/shared-services/gitlab` |
-| State key sau này | `shared-services/gitlab/terraform.tfstate` |
-| Module sau này | `terraform/modules/gitlab-self-managed` |
-| Domain | `gitlab.<domain-cua-ban>` |
-| TLS | ACM certificate gắn vào ALB |
-| Public entrypoint | Application Load Balancer |
-| GitLab application | EC2 trong private application subnet |
-| PostgreSQL | Amazon RDS trong isolated data subnet |
-| Redis/Valkey | Amazon ElastiCache trong isolated data subnet |
-| Repository storage | Gitaly EC2 + EBS |
-| Artifact/upload/LFS | S3 |
-| Backup | S3 + RDS snapshot + config/secrets backup |
-
-Lệnh kiểm tra output network shared-services:
-
-```powershell
-cd C:\code\springboot-learning\terraform\environments\shared-services\network
-terraform output
-```
-
-Lệnh kiểm tra VPC:
-
-```powershell
-aws ec2 describe-vpcs --filters "Name=tag:Name,Values=newgate2601-shared-services-vpc" --region ap-southeast-1
-```
-
-Lệnh kiểm tra subnet:
-
-```powershell
-aws ec2 describe-subnets --filters "Name=tag:Environment,Values=shared-services" --region ap-southeast-1
-```
-
-Lệnh kiểm tra domain nếu đã có:
-
-```powershell
-aws route53 list-hosted-zones
-```
-
-Lệnh kiểm tra ACM certificate nếu đã có:
-
-```powershell
-aws acm list-certificates --region ap-southeast-1
-```
-
-### 6. Giải thích từng phần quan trọng
-
-#### 6.1. Vì sao không dùng GitLab public repository
-
-Tài liệu tổng cố ý chọn GitLab Self-Managed để mô phỏng doanh nghiệp.
-
-Trong doanh nghiệp, source code, pipeline, token, IaC và GitOps config thường cần kiểm soát chặt:
-
-```text
-Private network
-Backup do mình quản lý
-Audit rõ ràng
-Runner do mình quản lý
-Không phụ thuộc GitLab public SaaS cho bài lab kiến trúc nội bộ
-```
-
-Vì vậy GitLab không chỉ là nơi lưu code. Nó là control plane của toàn bộ flow CI/CD trong bài thực hành.
-
-#### 6.2. Vì sao GitLab application EC2 nằm private subnet
-
-GitLab EC2 không nên có public IP trực tiếp.
-
-Luồng đúng:
-
-```text
-User
-  -> HTTPS tới ALB
-  -> ALB forward tới GitLab application private IP
-```
-
-Lợi ích:
-
-- Chỉ ALB expose ra Internet.
-- GitLab application chỉ nhận traffic từ ALB.
-- Dễ bật TLS, redirect và health check ở ALB.
-- Sau này thay EC2 hoặc scale target không đổi URL người dùng.
-
-#### 6.3. Vì sao tách RDS PostgreSQL
-
-PostgreSQL lưu metadata quan trọng của GitLab như user, project, permission, merge request, pipeline metadata và nhiều cấu hình hệ thống.
-
-Tách PostgreSQL sang RDS giúp:
-
-- Có automated backup.
-- Có snapshot.
-- Có maintenance window.
-- Có monitoring riêng.
-- Có đường nâng cấp Multi-AZ.
-- Không mất DB khi GitLab application EC2 lỗi.
-
-#### 6.4. Vì sao tách Redis/Valkey
-
-Redis/Valkey phục vụ cache, session, queue và một số cơ chế runtime của GitLab.
-
-Tách Redis/Valkey sang ElastiCache giúp:
-
-- Không phụ thuộc vòng đời EC2 GitLab application.
-- Có subnet group và security group riêng.
-- Có metric vận hành riêng.
-- Có đường nâng cấp replication group nếu cần.
-
-#### 6.5. Vì sao tách Gitaly
-
-Gitaly là lớp xử lý Git repository.
-
-Nếu repository nằm chung với GitLab application EC2, việc scale, backup và phục hồi sẽ lẫn lộn.
-
-Tách Gitaly giúp:
-
-- Repository storage có EBS riêng.
-- Có thể sizing IOPS/dung lượng riêng.
-- Có thể backup/restore repository rõ hơn.
-- Có đường nâng cấp lên nhiều Gitaly node hoặc Praefect sau này.
-
-#### 6.6. Vì sao dùng S3 cho artifact, upload, LFS và backup
-
-Artifact, upload, LFS và backup là object data. Lưu chúng trên local disk của EC2 sẽ khó scale và dễ mất khi EC2 lỗi.
-
-S3 giúp:
-
-- Tách object data khỏi compute.
-- Có versioning/lifecycle nếu cần.
-- Có encryption bằng KMS.
-- Có thể dùng VPC endpoint.
-- Dễ restore sang hạ tầng mới.
-
-### 7. Kiểm tra hoàn thành
-
-Bước này hoàn thành khi đã chốt được bảng quyết định sau:
-
-| Hạng mục | Quyết định |
-|---|---|
-| VPC | `shared-services` |
-| Public entrypoint | ALB |
-| TLS | ACM certificate |
-| DNS | Route 53 record `gitlab.<domain>` |
-| GitLab application | EC2 private subnet |
-| PostgreSQL | RDS private/isolated subnet |
-| Redis/Valkey | ElastiCache private/isolated subnet |
-| Repository storage | Gitaly EC2 + EBS |
-| Artifact/upload/LFS | S3 |
-| Backup | S3 + RDS snapshot + GitLab config/secrets |
-| EC2 public IP | Không dùng |
-| Terraform root module sau | `terraform/environments/shared-services/gitlab` |
-| Terraform state key sau | `shared-services/gitlab/terraform.tfstate` |
-| Terraform module sau | `terraform/modules/gitlab-self-managed` |
-
-Kiểm tra network đã sẵn sàng:
-
-```powershell
-cd C:\code\springboot-learning\terraform\environments\shared-services\network
-terraform output
-```
-
-Phải có:
-
-```text
-vpc_id
-public_subnet_ids
-private_app_subnet_ids
-isolated_data_subnet_ids
-```
-
-Kiểm tra chưa có tài nguyên GitLab được tạo sớm:
-
-```powershell
-aws ec2 describe-instances --filters "Name=tag:Component,Values=gitlab" --region ap-southeast-1
-aws rds describe-db-instances --region ap-southeast-1
-aws elasticache describe-cache-clusters --region ap-southeast-1
-```
-
-Nếu bước này mới là bước thiết kế, chưa có tài nguyên GitLab là đúng.
-
-### 8. Lỗi thường gặp và cách xử lý
-
-| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
-|---|---|---|
-| Chốt GitLab single-node làm mặc định | Muốn tiết kiệm chi phí nên bỏ tách lớp. | Sửa lại: hướng chính là ALB + EC2 app + RDS + ElastiCache + Gitaly + S3. |
-| Mở public IP cho GitLab EC2 | Muốn truy cập nhanh. | Không dùng public IP EC2; truy cập qua ALB. |
-| Đặt RDS/Redis ở public subnet | Chưa phân biệt app subnet và data subnet. | Đặt RDS/Redis trong isolated data subnet. |
-| Lưu artifact/LFS trên EC2 | Dễ làm nhanh lúc đầu. | Chốt S3 cho object storage ngay từ thiết kế. |
-| Không tách Gitaly | Nghĩ repository chỉ là thư mục local. | Tách Gitaly để repository storage có vòng đời riêng. |
-| Không có domain | Chưa mua hoặc chưa trỏ Route 53. | Có thể chuẩn bị Terraform, nhưng nghiệm thu GitLab cần domain/TLS ổn định. |
-| Mở SSH `0.0.0.0/0` | Tiện truy cập từ mọi nơi. | Giới hạn IP cá nhân hoặc dùng bastion/SSM. |
-| Không ghi backup config/secrets | Chỉ nghĩ tới repository và DB. | Backup cả GitLab config và secrets file. |
-| Lẫn GitLab vào VPC dev | Chưa tách platform và workload. | GitLab phải nằm ở `shared-services`. |
-
-Lỗi cần đặc biệt chú ý:
-
-```text
-RDS, Redis/Valkey và Gitaly không phải phần phụ.
-```
-
-Với GitLab Self-Managed theo hướng doanh nghiệp, đây là các lớp dữ liệu chính. Nếu bỏ qua, tài liệu sẽ lệch khỏi mục tiêu thực hành chuẩn.
-
-### 9. Kết quả sau bước này
-
-Trạng thái sau khi hoàn thành:
-
-```text
-[x] Đã chốt GitLab chạy trong VPC shared-services
-[x] Đã chốt ALB public làm entrypoint
-[x] Đã chốt TLS dùng ACM và DNS dùng Route 53
-[x] Đã chốt GitLab application chạy trên EC2 private subnet
-[x] Đã chốt PostgreSQL dùng Amazon RDS
-[x] Đã chốt Redis/Valkey dùng Amazon ElastiCache
-[x] Đã chốt repository storage dùng Gitaly EC2 + EBS
-[x] Đã chốt artifact/upload/LFS/backup dùng S3
-[x] Đã chốt không dùng public IP trực tiếp cho GitLab EC2
-[x] Đã chốt Terraform root module shared-services/gitlab
-[x] Đã chốt Terraform module gitlab-self-managed
-[x] Chưa tạo tài nguyên AWS GitLab thật
-[x] Chưa tạo staging hoặc production
-```
-
-Bước tiếp theo nên làm là tạo Terraform root module:
-
-```text
-terraform/environments/shared-services/gitlab
-```
-
-và module dùng lại:
-
-```text
-terraform/modules/gitlab-self-managed
-```
-
-để bắt đầu dựng hạ tầng GitLab Self-Managed bằng Terraform theo hướng doanh nghiệp.
-
-## Bước 3.6 - Tạo bộ khung Terraform cho GitLab Self-Managed
+## Bước 3.6 - Triển khai Amazon ECR dùng chung
 
 ### 1. Mục tiêu của bước này
 
-Mục tiêu là tạo bộ khung Terraform cho GitLab Self-Managed theo kiến trúc đã chốt ở bước 3.5.
+Mục tiêu là tạo lớp **container registry dùng chung** bằng Amazon Elastic Container Registry.
 
-Sau bước này ta có hai phần rõ ràng:
-
-```text
-Root module theo môi trường:
-terraform/environments/shared-services/gitlab
-
-Module dùng lại:
-terraform/modules/gitlab-self-managed
-```
-
-Root module `shared-services/gitlab` chịu trách nhiệm nhận input thật của account lab, cấu hình backend state riêng và gọi module dùng lại.
-
-Module `gitlab-self-managed` là nơi sau này tạo các tài nguyên AWS:
+Sau bước này, account lab có các ECR repository để lưu image của 4 service:
 
 ```text
-ALB
-Security Group
-EC2 GitLab application
-EC2 Gitaly
-RDS PostgreSQL
-ElastiCache Redis/Valkey
-S3 buckets
-IAM role/profile
-CloudWatch log/metric nền
+gateway
+uaa-service
+post-service
+service-registry
 ```
 
-Ở bước này **chưa tạo resource AWS thật**. Mục tiêu là wiring Terraform đúng trước, để bước sau mới thêm resource theo từng lớp.
+ECR nằm trong phạm vi `shared-services` vì image không thuộc riêng một môi trường `dev`, `staging` hay `production`.
+
+Luồng sau khi hoàn thành:
+
+```text
+Developer
+  -> GitLab.com hoặc GitHub
+  -> CI build image
+  -> push image vào Amazon ECR
+  -> GitOps dùng image digest để deploy vào EKS
+```
+
+Ở bước này **chỉ tạo ECR**.
+
+Không tạo:
+
+- EKS.
+- RDS.
+- Redis/Valkey.
+- Kafka/MSK.
+- Argo CD.
+- GitLab Self-Managed.
+- GitLab Runner self-hosted.
 
 ### 2. Vì sao cần làm bước này
 
-GitLab Self-Managed có nhiều thành phần hơn VPC. Nếu viết thẳng tất cả resource vào một file lớn, rất dễ bị rối:
+Trong topology doanh nghiệp, CI không nên build image rồi deploy trực tiếp bằng file local trên máy.
+
+Image cần một registry trung tâm để:
+
+- Lưu image theo version/digest.
+- Cho EKS pull image khi Argo CD sync.
+- Cho phép trace từ commit tới image digest.
+- Áp lifecycle policy để không giữ image cũ mãi.
+- Bật image scan để phát hiện lỗ hổng dependency/container.
+- Tách rõ trách nhiệm: CI build/push image, Argo CD deploy image đã có.
+
+ECR là dịch vụ phù hợp vì:
+
+- Tích hợp IAM với AWS.
+- EKS pull image từ ECR thuận lợi.
+- Không cần tự vận hành registry.
+- Chi phí thấp nếu image ít và có lifecycle policy.
+
+Điểm quan trọng:
 
 ```text
-ALB rule lẫn security group
-EC2 lẫn RDS
-Redis lẫn S3
-IAM lẫn user-data
-Output network lẫn output application
+Không deploy tag latest.
+Không sửa image sau khi đã promote.
+Không build lại image khi promote dev -> staging -> production.
 ```
 
-Tách root module và reusable module giúp:
-
-- Root module giữ input thật của hạ tầng GitLab dùng chung trong `shared-services`.
-- Module dùng lại giữ logic tạo hạ tầng.
-- State GitLab tách riêng khỏi state network.
-- Không tạo GitLab riêng cho `dev`, `staging` hoặc `production`.
-- Các môi trường ứng dụng khác nhau bằng branch, tag, protected environment, GitOps values và pipeline rule.
-- Có thể validate wiring trước khi đụng AWS resource thật.
-
-Nguyên tắc:
+Thứ dùng để deploy phải là digest:
 
 ```text
-shared-services/network tạo network
-shared-services/gitlab dùng output network để tạo GitLab
-modules/gitlab-self-managed không hard-code giá trị riêng của lab
+gateway@sha256:...
+uaa-service@sha256:...
+post-service@sha256:...
+service-registry@sha256:...
 ```
-
-GitLab là hạ tầng nền tảng dùng chung:
-
-```text
-shared-services/gitlab
-  -> lưu source code
-  -> lưu Terraform code
-  -> lưu GitOps repository
-  -> phục vụ CI/CD cho dev, staging và production
-
-dev/staging/production
-  -> là môi trường deploy workload ứng dụng
-  -> khác nhau bằng branch/tag/values/approval/policy
-  -> không có GitLab riêng trong bài lab này
-```
-
-Nếu bỏ qua bước skeleton này và tạo resource vội, khi lỗi sẽ khó biết lỗi nằm ở backend, biến đầu vào, module path hay resource thật.
 
 ### 3. Trước khi bắt đầu cần có gì
 
 Cần chuẩn bị:
 
 - Đã hoàn thành bước 3.5.
-- Đã có thư mục:
+- Terraform remote state backend đã hoạt động.
+- AWS CLI đang trỏ đúng account lab.
+- Region đang dùng là:
 
 ```text
-terraform/environments/shared-services/network
-terraform/modules/vpc
+ap-southeast-1
 ```
 
-- Đã có state backend bootstrap.
-- Đã biết backend bucket, DynamoDB lock table và KMS key đang dùng.
-- Đã biết network output của `shared-services/network`.
+- Đã biết account id:
+
+```text
+150914615641
+```
+
+- Chưa có root module:
+
+```text
+terraform/environments/shared-services/ecr
+```
+
+- Chưa có module:
+
+```text
+terraform/modules/ecr
+```
 
 Kiểm tra nhanh:
 
 ```powershell
-cd C:\code\springboot-learning\terraform\environments\shared-services\network
-terraform output
+aws sts get-caller-identity
 ```
 
-Phải có:
-
-```text
-vpc_id
-public_subnet_ids
-private_app_subnet_ids
-isolated_data_subnet_ids
-```
-
-Nếu `shared-services/network` chưa apply xong thì vẫn có thể tạo file skeleton, nhưng bước GitLab sau chưa thể plan resource thật dựa trên network output.
+Kết quả phải đúng account lab.
 
 ### 4. Thao tác chi tiết
 
-#### 4.1. Tạo thư mục root module GitLab
+#### 4.1. Tạo module dùng lại `modules/ecr`
 
 Đi vào thư mục Terraform:
 
@@ -5888,39 +5340,173 @@ cd C:\code\springboot-learning\terraform
 Tạo thư mục:
 
 ```powershell
-New-Item -ItemType Directory -Force environments\shared-services\gitlab
+New-Item -ItemType Directory -Force modules\ecr
 ```
 
-Kết quả mong đợi:
-
-```text
-terraform/environments/shared-services/gitlab
-```
-
-Thư mục này đại diện cho hạ tầng GitLab thật trong phạm vi `shared-services`.
-
-#### 4.2. Tạo thư mục module dùng lại
-
-Tạo thư mục:
-
-```powershell
-New-Item -ItemType Directory -Force modules\gitlab-self-managed
-```
-
-Kết quả mong đợi:
-
-```text
-terraform/modules/gitlab-self-managed
-```
-
-Module này chưa tạo resource ngay. Ban đầu chỉ nhận input, chuẩn hóa naming/tag và output một số giá trị skeleton để kiểm tra wiring.
-
-#### 4.3. Tạo file `versions.tf` cho root module
+Module này chỉ chứa logic tạo ECR repository và lifecycle policy. Không hard-code tên project, account hoặc environment trong module.
 
 Tạo file:
 
 ```text
-terraform/environments/shared-services/gitlab/versions.tf
+terraform/modules/ecr/variables.tf
+```
+
+Nội dung:
+
+```hcl
+variable "name_prefix" {
+  description = "Prefix used for ECR repository names."
+  type        = string
+}
+
+variable "repositories" {
+  description = "ECR repositories to create."
+  type = map(object({
+    image_tag_mutability = optional(string, "IMMUTABLE")
+    scan_on_push         = optional(bool, true)
+    keep_last_images     = optional(number, 20)
+  }))
+}
+
+variable "tags" {
+  description = "Tags applied to ECR resources."
+  type        = map(string)
+}
+```
+
+Tạo file:
+
+```text
+terraform/modules/ecr/main.tf
+```
+
+Nội dung:
+
+```hcl
+resource "aws_ecr_repository" "this" {
+  for_each = var.repositories
+
+  name                 = "${var.name_prefix}/${each.key}"
+  image_tag_mutability = each.value.image_tag_mutability
+
+  image_scanning_configuration {
+    scan_on_push = each.value.scan_on_push
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = merge(var.tags, {
+    Name       = "${var.name_prefix}/${each.key}"
+    Repository = each.key
+  })
+}
+
+resource "aws_ecr_lifecycle_policy" "this" {
+  for_each = var.repositories
+
+  repository = aws_ecr_repository.this[each.key].name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep only the most recent ${each.value.keep_last_images} images for lab cost control."
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = each.value.keep_last_images
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+```
+
+Tạo file:
+
+```text
+terraform/modules/ecr/outputs.tf
+```
+
+Nội dung:
+
+```hcl
+output "repository_urls" {
+  description = "ECR repository URLs by logical repository name."
+  value = {
+    for name, repo in aws_ecr_repository.this : name => repo.repository_url
+  }
+}
+
+output "repository_arns" {
+  description = "ECR repository ARNs by logical repository name."
+  value = {
+    for name, repo in aws_ecr_repository.this : name => repo.arn
+  }
+}
+
+output "repository_names" {
+  description = "ECR repository names by logical repository name."
+  value = {
+    for name, repo in aws_ecr_repository.this : name => repo.name
+  }
+}
+```
+
+Tạo file:
+
+```text
+terraform/modules/ecr/README.md
+```
+
+Nội dung ngắn:
+
+```markdown
+# ECR Module
+
+Creates shared Amazon ECR repositories for application container images.
+
+- Immutable image tags.
+- Scan on push.
+- AES256 encryption.
+- Lifecycle policy to keep only a limited number of images.
+
+Images should be deployed by digest from GitOps, not by the `latest` tag.
+```
+
+#### 4.2. Tạo root module `shared-services/ecr`
+
+Tạo thư mục:
+
+```powershell
+New-Item -ItemType Directory -Force environments\shared-services\ecr
+```
+
+Root module này có state riêng:
+
+```text
+shared-services/ecr/terraform.tfstate
+```
+
+Không để ECR chung state với network. ECR có vòng đời khác VPC:
+
+```text
+Network có thể giữ lâu
+ECR có thể thêm/xóa repo theo service
+CI/CD chỉ cần quyền vào ECR, không cần quyền sửa VPC
+```
+
+#### 4.3. Tạo file version và provider
+
+Tạo file:
+
+```text
+terraform/environments/shared-services/ecr/versions.tf
 ```
 
 Nội dung:
@@ -5938,51 +5524,10 @@ terraform {
 }
 ```
 
-File này giống các root module trước để toàn bộ Terraform dùng cùng nền provider.
-
-#### 4.4. Tạo file backend riêng cho GitLab
-
 Tạo file:
 
 ```text
-terraform/environments/shared-services/gitlab/backend.tf
-```
-
-Nội dung mẫu:
-
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-    key            = "shared-services/gitlab/terraform.tfstate"
-    region         = "ap-southeast-1"
-    dynamodb_table = "terraform-state-lock"
-    encrypt        = true
-    kms_key_id     = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
-  }
-}
-```
-
-Điểm quan trọng:
-
-```hcl
-key = "shared-services/gitlab/terraform.tfstate"
-```
-
-Không dùng lại:
-
-```hcl
-key = "shared-services/network/terraform.tfstate"
-```
-
-Network và GitLab phải có state riêng.
-
-#### 4.5. Tạo provider và locals cho root module
-
-Tạo file:
-
-```text
-terraform/environments/shared-services/gitlab/providers.tf
+terraform/environments/shared-services/ecr/providers.tf
 ```
 
 Nội dung:
@@ -5997,48 +5542,55 @@ provider "aws" {
 }
 ```
 
+#### 4.4. Tạo backend riêng cho ECR
+
 Tạo file:
 
 ```text
-terraform/environments/shared-services/gitlab/locals.tf
+terraform/environments/shared-services/ecr/backend.tf
 ```
 
 Nội dung:
 
 ```hcl
-locals {
-  name_prefix = "${var.project}-${var.environment}-gitlab"
-
-  common_tags = {
-    Project     = var.project
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-    Owner       = var.owner
-    Component   = "gitlab"
-    AccountId   = var.account_id
+terraform {
+  backend "s3" {
+    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
+    key            = "shared-services/ecr/terraform.tfstate"
+    region         = "ap-southeast-1"
+    dynamodb_table = "terraform-state-lock"
+    encrypt        = true
+    kms_key_id     = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
   }
 }
 ```
 
-Với input mẫu, tên resource sau này sẽ có dạng:
+Điểm cần kiểm tra kỹ:
 
-```text
-newgate2601-shared-services-gitlab-...
+```hcl
+key = "shared-services/ecr/terraform.tfstate"
 ```
 
-#### 4.6. Tạo biến đầu vào cho root module
+Không dùng nhầm:
+
+```hcl
+key = "shared-services/network/terraform.tfstate"
+key = "dev/network/terraform.tfstate"
+```
+
+#### 4.5. Tạo variables, locals và main
 
 Tạo file:
 
 ```text
-terraform/environments/shared-services/gitlab/variables.tf
+terraform/environments/shared-services/ecr/variables.tf
 ```
 
-Nội dung tối thiểu:
+Nội dung:
 
 ```hcl
 variable "aws_region" {
-  description = "AWS region for GitLab shared-services resources."
+  description = "AWS region for shared ECR resources."
   type        = string
 }
 
@@ -6058,125 +5610,92 @@ variable "owner" {
 }
 
 variable "account_id" {
-  description = "AWS account id used for tagging and validation."
+  description = "AWS account id used for tagging."
   type        = string
 }
 
-variable "gitlab_domain_name" {
-  description = "DNS name used by GitLab, for example gitlab.example.com."
-  type        = string
-}
-
-variable "admin_cidr_blocks" {
-  description = "CIDR blocks allowed to access GitLab administration paths such as SSH when needed."
-  type        = list(string)
-}
-
-variable "network_state_bucket" {
-  description = "S3 bucket that stores shared-services network Terraform state."
-  type        = string
-}
-
-variable "network_state_key" {
-  description = "S3 key of shared-services network Terraform state."
-  type        = string
-}
-
-variable "network_state_region" {
-  description = "AWS region of the shared-services network Terraform state."
-  type        = string
+variable "repositories" {
+  description = "ECR repositories to create for Spring Boot services."
+  type = map(object({
+    image_tag_mutability = optional(string, "IMMUTABLE")
+    scan_on_push         = optional(bool, true)
+    keep_last_images     = optional(number, 20)
+  }))
 }
 ```
-
-Các biến network state dùng để đọc output từ `shared-services/network`.
-
-#### 4.7. Đọc remote state của shared-services network
 
 Tạo file:
 
 ```text
-terraform/environments/shared-services/gitlab/main.tf
-```
-
-Nội dung skeleton:
-
-```hcl
-data "terraform_remote_state" "network" {
-  backend = "s3"
-
-  config = {
-    bucket = var.network_state_bucket
-    key    = var.network_state_key
-    region = var.network_state_region
-  }
-}
-
-module "gitlab" {
-  source = "../../../modules/gitlab-self-managed"
-
-  name_prefix              = local.name_prefix
-  gitlab_domain_name       = var.gitlab_domain_name
-  vpc_id                   = data.terraform_remote_state.network.outputs.vpc_id
-  public_subnet_ids        = data.terraform_remote_state.network.outputs.public_subnet_ids
-  private_app_subnet_ids   = data.terraform_remote_state.network.outputs.private_app_subnet_ids
-  isolated_data_subnet_ids = data.terraform_remote_state.network.outputs.isolated_data_subnet_ids
-  admin_cidr_blocks        = var.admin_cidr_blocks
-  tags                     = local.common_tags
-}
-```
-
-Ý nghĩa:
-
-```text
-shared-services/gitlab không tự tạo VPC
-shared-services/gitlab đọc output từ shared-services/network
-module gitlab-self-managed nhận subnet/VPC đã có
-```
-
-#### 4.8. Tạo output cho root module
-
-Tạo file:
-
-```text
-terraform/environments/shared-services/gitlab/outputs.tf
+terraform/environments/shared-services/ecr/locals.tf
 ```
 
 Nội dung:
 
 ```hcl
-output "name_prefix" {
-  description = "Name prefix used by GitLab resources."
-  value       = local.name_prefix
-}
+locals {
+  name_prefix = "${var.project}-${var.environment}"
 
-output "gitlab_domain_name" {
-  description = "GitLab DNS name."
-  value       = module.gitlab.gitlab_domain_name
-}
-
-output "vpc_id" {
-  description = "VPC id used by GitLab."
-  value       = module.gitlab.vpc_id
+  common_tags = {
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    Owner       = var.owner
+    Component   = "ecr"
+    AccountId   = var.account_id
+  }
 }
 ```
-
-Ở bước skeleton, output chỉ xác nhận module wiring. Khi thêm resource thật, output sẽ bổ sung:
-
-```text
-alb_dns_name
-gitlab_app_security_group_id
-gitaly_security_group_id
-rds_endpoint
-redis_endpoint
-backup_bucket_name
-```
-
-#### 4.9. Tạo file input mẫu
 
 Tạo file:
 
 ```text
-terraform/environments/shared-services/gitlab/terraform.tfvars.example
+terraform/environments/shared-services/ecr/main.tf
+```
+
+Nội dung:
+
+```hcl
+module "ecr" {
+  source = "../../../modules/ecr"
+
+  name_prefix  = local.name_prefix
+  repositories = var.repositories
+  tags         = local.common_tags
+}
+```
+
+Tạo file:
+
+```text
+terraform/environments/shared-services/ecr/outputs.tf
+```
+
+Nội dung:
+
+```hcl
+output "repository_urls" {
+  description = "ECR repository URLs by logical repository name."
+  value       = module.ecr.repository_urls
+}
+
+output "repository_arns" {
+  description = "ECR repository ARNs by logical repository name."
+  value       = module.ecr.repository_arns
+}
+
+output "repository_names" {
+  description = "ECR repository names by logical repository name."
+  value       = module.ecr.repository_names
+}
+```
+
+#### 4.6. Tạo input mẫu và input thật
+
+Tạo file:
+
+```text
+terraform/environments/shared-services/ecr/terraform.tfvars.example
 ```
 
 Nội dung:
@@ -6188,1070 +5707,186 @@ environment = "shared-services"
 owner       = "tony"
 account_id  = "150914615641"
 
-gitlab_domain_name = "gitlab.newgate2601.com"
-
-admin_cidr_blocks = [
-  "203.0.113.10/32"
-]
-
-network_state_bucket = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-network_state_key    = "shared-services/network/terraform.tfstate"
-network_state_region = "ap-southeast-1"
+repositories = {
+  gateway = {
+    image_tag_mutability = "IMMUTABLE"
+    scan_on_push         = true
+    keep_last_images     = 20
+  }
+  uaa-service = {
+    image_tag_mutability = "IMMUTABLE"
+    scan_on_push         = true
+    keep_last_images     = 20
+  }
+  post-service = {
+    image_tag_mutability = "IMMUTABLE"
+    scan_on_push         = true
+    keep_last_images     = 20
+  }
+  service-registry = {
+    image_tag_mutability = "IMMUTABLE"
+    scan_on_push         = true
+    keep_last_images     = 20
+  }
+}
 ```
 
-Lưu ý:
+Copy thành input thật:
+
+```powershell
+cd C:\code\springboot-learning\terraform\environments\shared-services\ecr
+Copy-Item terraform.tfvars.example terraform.tfvars
+```
+
+Nếu project, owner hoặc account id khác, sửa `terraform.tfvars` trước khi chạy.
+
+Tên repository thực tế sẽ có dạng:
 
 ```text
-203.0.113.10/32 chỉ là IP ví dụ theo tài liệu.
-Khi chạy thật, thay bằng public IP quản trị của bạn hoặc CIDR VPN/bastion.
-```
-
-Nếu muốn đẩy file input thật lên Git để thực hành trên máy khác, có thể tạo thêm:
-
-```text
-terraform/environments/shared-services/gitlab/terraform.tfvars
-```
-
-Nhưng phải kiểm tra kỹ không có secret trong file.
-
-#### 4.10. Tạo skeleton module `gitlab-self-managed`
-
-Tạo file:
-
-```text
-terraform/modules/gitlab-self-managed/variables.tf
-```
-
-Nội dung:
-
-```hcl
-variable "name_prefix" {
-  description = "Name prefix used by GitLab resources."
-  type        = string
-}
-
-variable "gitlab_domain_name" {
-  description = "DNS name used by GitLab."
-  type        = string
-}
-
-variable "vpc_id" {
-  description = "VPC id where GitLab is deployed."
-  type        = string
-}
-
-variable "public_subnet_ids" {
-  description = "Public subnet ids used by the GitLab load balancer."
-  type        = list(string)
-}
-
-variable "private_app_subnet_ids" {
-  description = "Private application subnet ids used by GitLab application and Gitaly."
-  type        = list(string)
-}
-
-variable "isolated_data_subnet_ids" {
-  description = "Isolated data subnet ids used by RDS and ElastiCache."
-  type        = list(string)
-}
-
-variable "admin_cidr_blocks" {
-  description = "CIDR blocks allowed to access administration endpoints."
-  type        = list(string)
-}
-
-variable "tags" {
-  description = "Tags applied to GitLab resources."
-  type        = map(string)
-}
-```
-
-Tạo file:
-
-```text
-terraform/modules/gitlab-self-managed/main.tf
-```
-
-Nội dung skeleton:
-
-```hcl
-locals {
-  component = "gitlab"
-}
-```
-
-Chưa tạo resource trong file này ở bước 3.6.
-
-Tạo file:
-
-```text
-terraform/modules/gitlab-self-managed/outputs.tf
-```
-
-Nội dung:
-
-```hcl
-output "gitlab_domain_name" {
-  description = "GitLab DNS name."
-  value       = var.gitlab_domain_name
-}
-
-output "vpc_id" {
-  description = "VPC id where GitLab is deployed."
-  value       = var.vpc_id
-}
-```
-
-Tạo file:
-
-```text
-terraform/modules/gitlab-self-managed/README.md
-```
-
-Nội dung cần ghi rõ:
-
-```text
-Module này dùng để dựng GitLab Self-Managed theo hướng doanh nghiệp.
-
-Module dự kiến tạo:
-- ALB + listener + target group.
-- Security Group theo lớp.
-- EC2 GitLab application.
-- EC2 Gitaly + EBS.
-- RDS PostgreSQL.
-- ElastiCache Redis/Valkey.
-- S3 buckets cho artifact, upload, LFS, backup.
-- IAM role/profile cần thiết.
-
-Bước skeleton chưa tạo resource AWS thật.
+newgate2601-shared-services/gateway
+newgate2601-shared-services/uaa-service
+newgate2601-shared-services/post-service
+newgate2601-shared-services/service-registry
 ```
 
 ### 5. File/config/lệnh liên quan
 
 Các file cần tạo:
 
-```text
-terraform/environments/shared-services/gitlab/versions.tf
-terraform/environments/shared-services/gitlab/backend.tf
-terraform/environments/shared-services/gitlab/providers.tf
-terraform/environments/shared-services/gitlab/variables.tf
-terraform/environments/shared-services/gitlab/locals.tf
-terraform/environments/shared-services/gitlab/main.tf
-terraform/environments/shared-services/gitlab/outputs.tf
-terraform/environments/shared-services/gitlab/terraform.tfvars.example
-terraform/environments/shared-services/gitlab/README.md
+| File | Vai trò |
+|---|---|
+| `terraform/modules/ecr/variables.tf` | Input module ECR. |
+| `terraform/modules/ecr/main.tf` | Tạo ECR repository và lifecycle policy. |
+| `terraform/modules/ecr/outputs.tf` | Trả repository URL, ARN và name. |
+| `terraform/modules/ecr/README.md` | Ghi phạm vi module. |
+| `terraform/environments/shared-services/ecr/backend.tf` | State riêng cho ECR. |
+| `terraform/environments/shared-services/ecr/versions.tf` | Terraform/provider version. |
+| `terraform/environments/shared-services/ecr/providers.tf` | AWS provider. |
+| `terraform/environments/shared-services/ecr/variables.tf` | Input root module. |
+| `terraform/environments/shared-services/ecr/locals.tf` | Name prefix và tag chung. |
+| `terraform/environments/shared-services/ecr/main.tf` | Gọi module ECR. |
+| `terraform/environments/shared-services/ecr/outputs.tf` | Expose output ECR. |
+| `terraform/environments/shared-services/ecr/terraform.tfvars.example` | Input mẫu có thể commit. |
+| `terraform/environments/shared-services/ecr/terraform.tfvars` | Input thật cho lab. |
 
-terraform/modules/gitlab-self-managed/variables.tf
-terraform/modules/gitlab-self-managed/main.tf
-terraform/modules/gitlab-self-managed/outputs.tf
-terraform/modules/gitlab-self-managed/README.md
+Các lệnh chính:
+
+```powershell
+cd C:\code\springboot-learning\terraform
+terraform fmt -recursive
+
+cd C:\code\springboot-learning\terraform\environments\shared-services\ecr
+terraform init
+terraform validate
+terraform plan -out=tfplan
+terraform apply "tfplan"
 ```
 
-Nếu cần chạy thật ở máy cá nhân hoặc máy công ty, tạo thêm:
+### 6. Giải thích từng phần quan trọng
+
+#### 6.1. Vì sao ECR nằm trong `shared-services`
+
+Image được build một lần rồi dùng cho nhiều môi trường:
 
 ```text
-terraform/environments/shared-services/gitlab/terraform.tfvars
+CI build gateway@sha256:abc
+  -> dev dùng digest đó
+  -> staging promote đúng digest đó
+  -> production promote đúng digest đó
 ```
 
-Không tạo các file sinh ra khi chạy Terraform:
+Nếu ECR nằm riêng trong `dev`, khi destroy dev để tiết kiệm chi phí có thể làm mất image đã build. Vì vậy ECR là tài nguyên dùng chung.
+
+#### 6.2. Vì sao ECR có state riêng
+
+ECR không phụ thuộc VPC. Nếu để chung state với network, mỗi lần sửa repository hoặc lifecycle policy sẽ kéo theo rủi ro đụng state VPC.
+
+Tách state giúp:
+
+- CI/CD sau này có thể plan/apply ECR mà không có quyền sửa network.
+- Cleanup ECR độc lập với VPC.
+- Dễ audit chi phí và owner.
+
+#### 6.3. Vì sao bật immutable tag
+
+Nếu tag có thể bị ghi đè, cùng một tag có thể trỏ tới hai image khác nhau ở hai thời điểm.
+
+Ví dụ lỗi:
 
 ```text
-.terraform/
-.terraform.lock.hcl
-terraform.tfstate
-terraform.tfstate.backup
-tfplan
+gateway:dev hôm qua -> sha256:aaa
+gateway:dev hôm nay -> sha256:bbb
 ```
 
-Các lệnh kiểm tra skeleton:
+Khi debug incident, rất khó biết production từng chạy image nào.
+
+Vì vậy:
+
+```text
+Tag có thể dùng để tra cứu
+Digest mới là giá trị deploy
+```
+
+#### 6.4. Vì sao có lifecycle policy
+
+ECR tính phí theo dung lượng lưu trữ image. Lab build nhiều lần sẽ sinh nhiều image.
+
+Lifecycle policy:
+
+```text
+Giữ 20 image mới nhất mỗi repository
+Xóa image cũ hơn
+```
+
+Con số 20 đủ cho lab rollback gần đây, nhưng không giữ rác mãi.
+
+#### 6.5. Vì sao dùng AES256 thay vì KMS riêng
+
+Với lab cá nhân, ECR encryption `AES256` là mặc định hợp lý:
+
+- Ít cấu hình hơn.
+- Không cần tạo thêm KMS key riêng cho ECR.
+- Đủ cho bước học registry, immutable image và GitOps digest.
+
+Khi nâng cấp production, có thể đổi sang KMS key riêng nếu yêu cầu kiểm soát key chặt hơn.
+
+### 7. Kiểm tra hoàn thành
+
+Format Terraform:
 
 ```powershell
 cd C:\code\springboot-learning\terraform
 terraform fmt -recursive
 ```
 
+Đi vào root module:
+
 ```powershell
-cd C:\code\springboot-learning\terraform\environments\shared-services\gitlab
+cd C:\code\springboot-learning\terraform\environments\shared-services\ecr
+```
+
+Init:
+
+```powershell
 terraform init
-terraform validate
-terraform plan
-```
-
-Ở bước skeleton, plan có thể báo:
-
-```text
-No changes.
-```
-
-Điều đó bình thường nếu module chưa tạo resource thật.
-
-### 6. Giải thích từng phần quan trọng
-
-#### 6.1. Vì sao có root module riêng `shared-services/gitlab`
-
-Root module đại diện cho một vùng state và một phạm vi hạ tầng thật.
-
-GitLab có vòng đời khác network:
-
-```text
-Network có thể ít thay đổi
-GitLab có thể thay đổi EC2, RDS, Redis, ALB, S3, IAM nhiều hơn
-```
-
-Vì vậy GitLab không nên nằm chung state với network.
-
-#### 6.2. Vì sao đọc network qua `terraform_remote_state`
-
-GitLab cần biết VPC và subnet đã tạo ở bước 3.4.
-
-Ta có hai cách:
-
-```text
-Copy thủ công vpc_id/subnet_ids vào tfvars
-Đọc output từ remote state
-```
-
-Trong bài thực hành này, dùng `terraform_remote_state` để giảm nhập tay sai và giữ quan hệ rõ:
-
-```text
-network tạo output
-gitlab đọc output
-```
-
-#### 6.3. Vì sao module chưa tạo resource ngay
-
-Skeleton giúp kiểm tra:
-
-- Backend key đúng.
-- Provider đúng.
-- Module path đúng.
-- Biến truyền vào đủ.
-- Remote state đọc được.
-- Output dây chuyền hoạt động.
-
-Khi skeleton đã validate được, bước sau thêm resource theo từng lớp sẽ dễ troubleshoot hơn.
-
-#### 6.4. Vì sao module tên là `gitlab-self-managed`
-
-Tên này mô tả mục tiêu kiến trúc, không gắn với một cách triển khai tạm.
-
-Không dùng tên:
-
-```text
-gitlab-single-node
-```
-
-vì hướng chốt là doanh nghiệp:
-
-```text
-GitLab app
-RDS
-ElastiCache
-Gitaly
-S3
-ALB
-```
-
-#### 6.5. Vì sao chưa tạo staging/production
-
-GitLab thuộc nền tảng dùng chung trong account lab.
-
-Ở giai đoạn này ta chỉ dựng:
-
-```text
-shared-services/gitlab
-```
-
-Không tạo:
-
-```text
-staging/gitlab
-production/gitlab
-```
-
-Staging/production sau này là môi trường ứng dụng, không phải bản GitLab riêng trong bài lab này.
-
-### 7. Kiểm tra hoàn thành
-
-Kiểm tra cấu trúc thư mục:
-
-```powershell
-tree C:\code\springboot-learning\terraform\environments\shared-services\gitlab /F
-tree C:\code\springboot-learning\terraform\modules\gitlab-self-managed /F
 ```
 
 Kết quả mong đợi:
 
 ```text
-shared-services/gitlab
-  backend.tf
-  locals.tf
-  main.tf
-  outputs.tf
-  providers.tf
-  README.md
-  terraform.tfvars.example
-  variables.tf
-  versions.tf
-
-modules/gitlab-self-managed
-  main.tf
-  outputs.tf
-  README.md
-  variables.tf
-```
-
-Format:
-
-```powershell
-cd C:\code\springboot-learning\terraform
-terraform fmt -recursive
+Terraform has been successfully initialized!
 ```
 
 Validate:
 
 ```powershell
-cd environments\shared-services\gitlab
-terraform init
 terraform validate
 ```
 
-Kiểm tra plan:
-
-```powershell
-terraform plan
-```
-
-Nếu module chỉ skeleton, kết quả có thể là:
+Kết quả mong đợi:
 
 ```text
-No changes. Your infrastructure matches the configuration.
-```
-
-Hoặc chỉ có output thay đổi nếu output mới được thêm. Không được có resource AWS thật trong plan ở bước này.
-
-### 8. Lỗi thường gặp và cách xử lý
-
-| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
-|---|---|---|
-| `No stored state was found for the given workspace` | `shared-services/network` chưa apply hoặc key remote state sai. | Kiểm tra `network_state_bucket`, `network_state_key`, `network_state_region`. |
-| `Unsupported attribute` khi đọc remote state | Output network chưa có tên đang gọi. | Kiểm tra `terraform/environments/shared-services/network/outputs.tf`. |
-| `Module not found` | Sai đường dẫn `source`. | Từ `shared-services/gitlab`, path đúng là `../../../modules/gitlab-self-managed`. |
-| Plan tạo resource thật quá sớm | Module đã có resource thay vì skeleton. | Dừng lại, kiểm tra đúng bước. Resource thật để bước sau. |
-| Backend key bị trùng với network | Copy nhầm `backend.tf`. | Sửa key thành `shared-services/gitlab/terraform.tfstate`. |
-| Commit nhầm `.terraform/` | Chạy init sinh cache local. | Không commit `.terraform/`; giữ ignore cho thư mục này. |
-| Commit nhầm `tfplan` | Chạy plan ra file. | Không cần commit plan file vì sang máy khác phải plan lại. |
-| Dùng IP admin ví dụ | Chưa thay `203.0.113.10/32`. | Thay bằng IP thật hoặc CIDR VPN/bastion. |
-
-Lỗi cần đặc biệt chú ý:
-
-```text
-Không được đặt GitLab resource vào state network.
-```
-
-Nếu GitLab và network chung state, sau này thay đổi GitLab có thể kéo theo rủi ro ngoài ý muốn cho VPC/subnet/route.
-
-### 9. Kết quả sau bước này
-
-Trạng thái sau khi hoàn thành:
-
-```text
-[x] Đã có root module terraform/environments/shared-services/gitlab
-[x] Đã có backend key riêng shared-services/gitlab/terraform.tfstate
-[x] Đã có module terraform/modules/gitlab-self-managed
-[x] Root module đọc remote state từ shared-services/network
-[x] Root module truyền VPC/subnet ids vào module GitLab
-[x] Module GitLab mới là skeleton, chưa tạo resource AWS thật
-[x] Chưa tạo EC2 GitLab application
-[x] Chưa tạo EC2 Gitaly
-[x] Chưa tạo RDS PostgreSQL
-[x] Chưa tạo ElastiCache Redis/Valkey
-[x] Chưa tạo ALB/Route 53/ACM/S3 GitLab
-[x] Chưa tạo staging hoặc production
-```
-
-Bước tiếp theo nên làm là triển khai lớp network security và public entrypoint cho GitLab:
-
-```text
-Security Group
-Application Load Balancer
-Target Group
-HTTP/HTTPS listener
-Route 53
-ACM certificate
-```
-
-## Bước 3.7 - Thêm Security Group, ALB, ACM và Route 53 cho GitLab
-
-### 1. Mục tiêu của bước này
-
-Mục tiêu là triển khai lớp **public entrypoint** và **network security boundary** cho GitLab Self-Managed.
-
-Sau bước này, Terraform module `gitlab-self-managed` bắt đầu tạo các resource AWS thật đầu tiên cho GitLab:
-
-```text
-Security Group
-Application Load Balancer
-Target Group
-HTTP listener 80
-HTTPS listener 443
-ACM certificate
-Route 53 record
-```
-
-Luồng truy cập mong muốn:
-
-```text
-User/Git client
-  -> gitlab.<domain>
-  -> Route 53
-  -> ALB HTTPS 443
-  -> Target Group GitLab application
-```
-
-Ở bước này **chưa tạo EC2 GitLab application, chưa tạo EC2 Gitaly, chưa tạo RDS PostgreSQL, chưa tạo ElastiCache Redis/Valkey và chưa tạo S3 GitLab buckets**.
-
-Target Group có thể được tạo trước nhưng chưa có target EC2 thật. EC2 GitLab application sẽ được gắn vào Target Group ở bước sau.
-
-### 2. Vì sao cần làm bước này
-
-Trước khi dựng GitLab application, cần tạo lớp entrypoint ổn định và security group rõ ràng.
-
-Nếu tạo EC2 GitLab trước rồi mở port trực tiếp ra Internet, rất dễ sai hướng doanh nghiệp:
-
-```text
-EC2 có public IP
-SSH mở rộng
-HTTP/HTTPS mở trực tiếp vào instance
-TLS cài rời rạc trên EC2
-DNS trỏ thẳng vào instance
-Khó thay instance mà không đổi URL
-```
-
-Hướng đúng hơn:
-
-```text
-Chỉ ALB public
-GitLab application private
-TLS ở ALB bằng ACM
-DNS trỏ vào ALB
-Security Group tách theo lớp
-```
-
-Lợi ích:
-
-- GitLab URL ổn định.
-- TLS certificate được quản lý bằng ACM.
-- Có thể redirect HTTP sang HTTPS.
-- Có health check tập trung ở ALB.
-- GitLab EC2 không cần public IP.
-- Sau này thay instance hoặc scale target không đổi URL người dùng.
-
-### 3. Trước khi bắt đầu cần có gì
-
-Cần chuẩn bị:
-
-- Đã hoàn thành bước 3.6.
-- Đã có các thư mục:
-
-```text
-terraform/environments/shared-services/gitlab
-terraform/modules/gitlab-self-managed
-```
-
-- `shared-services/network` đã có output:
-
-```text
-vpc_id
-public_subnet_ids
-private_app_subnet_ids
-isolated_data_subnet_ids
-```
-
-- Có domain hoặc hosted zone trong Route 53 nếu muốn tạo DNS thật.
-- Biết domain GitLab dự kiến, ví dụ:
-
-```text
-gitlab.newgate2601.com
-```
-
-- Biết hosted zone name hoặc hosted zone id.
-
-Ví dụ:
-
-```text
-newgate2601.com
-```
-
-Kiểm tra hosted zone:
-
-```powershell
-aws route53 list-hosted-zones
-```
-
-Kiểm tra certificate hiện có nếu đã từng tạo:
-
-```powershell
-aws acm list-certificates --region ap-southeast-1
-```
-
-Lưu ý quan trọng:
-
-```text
-ACM certificate dùng với ALB phải ở cùng region với ALB.
-```
-
-Nếu ALB ở `ap-southeast-1`, ACM certificate cũng phải ở `ap-southeast-1`.
-
-### 4. Thao tác chi tiết
-
-#### 4.1. Bổ sung input domain và DNS vào root module
-
-Mở file:
-
-```text
-terraform/environments/shared-services/gitlab/variables.tf
-```
-
-Bổ sung các biến:
-
-```hcl
-variable "route53_zone_name" {
-  description = "Route 53 hosted zone name, for example example.com."
-  type        = string
-}
-
-variable "create_route53_record" {
-  description = "Whether to create Route 53 alias record for GitLab."
-  type        = bool
-  default     = true
-}
-
-variable "create_acm_certificate" {
-  description = "Whether to create ACM certificate for GitLab."
-  type        = bool
-  default     = true
-}
-```
-
-Ý nghĩa:
-
-| Biến | Dùng để làm gì |
-|---|---|
-| `route53_zone_name` | Tìm hosted zone để tạo record `gitlab.<domain>`. |
-| `create_route53_record` | Cho phép bật/tắt tạo DNS record trong lab. |
-| `create_acm_certificate` | Cho phép bật/tắt tạo ACM certificate bằng Terraform. |
-
-Nếu chưa có domain thật, có thể để:
-
-```hcl
-create_route53_record = false
-create_acm_certificate = false
-```
-
-Nhưng khi đó chưa coi là hoàn thành nghiệm thu GitLab entrypoint.
-
-#### 4.2. Cập nhật `terraform.tfvars.example`
-
-Mở file:
-
-```text
-terraform/environments/shared-services/gitlab/terraform.tfvars.example
-```
-
-Bổ sung:
-
-```hcl
-route53_zone_name      = "newgate2601.com"
-create_route53_record  = true
-create_acm_certificate = true
-```
-
-Nếu có file chạy thật:
-
-```text
-terraform/environments/shared-services/gitlab/terraform.tfvars
-```
-
-cập nhật tương tự, nhưng sửa domain cho đúng domain thật của bạn.
-
-#### 4.3. Truyền biến mới vào module GitLab
-
-Mở file:
-
-```text
-terraform/environments/shared-services/gitlab/main.tf
-```
-
-Cập nhật block module:
-
-```hcl
-module "gitlab" {
-  source = "../../../modules/gitlab-self-managed"
-
-  name_prefix              = local.name_prefix
-  gitlab_domain_name       = var.gitlab_domain_name
-  route53_zone_name        = var.route53_zone_name
-  create_route53_record    = var.create_route53_record
-  create_acm_certificate   = var.create_acm_certificate
-  vpc_id                   = data.terraform_remote_state.network.outputs.vpc_id
-  public_subnet_ids        = data.terraform_remote_state.network.outputs.public_subnet_ids
-  private_app_subnet_ids   = data.terraform_remote_state.network.outputs.private_app_subnet_ids
-  isolated_data_subnet_ids = data.terraform_remote_state.network.outputs.isolated_data_subnet_ids
-  admin_cidr_blocks        = var.admin_cidr_blocks
-  tags                     = local.common_tags
-}
-```
-
-#### 4.4. Bổ sung biến vào module `gitlab-self-managed`
-
-Mở file:
-
-```text
-terraform/modules/gitlab-self-managed/variables.tf
-```
-
-Bổ sung:
-
-```hcl
-variable "route53_zone_name" {
-  description = "Route 53 hosted zone name, for example example.com."
-  type        = string
-}
-
-variable "create_route53_record" {
-  description = "Whether to create Route 53 alias record for GitLab."
-  type        = bool
-  default     = true
-}
-
-variable "create_acm_certificate" {
-  description = "Whether to create ACM certificate for GitLab."
-  type        = bool
-  default     = true
-}
-```
-
-Sau đó module có đủ input để tạo:
-
-```text
-ACM certificate
-DNS validation record
-Route 53 alias record
-ALB listener HTTPS
-```
-
-#### 4.5. Tạo Security Group cho ALB
-
-Mở file:
-
-```text
-terraform/modules/gitlab-self-managed/main.tf
-```
-
-Tạo Security Group cho ALB:
-
-```hcl
-resource "aws_security_group" "alb" {
-  name        = "${var.name_prefix}-alb-sg"
-  description = "Security group for GitLab public ALB."
-  vpc_id      = var.vpc_id
-
-  tags = merge(var.tags, {
-    Name = "${var.name_prefix}-alb-sg"
-    Role = "gitlab-alb"
-  })
-}
-```
-
-Tạo inbound HTTP/HTTPS:
-
-```hcl
-resource "aws_vpc_security_group_ingress_rule" "alb_http" {
-  security_group_id = aws_security_group.alb.id
-  description       = "Allow HTTP from Internet for redirect to HTTPS."
-  ip_protocol       = "tcp"
-  from_port         = 80
-  to_port           = 80
-  cidr_ipv4         = "0.0.0.0/0"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "alb_https" {
-  security_group_id = aws_security_group.alb.id
-  description       = "Allow HTTPS from Internet."
-  ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
-  cidr_ipv4         = "0.0.0.0/0"
-}
-```
-
-Tạo outbound tạm thời:
-
-```hcl
-resource "aws_vpc_security_group_egress_rule" "alb_all" {
-  security_group_id = aws_security_group.alb.id
-  description       = "Allow ALB outbound to GitLab targets."
-  ip_protocol       = "-1"
-  cidr_ipv4         = "0.0.0.0/0"
-}
-```
-
-Ở bước sau, khi có Security Group GitLab application, có thể siết outbound của ALB về đúng target SG thay vì `0.0.0.0/0`.
-
-#### 4.6. Tạo Security Group placeholder cho GitLab application
-
-Dù chưa tạo EC2 GitLab application, ta nên tạo Security Group trước để Target Group và rule sau này có chỗ tham chiếu.
-
-Tạo:
-
-```hcl
-resource "aws_security_group" "app" {
-  name        = "${var.name_prefix}-app-sg"
-  description = "Security group for GitLab application nodes."
-  vpc_id      = var.vpc_id
-
-  tags = merge(var.tags, {
-    Name = "${var.name_prefix}-app-sg"
-    Role = "gitlab-app"
-  })
-}
-```
-
-Cho ALB gọi vào GitLab application:
-
-```hcl
-resource "aws_vpc_security_group_ingress_rule" "app_http_from_alb" {
-  security_group_id            = aws_security_group.app.id
-  description                  = "Allow HTTP from GitLab ALB."
-  referenced_security_group_id = aws_security_group.alb.id
-  ip_protocol                  = "tcp"
-  from_port                    = 80
-  to_port                      = 80
-}
-```
-
-Nếu GitLab application sau này listen HTTPS nội bộ, tạo thêm rule 443 ở bước đó.
-
-SSH quản trị nên dùng SSM hoặc bastion. Nếu lab cần SSH tạm thời, chỉ mở theo `admin_cidr_blocks`:
-
-```hcl
-resource "aws_vpc_security_group_ingress_rule" "app_ssh_admin" {
-  for_each = toset(var.admin_cidr_blocks)
-
-  security_group_id = aws_security_group.app.id
-  description       = "Allow SSH from approved admin CIDR."
-  ip_protocol       = "tcp"
-  from_port         = 22
-  to_port           = 22
-  cidr_ipv4         = each.value
-}
-```
-
-Không mở SSH `0.0.0.0/0`.
-
-#### 4.7. Tạo Application Load Balancer
-
-Tạo ALB public:
-
-```hcl
-resource "aws_lb" "gitlab" {
-  name               = "${var.name_prefix}-alb"
-  load_balancer_type = "application"
-  internal           = false
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = var.public_subnet_ids
-
-  enable_deletion_protection = false
-
-  tags = merge(var.tags, {
-    Name = "${var.name_prefix}-alb"
-    Role = "gitlab-public-entrypoint"
-  })
-}
-```
-
-Với production thật, nên cân nhắc:
-
-```hcl
-enable_deletion_protection = true
-```
-
-Trong lab, để `false` giúp destroy dễ hơn khi cần dọn chi phí.
-
-#### 4.8. Tạo Target Group
-
-Tạo Target Group cho GitLab application:
-
-```hcl
-resource "aws_lb_target_group" "gitlab" {
-  name        = "${var.name_prefix}-tg"
-  port        = 80
-  protocol    = "HTTP"
-  vpc_id      = var.vpc_id
-  target_type = "instance"
-
-  health_check {
-    enabled             = true
-    path                = "/-/health"
-    matcher             = "200-399"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-  }
-
-  tags = merge(var.tags, {
-    Name = "${var.name_prefix}-tg"
-    Role = "gitlab-app-target-group"
-  })
-}
-```
-
-Ở bước này Target Group chưa có target EC2. Khi chưa có instance, Target Group sẽ chưa healthy. Đây là bình thường.
-
-#### 4.9. Tạo ACM certificate và DNS validation
-
-Tìm hosted zone:
-
-```hcl
-data "aws_route53_zone" "gitlab" {
-  count = var.create_route53_record || var.create_acm_certificate ? 1 : 0
-
-  name         = var.route53_zone_name
-  private_zone = false
-}
-```
-
-Tạo ACM certificate:
-
-```hcl
-resource "aws_acm_certificate" "gitlab" {
-  count = var.create_acm_certificate ? 1 : 0
-
-  domain_name       = var.gitlab_domain_name
-  validation_method = "DNS"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-
-  tags = merge(var.tags, {
-    Name = "${var.name_prefix}-certificate"
-  })
-}
-```
-
-Tạo DNS validation record:
-
-```hcl
-resource "aws_route53_record" "gitlab_certificate_validation" {
-  for_each = var.create_acm_certificate ? {
-    for dvo in aws_acm_certificate.gitlab[0].domain_validation_options :
-    dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  } : {}
-
-  allow_overwrite = true
-  zone_id         = data.aws_route53_zone.gitlab[0].zone_id
-  name            = each.value.name
-  type            = each.value.type
-  ttl             = 60
-  records         = [each.value.record]
-}
-```
-
-Validate certificate:
-
-```hcl
-resource "aws_acm_certificate_validation" "gitlab" {
-  count = var.create_acm_certificate ? 1 : 0
-
-  certificate_arn         = aws_acm_certificate.gitlab[0].arn
-  validation_record_fqdns = [for record in aws_route53_record.gitlab_certificate_validation : record.fqdn]
-}
-```
-
-#### 4.10. Tạo HTTP và HTTPS listener
-
-HTTP listener redirect sang HTTPS:
-
-```hcl
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.gitlab.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type = "redirect"
-
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
-  }
-}
-```
-
-HTTPS listener forward vào Target Group:
-
-```hcl
-resource "aws_lb_listener" "https" {
-  count = var.create_acm_certificate ? 1 : 0
-
-  load_balancer_arn = aws_lb.gitlab.arn
-  port              = 443
-  protocol          = "HTTPS"
-  certificate_arn   = aws_acm_certificate_validation.gitlab[0].certificate_arn
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.gitlab.arn
-  }
-}
-```
-
-Nếu chưa có domain/ACM, có thể tạm chỉ tạo HTTP listener để kiểm thử ALB DNS. Tuy nhiên nghiệm thu doanh nghiệp phải có HTTPS.
-
-#### 4.11. Tạo Route 53 alias record
-
-Tạo record GitLab trỏ về ALB:
-
-```hcl
-resource "aws_route53_record" "gitlab" {
-  count = var.create_route53_record ? 1 : 0
-
-  zone_id = data.aws_route53_zone.gitlab[0].zone_id
-  name    = var.gitlab_domain_name
-  type    = "A"
-
-  alias {
-    name                   = aws_lb.gitlab.dns_name
-    zone_id                = aws_lb.gitlab.zone_id
-    evaluate_target_health = true
-  }
-}
-```
-
-Sau khi apply, domain:
-
-```text
-gitlab.<domain>
-```
-
-sẽ trỏ tới ALB.
-
-#### 4.12. Cập nhật outputs
-
-Mở file:
-
-```text
-terraform/modules/gitlab-self-managed/outputs.tf
-```
-
-Bổ sung:
-
-```hcl
-output "alb_dns_name" {
-  description = "DNS name of the GitLab ALB."
-  value       = aws_lb.gitlab.dns_name
-}
-
-output "alb_zone_id" {
-  description = "Canonical hosted zone id of the GitLab ALB."
-  value       = aws_lb.gitlab.zone_id
-}
-
-output "alb_security_group_id" {
-  description = "Security group id of the GitLab ALB."
-  value       = aws_security_group.alb.id
-}
-
-output "app_security_group_id" {
-  description = "Security group id of GitLab application nodes."
-  value       = aws_security_group.app.id
-}
-
-output "target_group_arn" {
-  description = "Target group ARN for GitLab application nodes."
-  value       = aws_lb_target_group.gitlab.arn
-}
-
-output "certificate_arn" {
-  description = "ACM certificate ARN for GitLab."
-  value       = var.create_acm_certificate ? aws_acm_certificate_validation.gitlab[0].certificate_arn : null
-}
-```
-
-Mở file root module:
-
-```text
-terraform/environments/shared-services/gitlab/outputs.tf
-```
-
-Bổ sung output lại từ module:
-
-```hcl
-output "alb_dns_name" {
-  description = "DNS name of the GitLab ALB."
-  value       = module.gitlab.alb_dns_name
-}
-
-output "alb_security_group_id" {
-  description = "Security group id of the GitLab ALB."
-  value       = module.gitlab.alb_security_group_id
-}
-
-output "app_security_group_id" {
-  description = "Security group id of GitLab application nodes."
-  value       = module.gitlab.app_security_group_id
-}
-
-output "target_group_arn" {
-  description = "Target group ARN for GitLab application nodes."
-  value       = module.gitlab.target_group_arn
-}
-
-output "certificate_arn" {
-  description = "ACM certificate ARN for GitLab."
-  value       = module.gitlab.certificate_arn
-}
-```
-
-### 5. File/config/lệnh liên quan
-
-Các file cần cập nhật:
-
-| File | Nội dung cập nhật |
-|---|---|
-| `terraform/environments/shared-services/gitlab/variables.tf` | Thêm biến Route 53 và ACM. |
-| `terraform/environments/shared-services/gitlab/main.tf` | Truyền biến mới vào module. |
-| `terraform/environments/shared-services/gitlab/outputs.tf` | Output ALB, SG, Target Group, certificate. |
-| `terraform/environments/shared-services/gitlab/terraform.tfvars.example` | Thêm domain/hosted zone config mẫu. |
-| `terraform/environments/shared-services/gitlab/terraform.tfvars` | Thêm domain/hosted zone config thật nếu chạy local. |
-| `terraform/modules/gitlab-self-managed/variables.tf` | Nhận biến Route 53 và ACM. |
-| `terraform/modules/gitlab-self-managed/main.tf` | Tạo SG, ALB, TG, listener, ACM, Route 53. |
-| `terraform/modules/gitlab-self-managed/outputs.tf` | Trả output cần dùng cho bước EC2 sau. |
-| `terraform/modules/gitlab-self-managed/README.md` | Ghi lại resource module đã bắt đầu tạo. |
-
-Lệnh format:
-
-```powershell
-cd C:\code\springboot-learning\terraform
-terraform fmt -recursive
-```
-
-Lệnh validate:
-
-```powershell
-cd C:\code\springboot-learning\terraform\environments\shared-services\gitlab
-terraform init
-terraform validate
+Success! The configuration is valid.
 ```
 
 Plan:
@@ -7260,27 +5895,29 @@ Plan:
 terraform plan -out=tfplan
 ```
 
-Trước khi apply, kiểm tra plan chỉ có các nhóm resource:
+Plan chỉ nên tạo các nhóm resource:
 
 ```text
-aws_security_group
-aws_vpc_security_group_ingress_rule
-aws_vpc_security_group_egress_rule
-aws_lb
-aws_lb_target_group
-aws_lb_listener
-aws_acm_certificate
-aws_acm_certificate_validation
-aws_route53_record
+aws_ecr_repository
+aws_ecr_lifecycle_policy
 ```
 
-Không được có:
+Với 4 repository, kết quả mong đợi:
 
 ```text
-aws_instance GitLab
+Plan: 8 to add, 0 to change, 0 to destroy.
+```
+
+Không apply nếu plan có:
+
+```text
+aws_vpc
+aws_subnet
+aws_nat_gateway
+aws_eks_cluster
 aws_db_instance
 aws_elasticache_*
-aws_s3_bucket GitLab
+aws_msk_*
 ```
 
 Apply:
@@ -7289,190 +5926,112 @@ Apply:
 terraform apply "tfplan"
 ```
 
-### 6. Giải thích từng phần quan trọng
-
-#### 6.1. Vì sao tạo ALB trước EC2
-
-ALB là entrypoint public của GitLab.
-
-Tạo ALB trước giúp:
-
-- Có DNS name để kiểm tra.
-- Có Security Group boundary.
-- Có Target Group sẵn cho EC2 bước sau.
-- Có HTTPS listener và certificate trước khi GitLab application online.
-
-Target Group chưa có target healthy là bình thường vì EC2 GitLab chưa tạo.
-
-#### 6.2. Vì sao HTTP 80 chỉ redirect
-
-Người dùng có thể gõ:
-
-```text
-http://gitlab.<domain>
-```
-
-HTTP listener 80 redirect sang HTTPS để mọi truy cập chính đi qua TLS:
-
-```text
-HTTP 80 -> HTTPS 443
-```
-
-Không để GitLab vận hành chính qua plain HTTP.
-
-#### 6.3. Vì sao dùng ACM
-
-ACM quản lý certificate cho ALB:
-
-- Không cần copy private key lên EC2.
-- Dễ renew tự động nếu DNS validation đúng.
-- Gắn trực tiếp vào HTTPS listener.
-- Phù hợp với Route 53 DNS validation.
-
-Certificate cho ALB phải cùng region với ALB.
-
-#### 6.4. Vì sao Route 53 alias record trỏ tới ALB
-
-ALB DNS name có thể thay đổi khi recreate resource. Người dùng không nên dùng trực tiếp ALB DNS.
-
-Route 53 alias giúp:
-
-```text
-gitlab.<domain> -> ALB
-```
-
-Git remote URL, Runner registration URL và webhook URL đều dùng domain ổn định này.
-
-#### 6.5. Vì sao chưa tạo RDS/Redis/Gitaly ở bước này
-
-Bước này chỉ tạo lớp public entrypoint và security boundary.
-
-Nếu tạo tất cả cùng lúc:
-
-```text
-ALB
-EC2
-RDS
-Redis
-Gitaly
-S3
-IAM
-user-data
-```
-
-thì khi plan/apply lỗi sẽ khó xác định nguyên nhân. Tách từng lớp giúp dễ review và dễ rollback hơn.
-
-### 7. Kiểm tra hoàn thành
-
-Kiểm tra Terraform output:
+Sau apply, xem output:
 
 ```powershell
-terraform output
+terraform output repository_urls
+```
+
+Kết quả mong đợi có dạng:
+
+```text
+gateway      = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway"
+uaa-service  = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/uaa-service"
+post-service = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/post-service"
+service-registry = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/service-registry"
+```
+
+Kiểm tra bằng AWS CLI:
+
+```powershell
+aws ecr describe-repositories --region ap-southeast-1 --query "repositories[?contains(repositoryName, 'newgate2601-shared-services')].[repositoryName,imageTagMutability,imageScanningConfiguration.scanOnPush]" --output table
+```
+
+Kết quả mong đợi:
+
+```text
+newgate2601-shared-services/gateway       IMMUTABLE  True
+newgate2601-shared-services/uaa-service   IMMUTABLE  True
+newgate2601-shared-services/post-service  IMMUTABLE  True
+newgate2601-shared-services/service-registry  IMMUTABLE  True
+```
+
+Kiểm tra lifecycle policy:
+
+```powershell
+aws ecr get-lifecycle-policy --repository-name newgate2601-shared-services/gateway --region ap-southeast-1
 ```
 
 Kết quả mong đợi có:
 
 ```text
-alb_dns_name
-alb_security_group_id
-app_security_group_id
-target_group_arn
-certificate_arn
+imageCountMoreThan
+countNumber: 20
+expire
 ```
 
-Kiểm tra ALB:
+Kiểm tra state trên S3:
 
 ```powershell
-aws elbv2 describe-load-balancers --names newgate2601-shared-services-gitlab-alb --region ap-southeast-1
+aws s3 ls s3://newgate2601-terraform-state-150914615641-ap-southeast-1/shared-services/ecr/
 ```
 
-Kiểm tra Target Group:
-
-```powershell
-aws elbv2 describe-target-groups --names newgate2601-shared-services-gitlab-tg --region ap-southeast-1
-```
-
-Target health có thể chưa healthy vì chưa có EC2:
-
-```powershell
-aws elbv2 describe-target-health --target-group-arn <target-group-arn> --region ap-southeast-1
-```
-
-Kiểm tra certificate:
-
-```powershell
-aws acm list-certificates --region ap-southeast-1
-```
-
-Certificate cần ở trạng thái:
+Kết quả mong đợi:
 
 ```text
-ISSUED
+terraform.tfstate
 ```
-
-Kiểm tra Route 53 record:
-
-```powershell
-aws route53 list-resource-record-sets --hosted-zone-id <hosted-zone-id>
-```
-
-Kiểm tra DNS:
-
-```powershell
-nslookup gitlab.newgate2601.com
-```
-
-Kết quả DNS phải trỏ về ALB.
 
 ### 8. Lỗi thường gặp và cách xử lý
 
 | Lỗi | Nguyên nhân thường gặp | Cách xử lý |
 |---|---|---|
-| ACM certificate không `ISSUED` | DNS validation record chưa đúng hoặc hosted zone sai. | Kiểm tra record `_acme-challenge` trong Route 53. |
-| `No matching Route53Zone found` | `route53_zone_name` sai hoặc không có hosted zone. | Chạy `aws route53 list-hosted-zones` và sửa lại zone name. |
-| HTTPS listener lỗi certificate | Certificate không cùng region với ALB hoặc chưa validate. | Tạo ACM certificate ở `ap-southeast-1` và chờ `ISSUED`. |
-| ALB không tạo được | Public subnet thiếu hoặc subnet không thuộc cùng VPC. | Kiểm tra output `public_subnet_ids` từ network state. |
-| Target Group unhealthy | Chưa có EC2 GitLab target. | Bình thường ở bước này; EC2 sẽ tạo ở bước sau. |
-| Mở SSH toàn Internet | Dùng `0.0.0.0/0` cho port 22. | Chỉ dùng `admin_cidr_blocks` cụ thể hoặc SSM/bastion. |
-| Plan có RDS/EC2/Redis | Làm quá phạm vi bước này. | Tách ra bước sau, chỉ apply entrypoint/security ở bước 3.7. |
-| DNS vẫn chưa resolve | DNS propagation hoặc domain chưa delegate đúng nameserver. | Kiểm tra nameserver domain và hosted zone. |
+| `RepositoryAlreadyExistsException` | Repository đã được tạo tay hoặc state bị mất. | Import vào state hoặc đổi tên sau khi kiểm tra kỹ. Không tạo trùng bằng tay. |
+| `InvalidParameterException` về repository name | Tên repository có ký tự không hợp lệ. | Dùng chữ thường, số, dấu gạch ngang và slash hợp lệ như `project/env/service`. |
+| Plan muốn tạo VPC/RDS/EKS | Đang chạy nhầm thư mục hoặc backend. | Dừng lại, kiểm tra `pwd`, `backend.tf`, `terraform state list`. |
+| `AccessDeniedException` | IAM user thiếu quyền ECR. | Bổ sung quyền ECR cần thiết cho lab admin hoặc role chạy Terraform. |
+| `Error acquiring the state lock` | Có Terraform run khác đang giữ lock. | Đợi run kia xong, không force-unlock nếu chưa chắc. |
+| CI push bị `no basic auth credentials` | Chưa login Docker vào ECR. | Dùng `aws ecr get-login-password` trước khi push. |
+| Push tag cũ bị lỗi | ECR đang immutable tag. | Đây là đúng. Tạo tag mới hoặc dùng commit SHA, không ghi đè tag cũ. |
 
 Lỗi cần đặc biệt chú ý:
 
 ```text
-ALB public không có nghĩa là EC2 GitLab public.
+Không dùng AWS Console tạo/sửa repository sau khi Terraform đã quản lý.
 ```
 
-Chỉ ALB expose ra Internet. GitLab application EC2 ở bước sau vẫn phải nằm trong private application subnet và không có public IP.
+Nếu sửa tay trên Console, lần plan sau có thể drift.
 
 ### 9. Kết quả sau bước này
 
 Trạng thái sau khi hoàn thành:
 
 ```text
-[x] Đã có Security Group cho GitLab ALB
-[x] Đã có Security Group placeholder cho GitLab application
-[x] Đã có Application Load Balancer public
-[x] Đã có Target Group cho GitLab application
-[x] Đã có HTTP listener redirect sang HTTPS
-[x] Đã có HTTPS listener nếu ACM certificate đã validate
-[x] Đã có ACM certificate cho gitlab.<domain>
-[x] Đã có Route 53 alias record trỏ gitlab.<domain> tới ALB
-[x] GitLab EC2 vẫn chưa được tạo
-[x] Gitaly EC2 vẫn chưa được tạo
-[x] RDS PostgreSQL vẫn chưa được tạo
-[x] ElastiCache Redis/Valkey vẫn chưa được tạo
-[x] S3 GitLab buckets vẫn chưa được tạo
-[x] Chưa tạo staging hoặc production
+[x] Đã có module terraform/modules/ecr
+[x] Đã có root module terraform/environments/shared-services/ecr
+[x] State ECR lưu riêng ở shared-services/ecr/terraform.tfstate
+[x] Đã tạo ECR repository cho gateway
+[x] Đã tạo ECR repository cho uaa-service
+[x] Đã tạo ECR repository cho post-service
+[x] Đã tạo ECR repository cho service-registry
+[x] ECR repository bật immutable tag
+[x] ECR repository bật scan on push
+[x] ECR repository có lifecycle policy giữ 20 image mới nhất
+[x] Chưa tạo EKS
+[x] Chưa tạo RDS
+[x] Chưa tạo Redis/Valkey
+[x] Chưa tạo Kafka/MSK
+[x] Chưa tạo Argo CD
 ```
 
-Bước tiếp theo nên làm là tạo lớp dữ liệu nền cho GitLab:
+Sau bước này, bài lab có registry dùng chung:
 
 ```text
-RDS PostgreSQL
-ElastiCache Redis/Valkey
-Security Group cho data layer
-Subnet group
-Backup retention
-Parameter group nếu cần
+shared-services/ecr
+  -> gateway image
+  -> uaa-service image
+  -> post-service image
+  -> service-registry image
 ```
+
+Bước tiếp theo nên làm là chuẩn bị source control và CI SaaS để build image, login ECR, push image và ghi lại image digest cho GitOps.

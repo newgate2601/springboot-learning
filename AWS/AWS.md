@@ -2540,6 +2540,333 @@ Các record hay gặp:
 
 Route 53 còn hỗ trợ health check và routing policy như latency-based, weighted, failover.
 
+### 34.1. DNS toàn cầu là gì?
+
+**DNS toàn cầu** là hệ thống phân giải tên miền phân tán trên Internet.
+
+Nó giúp biến tên dễ nhớ:
+
+```text
+gitlab.example.com
+```
+
+thành địa chỉ hoặc endpoint mà máy tính có thể kết nối tới.
+
+DNS không phải là một server duy nhất. Nó là nhiều lớp phối hợp với nhau:
+
+```text
+Root DNS
+  -> TLD DNS như .com, .net, .vn
+  -> Authoritative nameserver của domain
+  -> DNS record thật của domain/subdomain
+```
+
+Khi người dùng gõ một domain, máy thường hỏi **recursive resolver** trước. Recursive resolver có thể là DNS của nhà mạng, công ty, Google DNS, Cloudflare DNS hoặc DNS nội bộ.
+
+Recursive resolver sẽ đi hỏi các lớp DNS phù hợp rồi cache kết quả trong một khoảng thời gian gọi là TTL.
+
+### 34.2. Domain registrar là gì?
+
+**Domain registrar** là nơi bạn mua và quản lý quyền sở hữu domain.
+
+Ví dụ:
+
+```text
+example.com
+newgate2601.com
+```
+
+Registrar không nhất thiết là nơi quản lý DNS record chi tiết. Registrar thường quản lý:
+
+- Ai sở hữu domain.
+- Domain còn hạn hay không.
+- Nameserver nào có quyền trả lời cho domain.
+
+Ví dụ bạn mua domain ở một nhà cung cấp, nhưng cấu hình nameserver trỏ về Route 53. Khi đó:
+
+```text
+Registrar
+  -> quản lý quyền sở hữu domain
+
+Route 53
+  -> quản lý DNS record của domain
+```
+
+### 34.3. Nameserver và authoritative nameserver là gì?
+
+**Nameserver** là server trả lời câu hỏi DNS.
+
+**Authoritative nameserver** là nameserver có thẩm quyền chính thức cho một domain.
+
+Ví dụ domain:
+
+```text
+example.com
+```
+
+nếu được cấu hình dùng Route 53, registrar sẽ khai báo nameserver dạng:
+
+```text
+ns-xxx.awsdns-xx.com
+ns-xxx.awsdns-xx.net
+ns-xxx.awsdns-xx.org
+ns-xxx.awsdns-xx.co.uk
+```
+
+Khi đó Route 53 là authoritative DNS provider cho `example.com`.
+
+Nói đơn giản:
+
+```text
+DNS toàn cầu hỏi: ai quản lý example.com?
+Registrar/TLD trả lời: các nameserver của Route 53.
+Route 53 trả lời: gitlab.example.com trỏ tới đâu.
+```
+
+### 34.4. Hosted Zone trong Route 53 là gì?
+
+**Hosted Zone** là vùng cấu hình DNS cho một domain trong Route 53.
+
+Ví dụ hosted zone:
+
+```text
+example.com
+```
+
+Trong hosted zone này có thể tạo các record:
+
+```text
+example.com
+www.example.com
+api.example.com
+gitlab.example.com
+```
+
+Hosted zone thường có hai loại:
+
+- **Public hosted zone**: DNS public trên Internet.
+- **Private hosted zone**: DNS nội bộ trong VPC.
+
+Nếu muốn người dùng Internet truy cập `gitlab.example.com`, thường dùng public hosted zone.
+
+### 34.5. Route 53 trỏ về ALB nghĩa là gì?
+
+Khi tạo Application Load Balancer, AWS cấp cho ALB một DNS name riêng, ví dụ:
+
+```text
+my-alb-123456.ap-southeast-1.elb.amazonaws.com
+```
+
+Đây là DNS name do AWS quản lý cho ALB.
+
+Nhưng người dùng không nên dùng trực tiếp tên này. Thay vào đó ta dùng domain của mình:
+
+```text
+gitlab.example.com
+```
+
+Rồi trong Route 53 tạo record:
+
+```text
+gitlab.example.com -> my-alb-123456.ap-southeast-1.elb.amazonaws.com
+```
+
+Trong Route 53, với ALB thường dùng **Alias record**.
+
+Điểm quan trọng:
+
+```text
+Route 53 không thay thế DNS toàn cầu.
+Route 53 tham gia vào DNS toàn cầu với vai trò DNS provider/authoritative nameserver.
+```
+
+Luồng khái niệm:
+
+```text
+User hỏi gitlab.example.com
+  -> DNS toàn cầu tìm authoritative nameserver của example.com
+  -> nameserver đó là Route 53
+  -> Route 53 trả lời record gitlab.example.com trỏ tới ALB
+  -> client kết nối tới ALB
+```
+
+### 34.6. ALB DNS name là gì?
+
+**ALB DNS name** là tên DNS do AWS tự cấp cho một Application Load Balancer.
+
+Ví dụ:
+
+```text
+newgate2601-gitlab-alb-123456.ap-southeast-1.elb.amazonaws.com
+```
+
+ALB có thể thay đổi IP phía sau theo thời gian. Vì vậy không nên trỏ domain vào IP cố định của ALB.
+
+Cách đúng là:
+
+```text
+Domain của bạn
+  -> Route 53 Alias/CNAME
+  -> ALB DNS name
+  -> AWS tự xử lý IP thật phía sau ALB
+```
+
+Với Route 53 và ALB cùng trong AWS, nên dùng Alias record vì:
+
+- Trỏ trực tiếp tới AWS resource như ALB.
+- Không cần hard-code IP.
+- Có thể dùng cho record gốc nếu cần.
+- AWS tự xử lý zone id của ALB.
+
+### 34.7. CNAME và Alias khác nhau thế nào?
+
+**CNAME record** là DNS record trỏ một tên sang một tên khác.
+
+Ví dụ:
+
+```text
+www.example.com -> example.com
+```
+
+Hoặc:
+
+```text
+gitlab.example.com -> my-alb-123456.ap-southeast-1.elb.amazonaws.com
+```
+
+**Alias record** là record đặc biệt của Route 53 để trỏ tới AWS resource như:
+
+- ALB.
+- CloudFront.
+- API Gateway.
+- S3 static website endpoint.
+
+Khác biệt dễ nhớ:
+
+| Khái niệm | Dùng ở đâu | Trỏ tới gì |
+|---|---|---|
+| CNAME | DNS chuẩn nói chung | Một DNS name khác. |
+| Alias | Route 53 riêng của AWS | AWS resource hoặc một số AWS endpoint. |
+
+Khi trỏ domain tới ALB trong Route 53, thường ưu tiên Alias.
+
+### 34.8. TLS certificate là gì?
+
+**TLS certificate** là chứng chỉ số dùng để bật HTTPS.
+
+Nó giúp trình duyệt kiểm tra:
+
+```text
+Server đang trả lời có đúng là domain cần truy cập không?
+Kết nối có được mã hóa không?
+Certificate có được cấp bởi CA đáng tin cậy không?
+Certificate còn hạn không?
+```
+
+Nếu không có TLS certificate hợp lệ, trình duyệt có thể báo:
+
+```text
+Not Secure
+Your connection is not private
+Certificate invalid
+```
+
+TLS certificate thường gắn với domain, ví dụ:
+
+```text
+gitlab.example.com
+```
+
+### 34.9. ACM là gì?
+
+**ACM**, viết tắt của **AWS Certificate Manager**, là dịch vụ AWS dùng để tạo, quản lý và gia hạn TLS certificate.
+
+ACM thường dùng với:
+
+- Application Load Balancer.
+- Network Load Balancer với TLS listener.
+- CloudFront.
+- API Gateway.
+
+Khi dùng ALB, TLS certificate thường được gắn vào HTTPS listener của ALB.
+
+Ví dụ:
+
+```text
+User
+  -> HTTPS tới ALB
+  -> ALB dùng certificate từ ACM
+  -> ALB forward request vào target phía sau
+```
+
+ACM giúp bạn không phải tự:
+
+- Tạo private key thủ công.
+- Copy certificate lên EC2.
+- Renew certificate bằng script.
+- Reload Nginx/Apache khi certificate đổi.
+
+Lưu ý:
+
+```text
+Certificate dùng cho ALB phải nằm cùng region với ALB.
+```
+
+Ví dụ ALB ở `ap-southeast-1` thì ACM certificate cho ALB cũng phải ở `ap-southeast-1`.
+
+### 34.10. DNS validation trong ACM là gì?
+
+Khi xin certificate cho một domain, ACM cần xác minh bạn thật sự kiểm soát domain đó.
+
+Một cách phổ biến là **DNS validation**.
+
+ACM sẽ yêu cầu bạn tạo một DNS record đặc biệt, thường là CNAME, trong hosted zone của domain.
+
+Ý nghĩa:
+
+```text
+Nếu bạn tạo được DNS record xác minh
+  -> bạn có quyền quản lý DNS của domain
+  -> ACM có thể cấp certificate cho domain đó
+```
+
+Khi Route 53 quản lý DNS, Terraform hoặc AWS Console có thể tạo DNS validation record trong Route 53. Sau khi DNS record đúng, ACM chuyển certificate sang trạng thái:
+
+```text
+ISSUED
+```
+
+### 34.11. Nếu không có ACM thì tự triển khai HTTPS thế nào?
+
+Nếu không dùng ACM hoặc không chạy trên AWS ALB/CloudFront/API Gateway, hệ thống vẫn cần TLS certificate để có HTTPS.
+
+Các cách phổ biến:
+
+- Dùng Let's Encrypt và Certbot.
+- Mua certificate thương mại.
+- Dùng certificate từ internal CA của công ty.
+- Dùng self-signed certificate cho lab nội bộ, nhưng trình duyệt sẽ không tin mặc định.
+
+Ví dụ tự triển khai ngoài AWS managed service:
+
+```text
+User
+  -> HTTPS tới Nginx/Apache/HAProxy
+  -> Nginx/Apache/HAProxy dùng certificate tự cài
+  -> reverse proxy vào application phía sau
+```
+
+Khi tự quản lý certificate, bạn phải tự lo:
+
+- Private key lưu ở đâu.
+- Ai được đọc private key.
+- Certificate hết hạn khi nào.
+- Renew tự động ra sao.
+- Reload service sau khi renew.
+- Monitoring cảnh báo certificate sắp hết hạn.
+
+ACM giúp giảm phần vận hành này nếu traffic đi qua dịch vụ AWS hỗ trợ ACM.
+
 ## 35. CloudFront và CDN
 
 **CloudFront** là CDN của AWS.
