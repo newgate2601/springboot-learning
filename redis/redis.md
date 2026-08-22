@@ -246,6 +246,18 @@ Redis giữ thứ tự theo score, nên bài toán leaderboard không cần app 
 
 Redis thường được mô tả là **mostly single-threaded** ở góc nhìn **command execution**: một Redis process dùng event loop để nhận request từ nhiều client, rồi xử lý command trên main thread theo thứ tự. Redis docs gọi kỹ thuật này là **multiplexing**: nhiều connection cùng được phục vụ bởi một event loop, nhưng tại một thời điểm Redis chỉ execute một command trên shared data.
 
+**Multiplexing khác gì khi không có nó?**
+
+```text
+Không multiplexing (blocking đơn giản):
+đọc socket A và chờ A gửi đủ dữ liệu → B, C dù đã gửi request vẫn phải chờ
+
+Có multiplexing (non-blocking + event loop):
+OS báo socket nào đang sẵn sàng → Redis chỉ xử lý A/B/C khi socket đó đọc hoặc ghi được
+```
+
+Ví dụ A mở kết nối nhưng gửi request rất chậm, còn B đã gửi đủ `GET user:1`. Không có multiplexing và chỉ một thread blocking, Redis có thể mắc ở A; với multiplexing, Redis bỏ qua A lúc chưa sẵn sàng và xử lý B. Nhờ vậy một event loop có thể quản lý hàng nghìn connection mà không cần một thread cho mỗi connection. Multiplexing chỉ giúp **không chờ socket vô ích**; command của các socket sẵn sàng vẫn được main thread execute lần lượt.
+
 Điểm quan trọng: Redis không nhanh vì “một thread luôn nhanh hơn nhiều thread”. Redis nhanh vì workload của Redis thường là command nhỏ, chạy rất ngắn, thao tác trên memory, và không cần nhiều lock phức tạp quanh shared data.
 
 #### Vì sao single event loop lại giúp Redis nhanh?
@@ -396,6 +408,15 @@ Nếu Redis cho nhiều thread cùng sửa dữ liệu memory, nó phải giải
 
 Redis chọn hướng khác: execute command rất nhanh trên một main thread, tránh lock phức tạp. Với workload Redis thông thường là command nhỏ và chạy trong memory, cách này cho latency thấp và behavior dễ đoán.
 
+Có thể nghĩ đến cách **mỗi key chỉ do một worker thread xử lý**, để key `A` và `B` chạy song song. Tuy nhiên, nhiều command lại tác động lên nhiều key, ví dụ:
+
+```redis
+MSET A 1 B 2
+RENAME A B
+```
+
+Nếu `A` và `B` thuộc hai worker khác nhau, Redis vẫn phải phối hợp hoặc lock cả hai để client không nhìn thấy trạng thái chỉ cập nhật được một nửa. Transaction, Lua script, TTL, eviction, replication và AOF cũng dùng trạng thái/thứ tự chung, nên thiết kế này phức tạp và có thể tốn chi phí hơn chính các command vốn chạy rất nhanh. Redis thường scale theo ý tưởng đó ở cấp **Redis Cluster**: mỗi node giữ một nhóm hash slot và các node chạy song song, thay vì nhiều worker cùng sửa shared memory trong một instance.
+
 Nhưng trade-off là: nếu một command chạy lâu, nó giữ main thread, command khác phải đợi.
 
 ##### 3. Background thread/process làm gì?
@@ -413,9 +434,22 @@ Ví dụ `BGSAVE`:
 BGSAVE
 ```
 
-`BGSAVE` tạo snapshot RDB. Redis parent process fork ra child process; child process ghi RDB xuống disk, parent process tiếp tục phục vụ client. Nhờ đó, Redis không cần dừng toàn bộ request để ghi dataset ra file.
+`BGSAVE` có thể do admin/script gọi hoặc được Redis tự kích hoạt theo cấu hình `save`. **Dataset** là toàn bộ key-value Redis đang giữ trong RAM. Quy trình ngắn gọn:
 
-Nhưng `fork` vẫn có chi phí. Với dataset rất lớn, lúc fork có thể gây latency spike. Vì vậy production Redis lớn cần theo dõi các chỉ số như `latest_fork_usec`.
+> `fork()` tạo một **child process** mới, không phải thread. Parent và child là hai process có PID riêng.
+
+```text
+Redis tạm dừng rất ngắn để fork child
+  ├─ parent tiếp tục xử lý command
+  └─ child ghi trạng thái dataset lúc fork thành file RDB
+```
+
+Ở đây có hai chi phí khác nhau:
+
+- **Ngay lúc `fork`**: luôn có. Main thread phải chờ OS tạo child, sao chép page table và thiết lập Copy-on-Write. OS không copy toàn bộ value, nhưng dataset càng lớn thì metadata/page table thường càng lớn nên Redis có thể khựng ngắn.
+- **Sau khi fork**: parent và child dùng chung memory page; chỉ khi parent sửa dữ liệu, OS mới copy riêng page bị sửa. Đây mới là chi phí Copy-on-Write, làm write tốn thêm CPU và RAM.
+
+Vì vậy `BGSAVE` không chặn Redis suốt thời gian ghi file, nhưng vẫn có thể gây latency spike lúc `fork` và trong lúc child tranh chấp CPU, RAM, disk với parent. Production Redis lớn cần theo dõi `latest_fork_usec`.
 
 Kiểm tra bằng:
 
@@ -433,69 +467,64 @@ aof_rewrite_in_progress
 
 ##### 4. Redis 6 I/O threading là gì?
 
-Từ Redis 6, Redis có thể dùng I/O threads để hỗ trợ network read/write. Điều này không có nghĩa là nhiều thread cùng execute command trên dữ liệu. Cách hiểu đúng:
+**Socket** có thể hiểu đơn giản là đầu kết nối mạng giữa một client và Redis. Redis phải đọc bytes request từ socket, execute command rồi ghi bytes response trở lại socket. Multiplexing đã giúp main thread chỉ chọn socket sẵn sàng, nhưng trước Redis 6 chính main thread vẫn phải làm phần đọc/ghi cho các socket đó:
 
 ```text
-Client sockets/network I/O  -> có thể được hỗ trợ bởi I/O threads
-Command execution/data write -> vẫn chủ yếu chạy trên main thread
+Nhiều client socket
+        ↓
+Main thread: đọc request → parse → execute command → ghi response
 ```
 
-I/O threading hữu ích khi bottleneck nằm ở network I/O: nhiều connection, response lớn, throughput mạng cao. Nhưng nếu bottleneck là command nặng như `KEYS *`, `SORT` collection lớn, Lua script lâu, thì I/O threads không cứu được vì main thread vẫn bị command đó giữ.
-
-##### 5. Cách chạy demo thực tế
-
-Nếu máy có Docker, chạy Redis độc lập:
-
-```powershell
-docker run --name redis-thread-demo -p 6379:6379 -d redis:7
-```
-
-Mở Redis CLI:
-
-```powershell
-docker exec -it redis-thread-demo redis-cli
-```
-
-Kiểm tra Redis đang chạy:
-
-```redis
-PING
-```
-
-Kết quả:
+Khi traffic nhỏ, cách này rất nhanh. Nhưng nếu 10.000 client cùng gửi request hoặc Redis phải trả nhiều value lớn, main thread tốn nhiều CPU để copy bytes, làm chậm cả việc execute command. Từ Redis 6, có thể bật I/O threads để chia phần network I/O:
 
 ```text
-PONG
+Nhiều client socket
+        ↓
+I/O threads: đọc request / ghi response song song
+        ↓
+Main thread: parse và execute command tuần tự trên dữ liệu
 ```
 
-Kiểm tra thông tin server:
-
-```redis
-INFO server
-```
-
-Bạn sẽ thấy các thông tin kiểu:
+Ví dụ 4 client cùng `GET` value 5 MB:
 
 ```text
-redis_version:...
-process_id:...
-tcp_port:6379
+Không I/O threads: main thread lần lượt ghi 4 response ra 4 socket
+Có I/O threads:     nhiều thread cùng ghi các response, giúp pha I/O hoàn thành sớm hơn
 ```
 
-Kiểm tra persistence/fork:
+I/O threads **không** cùng execute `GET`, `SET`, `INCR` trên dataset. Vì vậy chúng giúp khi nghẽn ở đọc/ghi network, nhưng không cứu được `KEYS *` hoặc Lua script lâu vì command vẫn giữ main thread. Tính năng này cần được cấu hình (`io-threads`; muốn thread hóa cả đọc socket thì bật thêm `io-threads-do-reads`).
 
-```redis
-INFO persistence
+##### 5. Vì sao giao response cho I/O thread vẫn nhanh hơn?
+
+Main thread phải “giao việc”, nhưng nó **không copy toàn bộ response sang I/O thread**. Quy trình thường là:
+
+1. Main thread execute command như `GET` và tạo response buffer trong memory.
+2. Main thread đưa tham chiếu tới client/response buffer vào hàng đợi của I/O thread.
+3. I/O thread gọi `write()` để đẩy bytes từ buffer ra socket.
+
+```text
+Giao việc:
+đưa một pointer/tham chiếu nhỏ → chi phí thấp
+
+Ghi socket:
+copy hàng MB vào kernel, xử lý nhiều lần write,
+socket buffer đầy/chưa sẵn sàng → chi phí lớn hơn
 ```
 
-Chạy thử `BGSAVE`:
+Ví dụ có 4 response, mỗi response 5 MB:
 
-```redis
-BGSAVE
-INFO persistence
+```text
+Không I/O threads:
+main thread ghi socket A → B → C → D
+
+Có I/O threads:
+thread 1 ghi A    thread 2 ghi B
+thread 3 ghi C    thread 4 ghi D
 ```
 
-Ý nghĩa: `BGSAVE` yêu cầu Redis tạo snapshot ở background child process. Nếu dataset nhỏ thì rất nhanh, nhưng với dataset lớn thì `fork` có thể gây latency spike.
+Tổng cộng vẫn phải truyền 20 MB, nhưng công việc network I/O được xử lý trên nhiều CPU core và nhiều socket song song. Chi phí giao bốn tham chiếu nhỏ hơn nhiều so với tự ghi 20 MB.
+
+Tuy nhiên, Redis xử lý I/O theo các pha và main thread có thể phải đợi I/O threads hoàn thành; không nên hiểu rằng main luôn execute command song song với chúng. Lợi ích chính là **rút ngắn pha I/O**, để main thread sớm quay lại pha execute command. Nếu response nhỏ và traffic thấp, chi phí điều phối có thể khiến I/O threads không nhanh hơn đáng kể; chúng hữu ích nhất khi có nhiều connection hoặc request/response lớn.
 
 ##### 6. Demo atomic counter
 
