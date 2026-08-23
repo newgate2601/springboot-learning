@@ -526,128 +526,39 @@ Tổng cộng vẫn phải truyền 20 MB, nhưng công việc network I/O đư�
 
 Tuy nhiên, Redis xử lý I/O theo các pha và main thread có thể phải đợi I/O threads hoàn thành; không nên hiểu rằng main luôn execute command song song với chúng. Lợi ích chính là **rút ngắn pha I/O**, để main thread sớm quay lại pha execute command. Nếu response nhỏ và traffic thấp, chi phí điều phối có thể khiến I/O threads không nhanh hơn đáng kể; chúng hữu ích nhất khi có nhiều connection hoặc request/response lớn.
 
-##### 6. Demo atomic counter
+##### 6. Object lớn / collection lớn có còn chậm khi dùng I/O threads không?
 
-Trong `redis-cli`:
+Có, vẫn có thể chậm. I/O threads chỉ giúp Redis chia bớt phần **network read/write**, đặc biệt là khi phải ghi response lớn ra nhiều socket. Nhưng trước khi I/O thread có thể ghi response ra socket, main thread vẫn phải tạo được response đó.
+
+Với một command trả về dữ liệu lớn, main thread thường vẫn phải làm các việc sau:
+
+1. Execute command trên data structure.
+2. Tìm key hoặc duyệt collection trong memory.
+3. Tạo response theo Redis protocol.
+4. Copy/serialize dữ liệu vào output buffer.
+5. Quản lý memory và output buffer của client.
+
+Ví dụ `GET big_json_key` trả về một string/JSON vài MB. Lookup key có thể là `O(1)`, nhưng Redis vẫn phải đưa vài MB dữ liệu vào response buffer, rồi network vẫn phải truyền vài MB đó về client. I/O thread có thể phụ trách ghi bytes ra socket, nhưng tổng lượng bytes lớn vẫn tốn CPU, memory bandwidth, network bandwidth và có thể làm latency tăng.
+
+Với collection lớn thì còn rõ hơn. Các command như:
 
 ```redis
-DEL product:123:view_count
-INCR product:123:view_count
-INCR product:123:view_count
-GET product:123:view_count
+LRANGE big_list 0 -1
+HGETALL huge_hash
+SMEMBERS huge_set
+ZRANGE huge_zset 0 -1
 ```
 
-Kết quả:
+đều có thể bắt main thread duyệt rất nhiều phần tử và build một response lớn. I/O thread không biến phần **duyệt collection** và **build response** thành xử lý song song hoàn toàn; nó chủ yếu giúp pha ghi response ra network nhanh hơn.
+
+Nói ngắn gọn:
 
 ```text
-(integer) 1
-(integer) 2
-"2"
+I/O thread giúp phần network write.
+Không giúp nhiều cho command nặng, collection scan, hoặc serialize response lớn.
 ```
 
-Nếu muốn bắn nhiều lần:
-
-```powershell
-docker exec -it redis-thread-demo redis-cli -r 100 INCR product:123:view_count
-```
-
-Sau đó kiểm tra:
-
-```powershell
-docker exec -it redis-thread-demo redis-cli GET product:123:view_count
-```
-
-Ý nghĩa: dù 100 command được gửi liên tục, Redis vẫn apply từng `INCR` tuần tự, không mất update.
-
-##### 7. Demo command chậm block event loop
-
-Không nên làm trên production. Chỉ demo local.
-
-Tạo nhiều key:
-
-```powershell
-1..10000 | ForEach-Object { "SET session:$_ user:$_" } | docker exec -i redis-thread-demo redis-cli --pipe
-```
-
-Lệnh trên tạo 10.000 key dạng:
-
-```text
-session:1
-session:2
-...
-session:10000
-```
-
-Với dataset nhỏ thì `KEYS session:*` chưa thấy chậm:
-
-```redis
-KEYS session:*
-```
-
-Nhưng về nguyên lý, `KEYS` phải quét toàn bộ keyspace. Nếu có hàng triệu key, main thread bận scan, các request khác phải chờ. Cách production nên dùng:
-
-```redis
-SCAN 0 MATCH session:* COUNT 100
-```
-
-`SCAN` trả từng batch nhỏ, giảm khả năng block event loop lâu.
-
-Muốn thấy rõ hơn việc một command lâu giữ event loop, mở **2 terminal**.
-
-Terminal 1 chạy Lua script cố tình lâu:
-
-```powershell
-docker exec -it redis-thread-demo redis-cli EVAL "local x=0; for i=1,100000000 do x=x+i end; return x" 0
-```
-
-Trong lúc terminal 1 đang chạy, terminal 2 thử gọi:
-
-```powershell
-docker exec -it redis-thread-demo redis-cli PING
-```
-
-Nếu script ở terminal 1 chưa xong, `PING` ở terminal 2 có thể phải chờ. Đây chính là ý “Redis execute command tuần tự trên main event loop”: `PING` vốn rất nhanh, nhưng vẫn phải đợi command trước đó nhả main thread.
-
-> Chỉ chạy demo Lua này ở local. Trong production, Lua script dài hoặc command `O(N)` trên dữ liệu lớn là nguồn gây latency spike rất khó chịu.
-
-##### 8. Demo Slow Log
-
-Cấu hình log command chạy quá 1 microsecond để dễ thấy trong local demo:
-
-```redis
-CONFIG SET slowlog-log-slower-than 1
-CONFIG SET slowlog-max-len 128
-```
-
-Chạy vài command:
-
-```redis
-SET a 1
-GET a
-KEYS *
-```
-
-Xem slow log:
-
-```redis
-SLOWLOG GET 10
-```
-
-Trong production không nên set threshold quá thấp như vậy vì log sẽ nhiễu. Thường dùng threshold lớn hơn, ví dụ vài ms hoặc theo latency SLO của hệ thống.
-
-##### 9. Cleanup demo
-
-Thoát CLI:
-
-```redis
-exit
-```
-
-Xóa container:
-
-```powershell
-docker rm -f redis-thread-demo
-```
+Vì vậy `key/value quá lớn` hoặc command trả về collection lớn vẫn là nguồn gây latency spike. Cách dùng tốt hơn là chia nhỏ dữ liệu bằng pagination/range nhỏ, dùng `SCAN`, `HSCAN`, `SSCAN`, `ZSCAN` thay vì lấy hết một lần, và tránh lưu một object JSON/string quá lớn trong một key nếu nó thường xuyên được đọc/ghi nguyên khối.
 
 Tóm lại:
 
@@ -715,10 +626,354 @@ Các thứ cần quan tâm khi dùng Redis:
 
 ## Redis mechanism
 
-**Atomic** tức mỗi lệnh của redis không thể chia nhỏ hơn được nữa
+Redis không chỉ nhanh vì "lưu trong RAM". Redis có nhiều cơ chế phối hợp với nhau: event loop, command execution tuần tự, data structure encoding, TTL, eviction, transaction/Lua, replication, persistence, pub/sub/stream và observability.
 
-- Một phần là Redis sử dụng single thread, nên các câu lệnh gửi lên sẽ được thực thi tuần tự, không xảy ra race condition, giúp đảm bảo consistency data.
-- Ví dụ như 100 request tăng 1 đơn vị lên 1 value nằm trong redis thì sẽ tăng đúng 100 đơn vị thực, do 100 request này sẽ thực thi tuần tự -> vừa nhanh, lại còn chả phải sử dụng lock mà vẫn đạt tuần tự.
+Mục này đóng vai trò bản đồ cơ chế. Những phần đã có mục riêng sẽ chỉ tóm tắt ngắn và ghi chú nơi giải thích chi tiết; những phần chưa có mục riêng sẽ giải thích kỹ hơn ngay tại đây.
+
+### 1. Command execution và atomicity
+
+**Atomic** nghĩa là một command Redis được xử lý như một đơn vị không bị command khác chen vào giữa. Ví dụ `INCR counter` gồm đọc value hiện tại, cộng thêm 1, ghi lại value mới; nhưng với Redis, toàn bộ thao tác đó là một command atomic.
+
+Redis chủ yếu execute command trên main thread theo thứ tự:
+
+```text
+client A: INCR product:123:view_count
+client B: INCR product:123:view_count
+client C: INCR product:123:view_count
+
+Redis main thread:
+  execute A -> counter = 1
+  execute B -> counter = 2
+  execute C -> counter = 3
+```
+
+Vì vậy nếu 100 request cùng tăng một key bằng `INCR`, kết quả sẽ tăng đúng 100 đơn vị mà app không cần tự dùng distributed lock cho thao tác cộng đơn giản này.
+
+Điểm cần hiểu đúng:
+
+- Atomic ở đây là **atomic trong phạm vi một command**.
+- Nếu app tự làm `GET counter` rồi cộng trong code rồi `SET counter`, đó là nhiều command riêng lẻ và có thể mất update.
+- Nếu cần gom nhiều command thành một đơn vị logic, có thể dùng `MULTI/EXEC`, Lua script hoặc Redis Function tùy bài toán.
+
+### 2. Event loop và multiplexing
+
+Redis dùng event loop để quản lý nhiều connection cùng lúc. Kernel báo socket nào đang đọc/ghi được, Redis đọc request từ nhiều client, parse command, rồi execute command trên main thread.
+
+Ghi chú: phần này đã giải thích chi tiết ở `Why is Redis fast?` -> `Redis xử lý command chủ yếu bằng một event loop`, bao gồm single event loop, background thread/process, Redis 6 I/O threading và object/collection lớn.
+
+### 3. Data structure và internal encoding
+
+Redis expose các data type như `String`, `Hash`, `List`, `Set`, `Sorted Set`, `Stream`, `JSON`,... Nhưng bên trong Redis có thể dùng các encoding khác nhau để tối ưu memory và tốc độ.
+
+Điểm quan trọng: chọn đúng data type giúp Redis xử lý trực tiếp ở server, không bắt app kéo dữ liệu về rồi tự parse/sort/filter. Ghi chú: phần data type đã giải thích chi tiết ở `Redis Overview` -> `Data structure store`, `String vs Hash vs JSON khi lưu object`, và phần command complexity ở `Why is Redis fast?`.
+
+### 4. TTL và expiration
+
+Redis hỗ trợ đặt thời gian sống cho key:
+
+```redis
+SET session:abc user-1001 EX 1800
+EXPIRE cart:1001 3600
+TTL session:abc
+```
+
+Redis xóa key hết hạn bằng hai cơ chế phối hợp:
+
+- **Lazy expiration**: khi client truy cập key, Redis kiểm tra key đã hết hạn chưa; nếu hết hạn thì xóa.
+- **Active expiration**: Redis định kỳ lấy mẫu các key có TTL để xóa bớt key đã hết hạn.
+
+Vì vậy key hết hạn không nhất thiết biến mất đúng từng millisecond. Redis ưu tiên cân bằng giữa độ chính xác TTL và chi phí CPU.
+
+Hai cơ chế này không phải để app chọn dùng trực tiếp, mà là cách Redis tự phối hợp để vừa đúng logic TTL vừa không tốn CPU quá nhiều.
+
+| Cơ chế | Redis dùng khi nào | Use case / ý nghĩa thực tế |
+| --- | --- | --- |
+| **Lazy expiration** | Khi client truy cập một key | Đảm bảo app không đọc nhầm dữ liệu đã hết hạn. Ví dụ `GET session:abc` sau TTL thì Redis kiểm tra, thấy expired, xóa key và trả nil. Cách này rẻ vì chỉ kiểm tra key đang được dùng. |
+| **Active expiration** | Redis chạy định kỳ ở background/main loop theo chu kỳ | Dọn các key đã hết hạn nhưng không còn ai truy cập. Ví dụ hàng triệu `otp:*`, `cache:*`, `rate:*` hết hạn rồi không được `GET` lại; nếu chỉ có lazy thì chúng có thể nằm trong memory lâu hơn. Active expiration giúp thu hồi memory dần. |
+
+Ví dụ thực tế:
+
+```text
+session:abc TTL 30 phút
+```
+
+Nếu user quay lại sau 40 phút và app gọi `GET session:abc`, **lazy expiration** xử lý ngay tại thời điểm đọc: Redis phát hiện session đã hết hạn, xóa key, trả nil.
+
+```text
+otp:phone:0901234567 TTL 5 phút
+```
+
+Nếu user không bao giờ nhập OTP nữa, app sẽ không `GET` key này. Khi đó **active expiration** sẽ giúp Redis chủ động lấy mẫu và dọn key đã hết hạn để tránh giữ rác trong memory.
+
+Nói ngắn gọn:
+
+```text
+Lazy expiration: bảo vệ correctness khi app đọc key.
+Active expiration: bảo vệ memory khi key hết hạn nhưng không ai đọc lại.
+```
+
+### 5. Eviction khi memory đầy
+
+TTL là "key tự hết hạn theo thời gian"; còn **eviction** là "Redis chủ động đuổi key khi đạt giới hạn memory".
+
+Các policy hay gặp:
+
+| Policy | Ý nghĩa |
+| --- | --- |
+| `noeviction` | Không đuổi key, write mới có thể lỗi khi hết memory |
+| `allkeys-lru` | Đuổi key ít được dùng gần đây trong toàn bộ keyspace |
+| `volatile-lru` | Chỉ đuổi key có TTL, ưu tiên key ít dùng gần đây |
+| `allkeys-lfu` | Đuổi key ít được dùng thường xuyên |
+| `volatile-ttl` | Chỉ đuổi key có TTL, ưu tiên key sắp hết hạn |
+| `allkeys-random` | Đuổi ngẫu nhiên trong toàn bộ keyspace |
+
+Cache production thường cần cấu hình `maxmemory` và `maxmemory-policy` rõ ràng. Nếu không, Redis có thể dùng quá RAM hoặc trả lỗi write khi memory đầy.
+
+### 6. Transaction, optimistic locking và Lua
+
+Redis có `MULTI/EXEC` để gom nhiều command vào transaction, nhưng cần hiểu đúng: **gửi nhiều command chung một lần qua network không làm chúng tự động thành một block atomic**. Redis vẫn parse và execute theo từng command.
+
+Ví dụ nếu app tự làm:
+
+```redis
+GET stock:sku-1
+DECR stock:sku-1
+```
+
+thì `GET` và `DECR` là 2 command riêng. Với stock ban đầu là `1`, hai request mua hàng có thể chen nhau như sau:
+
+```text
+A: GET stock -> 1
+B: GET stock -> 1
+A: DECR stock -> 0
+B: DECR stock -> -1
+```
+
+Redis vẫn chạy từng command tuần tự, nhưng logic nghiệp vụ vẫn sai vì app cần cả cụm **read-check-write** atomic.
+
+`MULTI/EXEC` giúp Redis queue các command sau `MULTI`, rồi execute liên tục khi gặp `EXEC`:
+
+```redis
+MULTI
+DECR stock:sku-1
+EXEC
+```
+
+Nếu cần đọc trước rồi mới quyết định ghi, dùng `WATCH`. `WATCH` không phải lock mutex truyền thống; nó là **optimistic locking**: nếu key bị client khác sửa trước `EXEC`, transaction sẽ fail để app retry hoặc trả lỗi.
+
+```redis
+WATCH stock:sku-1
+GET stock:sku-1
+MULTI
+DECR stock:sku-1
+EXEC
+```
+
+Cách dễ hiểu hơn cho case trừ tồn kho là Lua script, vì Redis xem cả script là **một command atomic**:
+
+```redis
+EVAL "local v=redis.call('GET', KEYS[1]); if tonumber(v) > 0 then return redis.call('DECR', KEYS[1]) else return -1 end" 1 stock:sku-1
+```
+
+Lua hợp với logic ngắn như check tồn kho rồi trừ, rate limit, release lock đúng owner. Nhưng Lua script chạy lâu sẽ block main thread, nên không dùng để xử lý tác vụ nặng.
+
+### 7. Pipelining và batching
+
+Pipelining cho phép client gửi nhiều command liên tục mà không chờ từng response:
+
+Pipeline không làm từng command execute song song trong Redis. Nó chủ yếu giảm network round-trip, rất hữu ích khi app cần gửi nhiều command nhỏ. Ghi chú: phần này đã giải thích chi tiết hơn ở `Why is Redis fast?` -> `Network round-trip thường là bottleneck lớn`.
+
+### 8. Pub/Sub và Stream
+
+Redis có hai nhóm cơ chế messaging hay bị nhầm:
+
+- **Pub/Sub**: message realtime, subscriber đang online thì nhận; không phù hợp nếu cần lưu lịch sử message bền vững.
+- **Stream**: append-only log có ID, consumer group, pending entries; phù hợp event processing hơn Pub/Sub.
+
+#### Pub/Sub hoạt động thế nào?
+
+Pub/Sub là kiểu **fire-and-forget realtime broadcast**. Producer publish message vào channel, Redis đẩy message ngay tới các subscriber đang subscribe channel đó.
+
+```text
+publisher -> Redis channel -> subscriber đang online
+```
+
+Ví dụ:
+
+```redis
+PUBLISH order-events "created:9001"
+SUBSCRIBE order-events
+```
+
+Nếu subscriber đang offline hoặc reconnect sau đó, message cũ đã publish sẽ không được nhận lại. Redis Pub/Sub không giữ offset, không có retry, không có ack, không có consumer group.
+
+Use case thực tế:
+
+- Gửi notification realtime giữa các app instance, ví dụ user online/offline, refresh config, clear local cache.
+- Broadcast event nhẹ cho WebSocket server, ví dụ room chat có tin nhắn mới và các node WebSocket cần đẩy tới client đang online.
+- Signal nội bộ kiểu "có update mới" rồi service khác tự query DB/cache để lấy state mới nhất.
+- Invalidate cache local trong hệ thống nhiều instance, ví dụ service A update product thì publish `product:123 updated` để các instance xóa local cache.
+
+Ưu điểm:
+
+- Rất đơn giản, latency thấp.
+- Hợp realtime fan-out cho subscriber đang online.
+- Không cần quản lý offset, ack, pending message.
+
+Nhược điểm:
+
+- Subscriber offline là mất message.
+- Không replay được message cũ.
+- Không biết consumer đã xử lý thành công hay chưa.
+- Không phù hợp cho nghiệp vụ cần đảm bảo xử lý đủ event như thanh toán, xuất kho, gửi email quan trọng.
+
+#### Stream hoạt động thế nào?
+
+Stream giống một **event log trong Redis**. Mỗi message được append vào stream và có ID. Consumer có thể đọc từ ID cụ thể, đọc tiếp từ vị trí trước đó, hoặc dùng consumer group để nhiều worker chia nhau xử lý.
+
+```text
+producer -> XADD stream -> Redis lưu event log -> consumer/consumer group đọc và ack
+```
+
+Ví dụ:
+
+```redis
+XADD order-stream * type created orderId 9001
+XREAD COUNT 10 STREAMS order-stream 0
+```
+
+Dùng consumer group:
+
+```redis
+XGROUP CREATE order-stream email-workers $ MKSTREAM
+XREADGROUP GROUP email-workers worker-1 COUNT 10 STREAMS order-stream >
+XACK order-stream email-workers 1700000000000-0
+```
+
+Use case thực tế:
+
+- Queue gửi email/SMS/push notification: order created -> worker gửi email -> `XACK` khi gửi xong.
+- Event processing nội bộ: payment paid -> update order status -> generate invoice.
+- Audit/event log ngắn hạn: giữ event vài giờ/vài ngày để debug hoặc replay nhẹ.
+- Fan-out có kiểm soát: nhiều consumer group khác nhau cùng đọc một stream, ví dụ `email-workers`, `analytics-workers`, `fraud-workers`.
+- Job queue vừa và nhỏ khi không muốn triển khai Kafka/RabbitMQ riêng.
+
+Ưu điểm:
+
+- Message được lưu trong stream nên consumer offline có thể đọc lại.
+- Có consumer group để nhiều worker chia việc.
+- Có `ACK` và pending entries để biết message nào chưa xử lý xong.
+- Có thể replay từ ID cũ, phù hợp debug hoặc xử lý lại trong phạm vi retention.
+
+Nhược điểm:
+
+- Phức tạp hơn Pub/Sub vì phải quản lý consumer group, pending message, retry, trim stream.
+- Vẫn chạy trên Redis memory, stream lớn cần giới hạn bằng `XTRIM` hoặc retention policy.
+- Không thay thế hoàn toàn Kafka nếu cần event log rất lớn, retention dài ngày/tháng, throughput cực cao hoặc hệ sinh thái stream processing phong phú.
+- Nếu xử lý task nặng, worker phải lấy message rồi xử lý bên ngoài; không để Lua/Redis làm việc nặng.
+
+So sánh nhanh:
+
+| Tiêu chí | Pub/Sub | Stream |
+| --- | --- | --- |
+| Có lưu message không? | Không | Có, trong stream |
+| Subscriber offline có đọc lại được không? | Không | Có, nếu message chưa bị trim |
+| Có ack/retry không? | Không | Có `XACK`, pending entries |
+| Có chia việc nhiều worker không? | Không theo kiểu queue | Có consumer group |
+| Hợp với | Realtime signal/broadcast nhẹ | Event queue, job queue, xử lý async cần tracking |
+| Ví dụ tốt | Clear local cache, WebSocket notification online | Gửi email, xử lý order event, audit ngắn hạn |
+
+Nói ngắn gọn:
+
+```text
+Pub/Sub: cần báo ngay cho ai đang online, mất message cũng chấp nhận được.
+Stream: cần lưu event, đọc lại, chia worker, ack/retry.
+```
+
+### 9. Replication
+
+Redis replication cho phép một primary gửi dữ liệu sang replica:
+
+```text
+primary
+  -> replica 1
+  -> replica 2
+```
+
+Replica thường dùng để:
+
+- Tăng khả năng đọc nếu app đọc từ replica.
+- Dự phòng khi primary lỗi.
+- Là nền tảng cho Sentinel hoặc Cluster failover.
+
+Cần nhớ replication thường là async, nên replica có thể trễ hơn primary. Nếu vừa write vào primary rồi đọc ngay từ replica, app có thể đọc dữ liệu cũ. Ghi chú: phần kiến trúc Redis Standalone/Sentinel/Cluster được giải thích ở `Redis Architecture type`; mục này chỉ nhắc replication như một mechanism nền.
+
+### 10. Persistence hook: RDB, AOF và fork
+
+Persistence là cơ chế Redis ghi dữ liệu xuống disk để phục hồi sau restart. Redis có RDB snapshot, AOF append log, hoặc kết hợp cả hai. Phần này được giải thích riêng ở mục `Redis persistence`, nhưng về mặt mechanism cần nhớ:
+
+- RDB/AOF rewrite thường dùng background process/thread để giảm ảnh hưởng tới main thread.
+- `fork()` trên dataset lớn có thể tạo latency spike vì copy page table và copy-on-write.
+- AOF `appendfsync always/everysec/no` là trade-off giữa durability và latency.
+
+Ghi chú: không giải thích sâu ở đây vì phần `Redis persistence` bên dưới đã có mục riêng cho RDB, AOF, Hybrid persistence và demo Docker.
+
+### 11. Cluster, hash slot và resharding
+
+Redis Cluster chia keyspace thành 16.384 hash slots. Mỗi key được map vào một slot, mỗi node giữ một nhóm slot.
+
+```text
+key -> hash slot -> Redis node
+```
+
+Ví dụ:
+
+```text
+user:1 -> slot 9842 -> node A
+user:2 -> slot 5649 -> node B
+```
+
+Cluster giúp scale out dung lượng và throughput, nhưng cũng thêm giới hạn:
+
+- Multi-key command chỉ chạy trực tiếp nếu các key nằm cùng slot.
+- Có thể dùng hash tag như `order:{9001}:items` và `order:{9001}:status` để ép cùng slot.
+- Client cần hiểu redirect `MOVED`/`ASK`.
+
+Ghi chú: phần Redis Cluster và hash slots đã có mục riêng ở `Redis Architecture type` -> `Redis Cluster` và `Hash slots concept`; ở đây chỉ nhắc cluster như một mechanism scale-out.
+
+### 12. Observability: Slow Log, latency monitor, INFO
+
+Redis có các command quan sát rất quan trọng:
+
+```redis
+SLOWLOG GET 10
+INFO memory
+INFO stats
+INFO clients
+INFO persistence
+LATENCY DOCTOR
+```
+
+Dùng để kiểm tra:
+
+- Command nào chạy lâu.
+- Memory đang dùng bao nhiêu.
+- Client connection có bị nhiều không.
+- Persistence/fork có gây spike không.
+- Replication có lag không.
+- Key eviction có xảy ra không.
+
+### Tóm lại
+
+- Redis command atomic ở mức một command vì được execute tuần tự trên main thread.
+- Event loop giúp Redis quản lý nhiều connection ít overhead.
+- Data type và internal encoding giúp Redis vừa nhanh vừa tiết kiệm memory.
+- TTL/expiration và eviction quyết định vòng đời key.
+- Transaction/Lua giúp gom logic nhưng cần tránh script nặng.
+- Pipeline giảm network round-trip, không làm command execute song song.
+- Pub/Sub hợp realtime fire-and-forget; Stream hợp event log/consumer group.
+- Replication/Cluster giúp HA và scale, nhưng thêm độ trễ, redirect và ràng buộc hash slot.
+- Persistence, fork, slow log, latency monitor là các cơ chế vận hành cần hiểu khi chạy production.
 
 ## Redis persistence
 
