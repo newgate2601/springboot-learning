@@ -13,6 +13,8 @@
 - <https://redis.io/docs/latest/develop/using-commands/pipelining/>
 - <https://redis.io/docs/latest/develop/using-commands/transactions/>
 - <https://redis.io/docs/latest/commands/>
+- <https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/>
+- <https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/>
 - <https://redis.io/docs/latest/integrate/redis-data-integration/>
 - <https://redis.io/technology/redis-enterprise-cluster-architecture/>
 - <https://blog.bytebytego.com/p/a-crash-course-in-redis>
@@ -1538,7 +1540,72 @@ Ví dụ, nếu application xóa nhầm dữ liệu trên primary, thao tác xó
 
 Khi primary chết, một số write mới nhất có thể chưa kịp sang replica được promote. Sentinel cung cấp high availability, không cung cấp strong consistency hay cam kết zero data loss.
 
-#### 7. Khi nào nên dùng Sentinel?
+#### 7. Nếu primary chết trước khi sync data sang replica thì sao?
+
+Đây là điểm rất quan trọng của Redis Sentinel: **Sentinel chỉ tự động failover, không biến replication thành đồng bộ tuyệt đối**.
+
+Redis replication mặc định là **asynchronous replication**. Nghĩa là khi application ghi vào primary:
+
+1. Primary nhận command, cập nhật dữ liệu trong memory.
+2. Primary trả `OK` cho client.
+3. Primary gửi command đó sang replica.
+4. Replica apply command sau khi nhận được.
+
+Nếu primary chết ở giữa bước 2 và bước 4, write đó đã được client xem là thành công nhưng replica chưa có dữ liệu. Khi Sentinel promote replica lên làm primary mới, dữ liệu vừa ghi có thể biến mất.
+
+Ví dụ:
+
+~~~text
+T1: App SET order:123 "paid" vào Primary A
+T2: A trả OK cho app
+T3: A chưa kịp replicate sang Replica B
+T4: A chết
+T5: Sentinel promote B thành primary mới
+T6: B không có key order:123 = "paid"
+~~~
+
+Kết quả: hệ thống vẫn **available** vì có primary mới, nhưng có thể mất phần dữ liệu rất mới vừa ghi vào primary cũ.
+
+##### Hạn chế rủi ro như thế nào?
+
+Không có cấu hình Sentinel nào đảm bảo zero data loss tuyệt đối cho Redis replication async. Nhưng có thể giảm rủi ro bằng các cách sau:
+
+| Cách | Tác dụng | Đánh đổi |
+|---|---|---|
+| Dùng `WAIT numreplicas timeout` sau write quan trọng | Client chờ write được xác nhận bởi ít nhất N replica | Tăng latency; vẫn không phải consensus tuyệt đối |
+| Cấu hình `min-replicas-to-write` và `min-replicas-max-lag` trên primary | Primary từ chối write nếu không có đủ replica đủ gần | Khi replica lag/mất kết nối, Redis có thể reject write để bảo vệ dữ liệu |
+| Bật AOF, thường là `appendfsync everysec` hoặc `always` cho case rất nhạy | Giảm mất dữ liệu khi chính node Redis restart/crash | AOF không đảm bảo write đã sang replica; `always` chậm hơn |
+| Theo dõi replication lag | Biết replica nào đang trễ nhiều để cảnh báo/tránh promote replica quá cũ | Cần monitoring và alerting |
+| Không dùng Redis làm source of truth cho dữ liệu critical | Dữ liệu quan trọng nằm ở DB giao dịch/event log bền vững hơn | Kiến trúc phức tạp hơn, Redis chủ yếu làm cache/accelerator |
+| Thiết kế operation idempotent và có cơ chế reconcile | Nếu mất cache/state tạm, hệ thống có thể dựng lại từ DB/event | Cần thêm job/logic bù |
+
+Ví dụ dùng `WAIT`:
+
+~~~text
+SET order:123 "paid"
+WAIT 1 100
+~~~
+
+Ý nghĩa: sau khi `SET`, client yêu cầu Redis chờ tối đa `100ms` để ít nhất `1` replica xác nhận đã nhận write. Nếu trả về `1`, rủi ro mất write khi primary chết ngay sau đó thấp hơn nhiều so với không chờ replica. Nếu trả về `0`, application có thể quyết định retry, báo lỗi, hoặc ghi trạng thái đó vào nơi bền vững hơn.
+
+Cấu hình bảo vệ primary khỏi nhận write khi replica không đủ khỏe:
+
+~~~conf
+min-replicas-to-write 1
+min-replicas-max-lag 10
+~~~
+
+Ý nghĩa: primary chỉ nhận write nếu có ít nhất 1 replica có độ trễ không quá 10 giây. Nếu replica mất kết nối hoặc lag quá lâu, primary sẽ từ chối write. Cách này hy sinh availability một phần để giảm khả năng mất dữ liệu khi failover.
+
+##### Kết luận thực tế
+
+- Nếu Redis chỉ là **cache**, mất vài write/cache entry thường chấp nhận được vì có thể rebuild từ database chính.
+- Nếu Redis giữ **session, cart, rate limit, lock, job state**, cần hiểu rõ mức mất dữ liệu chấp nhận được và dùng thêm `WAIT`, AOF, monitoring hoặc cơ chế rebuild.
+- Nếu dữ liệu là **payment, order, banking, ledger**, không nên để Redis Sentinel là lớp đảm bảo durability duy nhất. Hãy ghi vào database giao dịch hoặc event log trước, rồi dùng Redis như lớp tăng tốc.
+
+Nói ngắn gọn: **Sentinel giúp hệ thống tự đứng dậy nhanh hơn khi primary chết; còn việc không mất dữ liệu cần được thiết kế riêng.**
+
+#### 8. Khi nào nên dùng Sentinel?
 
 Nên dùng khi:
 
@@ -1552,75 +1619,240 @@ Nên cân nhắc Redis Cluster hoặc giải pháp khác khi dataset lớn hơn 
 Tóm lại:
 
 > **Replication tạo bản sao dữ liệu. Sentinel giám sát, biểu quyết và tự động đổi primary. Client Sentinel-aware tìm primary mới. Backup vẫn là trách nhiệm riêng.**
+
 ### Redis Cluster
 
 ![Redis Cluster overview](images/redis-cluster-overview.png)
 
-Redis Cluster cung cấp **sharding native**: keyspace được chia cho nhiều primary, nên memory, network và command execution phân tán trên nhiều node. Mỗi primary nên có ít nhất một replica để failover.
+#### 1. Redis Cluster là gì?
 
-![Redis Cluster sharding](images/redis-cluster-sharding.png)
+Nếu Sentinel giống mô hình "một primary chính + vài replica dự phòng", thì Redis Cluster là mô hình **nhiều primary cùng chia nhau dữ liệu**.
 
-```text
-                 ┌─ Primary A: slots 0..5460 ───── Replica A1
-Cluster client ──┼─ Primary B: slots 5461..10922 ─ Replica B1
-                 └─ Primary C: slots 10923..16383  Replica C1
-```
+- **Primary** trong Cluster giữ một phần keyspace và nhận write cho phần đó.
+- **Replica** sao chép một primary cụ thể và có thể được promote nếu primary đó chết.
+- **Cluster-aware client** biết key nào nên gửi tới node nào.
+- **Cluster bus** là kênh giao tiếp nội bộ giữa các Redis node để gossip, phát hiện lỗi, cập nhật cấu hình và điều phối failover.
 
-Node trả `MOVED` khi key gửi sai node; lúc migrate slot có thể trả `ASK`. Phải dùng **cluster-aware client** biết cache ánh xạ slot → node và xử lý redirect. Cluster không cần Sentinel: các node dùng cluster bus/gossip để phát hiện lỗi, bầu replica và cập nhật slot ownership.
+Redis Cluster giải quyết hai nhu cầu lớn:
 
-**Use case:** dataset lớn hơn RAM một máy; cần scale-out throughput; nhiều cache key độc lập; workload chủ yếu single-key hoặc key liên quan có thể đặt cùng hash tag.
+1. **Sharding**: chia dữ liệu ra nhiều primary để vượt giới hạn RAM/CPU/network của một máy.
+2. **High availability theo shard**: nếu một primary chết và nó có replica đủ điều kiện, Cluster có thể promote replica để tiếp tục phục vụ slot của primary đó.
 
-**Ưu điểm:** scale-out dung lượng/throughput; failover theo shard khi có replica và đủ majority; có thể reshard online.
+~~~text
+                         hash slot 0..5460
+Application ───────> Primary A ─────────────> Replica A1
+cluster-aware          hash slot 5461..10922
+client      ───────> Primary B ─────────────> Replica B1
+                         hash slot 10923..16383
+            ───────> Primary C ─────────────> Replica C1
 
-**Nhược điểm và giới hạn:**
+Các Redis node nói chuyện với nhau qua cluster bus/gossip.
+~~~
 
-- Client/vận hành phức tạp hơn: quản lý slot coverage, replicas, failover và reshard.
-- Thêm primary **không tự cân bằng dữ liệu** trong Redis OSS; phải chạy `redis-cli --cluster reshard`/`--cluster rebalance` hoặc dùng operator.
-- Multi-key command, transaction, Lua/Functions với nhiều key thường yêu cầu key cùng slot, nếu không gặp `CROSSSLOT`.
-- Chỉ hỗ trợ database `0`, không dùng `SELECT` tạo nhiều logical database.
-- Replication vẫn async; có cửa sổ mất acknowledged write. Cluster không cung cấp strong consistency.
-- Có replica không đồng nghĩa luôn available; cluster có thể dừng phục vụ khi thiếu slot coverage/majority cần thiết.
+Theo tài liệu Redis, cấu hình tối thiểu để Cluster hoạt động đúng cần ít nhất **3 primary**. Khi triển khai thực tế, Redis khuyến nghị mô hình **6 node: 3 primary + 3 replica**, tức mỗi primary có một replica.
 
-Hash tag đặt key liên quan cùng slot:
+> Cluster không cần Sentinel. Redis Cluster tự có cơ chế phát hiện lỗi và failover giữa các node trong cluster.
 
-```redis
+#### 2. Hash slot là gì?
+
+Redis Cluster không dùng consistent hashing trực tiếp trên node. Redis chia toàn bộ keyspace thành **16.384 hash slot**, đánh số từ `0` đến `16383`.
+
+Mỗi key sẽ thuộc đúng một slot:
+
+~~~text
+HASH_SLOT = CRC16(key) mod 16384
+~~~
+
+Mỗi primary sở hữu một nhóm slot:
+
+~~~text
+Primary A: slots 0..5460
+Primary B: slots 5461..10922
+Primary C: slots 10923..16383
+~~~
+
+Khi app ghi:
+
+~~~text
+SET user:1001:name "An"
+~~~
+
+Cluster client sẽ tính key `user:1001:name` rơi vào slot nào, rồi gửi command tới primary đang sở hữu slot đó.
+
+Điểm cần hiểu:
+
+- Slot không phải là một file, table, partition vật lý riêng biệt. Slot là đơn vị ánh xạ logic: "key này thuộc nhóm nào, nhóm đó đang ở node nào".
+- Một primary sở hữu nhiều slot và lưu các key rơi vào các slot đó.
+- Chia slot đều không tự đảm bảo tải đều. Nếu một slot chứa big key hoặc hot key, node sở hữu slot đó vẫn có thể nóng hơn các node khác.
+
+Giải pháp khi slot/node bị nóng:
+
+- **Theo dõi hot key/big key trước khi reshard**: dùng metrics, slowlog, latency monitor, `redis-cli --hotkeys`, `redis-cli --bigkeys` hoặc sampling từ application để biết node nóng vì nhiều key, một big key, hay một hot key.
+- **Với hot key read-heavy**: cache thêm ở tầng application/local cache, dùng replica read nếu chấp nhận dữ liệu hơi trễ, hoặc nhân bản key thành nhiều bản như `product:123:cache:0..N` rồi random read để phân tán tải.
+- **Với hot key write-heavy**: khó scale bằng replica vì write vẫn đi vào primary sở hữu slot. Cần đổi data model, chia nhỏ counter/state theo shard phụ rồi aggregate sau, hoặc đưa luồng ghi nóng sang cơ chế khác phù hợp hơn.
+- **Với big key**: tách thành nhiều key nhỏ hơn, phân trang collection lớn, tránh một Hash/List/Set/ZSet phình quá lớn, và tránh command xử lý toàn bộ collection trong một lần.
+- **Với node nóng vì giữ quá nhiều slot/key**: chạy reshard/rebalance để chuyển bớt slot sang primary khác. Cách này hiệu quả khi tải phân bố theo nhiều slot, nhưng không giải quyết triệt để nếu vấn đề nằm ở một hot key đơn lẻ.
+- **Tránh hash tag quá rộng**: tag kiểu `{global}` hoặc `{tenant}` cho quá nhiều key có thể dồn tải vào một slot. Chỉ dùng hash tag cho nhóm key thật sự cần multi-key operation cùng nhau.
+
+#### 3. Client tìm đúng node như thế nào?
+
+Application nên dùng **cluster-aware client**. Client loại này thường làm ba việc:
+
+1. Hỏi Cluster để lấy map: slot nào đang thuộc node nào.
+2. Cache map đó ở phía client.
+3. Khi gặp redirect như `MOVED` hoặc `ASK`, tự cập nhật/điều hướng request.
+
+Nếu client gửi nhầm key tới node không sở hữu slot đó, node sẽ không proxy command giúp client. Thay vào đó, node trả redirect:
+
+~~~text
+GET user:1001:name
+-MOVED 3999 127.0.0.1:6381
+~~~
+
+Ý nghĩa: key này thuộc slot `3999`, slot đó hiện do node `127.0.0.1:6381` phục vụ. Client cần gửi lại command tới node đúng.
+
+Trong lúc reshard/migrate slot, client có thể gặp `ASK`. Khác biệt dễ hiểu:
+
+| Redirect | Khi nào gặp | Client nên hiểu thế nào |
+|---|---|---|
+| `MOVED` | Slot đã chuyển sang node khác ổn định hơn | Cập nhật slot map và gửi các request sau tới node mới |
+| `ASK` | Slot/key đang trong quá trình migrate | Chỉ gửi request hiện tại sang node được chỉ định; chưa vội đổi map lâu dài |
+
+Vì vậy, dùng Redis Cluster mà client không hỗ trợ Cluster sẽ rất dễ lỗi hoặc phải tự xử lý redirect thủ công.
+
+#### 4. Multi-key command và hash tag
+
+Redis Cluster hỗ trợ các command single-key rất tự nhiên. Nhưng với command nhiều key như `MGET`, `MSET`, transaction hoặc Lua script có nhiều key, các key thường phải nằm cùng một hash slot. Nếu không, Redis có thể trả lỗi `CROSSSLOT`.
+
+Ví dụ dễ lỗi:
+
+~~~redis
+MGET cart:user:42:items cart:user:42:total
+~~~
+
+Hai key này nhìn có vẻ cùng một user, nhưng Redis có thể hash chúng vào hai slot khác nhau.
+
+Để ép các key liên quan vào cùng slot, dùng **hash tag** bằng `{...}`:
+
+~~~redis
 SET cart:{user:42}:items "..."
 SET cart:{user:42}:total 150000
 MGET cart:{user:42}:items cart:{user:42}:total
-```
+~~~
 
-Redis chỉ hash phần `user:42`, nên `MGET` hợp lệ. Không gom quá nhiều key không liên quan vào một tag vì sẽ tạo hot shard.
+Redis chỉ hash phần nằm trong `{}` là `user:42`, nên hai key cùng rơi vào một slot và `MGET` hợp lệ.
 
-### Hash slots concept
+Một điểm dễ nhầm: **khác slot nhưng tình cờ đang nằm trên cùng một node vẫn có thể lỗi**. Redis Cluster kiểm tra multi-key command theo **hash slot**, không kiểm tra theo physical node. Ví dụ node A đang giữ cả slot `1000` và `1001`, nhưng nếu hai key thuộc hai slot này thì `MGET`, `MSET`, transaction hoặc Lua script nhiều key vẫn có thể trả `CROSSSLOT`.
 
-Redis Cluster chia keyspace logic thành **16.384 hash slot**, đánh số `0..16383`. Slot không phải storage object hay “ô” dung lượng cố định; nó là đơn vị ánh xạ và di chuyển key giữa primary.
+Lý do là slot mới là đơn vị sở hữu dữ liệu ổn định của Cluster. Hôm nay hai slot có thể cùng nằm trên node A, nhưng ngày mai khi reshard/rebalance, một slot có thể được chuyển sang node B. Nếu Redis cho phép multi-key command chỉ vì hiện tại chúng cùng node, hành vi của command sẽ phụ thuộc vào trạng thái phân bổ slot tạm thời và dễ vỡ sau khi scale hoặc failover.
 
-- Mỗi key thuộc đúng một slot; mỗi slot ổn định do một primary sở hữu.
-- Một primary sở hữu nhiều slot và lưu các key rơi vào chúng.
-- Chia slot đều không bảo đảm RAM/tải đều vì kích thước và tần suất truy cập key khác nhau; phải theo dõi hot key/big key.
+Giải pháp thực tế:
 
-```text
-HASH_SLOT = CRC16(key) mod 16384
-HASH_SLOT = CRC16(hash_tag) mod 16384  # nếu key có {...} hợp lệ
-```
+- Nếu các key luôn được đọc/ghi cùng nhau, thiết kế key dùng chung **hash tag**: `cart:{user:42}:items`, `cart:{user:42}:total`.
+- Nếu không bắt buộc atomic, tách thành nhiều command single-key và để cluster-aware client route từng key tới đúng node.
+- Nếu cần lấy nhiều key khác slot để tối ưu latency, dùng client-side parallel/pipeline theo từng node, rồi gom kết quả ở application.
+- Nếu cần transaction/Lua atomic trên nhiều field của cùng một entity, cân nhắc gom dữ liệu vào một key, ví dụ Hash/JSON/string encoded object, thay vì tách thành nhiều key khác slot.
+- Nếu nghiệp vụ dùng rất nhiều multi-key operation trên key bất kỳ, Redis Cluster có thể không hợp. Khi dataset vẫn vừa một máy, mô hình Primary-Replica + Sentinel thường đơn giản hơn vì không có ràng buộc cross-slot.
 
-Không nên giải thích 16.384 slot chủ yếu để phép modulo nhanh. Đây là cân bằng giữa độ mịn sharding và chi phí metadata/gossip: bitmap ownership 16.384 slot chỉ khoảng 2 KiB trong heartbeat nhưng đủ mịn cho số node thực tế.
+Không nên lạm dụng hash tag. Nếu dồn quá nhiều key vào cùng một tag, ví dụ `{global}`, toàn bộ key đó sẽ rơi vào một slot và có thể làm mất ý nghĩa sharding.
 
-Khi tạo cluster, công cụ quản trị gán đủ slot cho primary. Khi thêm/bớt node, administrator/operator phải **reshard/rebalance**. Redis di chuyển key của các slot được chọn và đổi quyền sở hữu, không hash lại toàn bộ keyspace.
+#### 5. Failover trong Cluster diễn ra như thế nào?
+
+Giả sử có 3 primary và 3 replica:
+
+~~~text
+Primary A ── Replica A1
+Primary B ── Replica B1
+Primary C ── Replica C1
+~~~
+
+Nếu Primary B chết:
+
+1. Các node khác phát hiện B không phản hồi qua cluster bus/gossip.
+2. Nếu đủ điều kiện failover, Replica B1 được bầu/promote thành primary mới.
+3. Cluster cập nhật **slot ownership**: các slot trước đây do B phục vụ nay do B1 phục vụ.
+4. Client gặp `MOVED`, cập nhật slot map rồi gửi request tới B1.
+
+Không phải đến lúc Primary B chết thì Replica B1 mới bắt đầu sync dữ liệu của các slot. Trong lúc B còn sống, B1 đã replication dữ liệu từ B gần như liên tục. Khi failover xảy ra, Cluster chủ yếu đổi **vai trò** của B1 từ replica thành primary và đổi **slot ownership** để các slot trước đây do B phục vụ nay do B1 phục vụ.
+
+Điểm cần nhớ là replication này vẫn thường là **async**. Primary B có thể đã trả `OK` cho một write nhưng write đó chưa kịp sang B1. Nếu B chết đúng lúc đó, B1 được promote nhưng có thể thiếu một phần write rất mới. Vì vậy failover giúp cluster tiếp tục phục vụ slot, nhưng không đảm bảo zero data loss.
+
+~~~text
+Trước lỗi:  slot 5461..10922 thuộc Primary B
+B bị lỗi:   các node xác nhận lỗi và promote Replica B1
+Sau lỗi:    slot 5461..10922 thuộc Primary B1
+~~~
+
+Cluster có thể tiếp tục chạy nếu mỗi primary bị mất vẫn còn replica đủ điều kiện để lên thay và phần lớn các primary/node cần thiết vẫn liên lạc được. Nếu một primary và replica của nó cùng mất, các slot của primary đó không còn node phục vụ; tùy cấu hình, cluster có thể dừng phục vụ toàn bộ hoặc chỉ phục vụ phần slot còn lại.
+
+#### 6. Reshard/rebalance là gì?
+
+Khi thêm một primary mới vào Redis Cluster, dữ liệu **không tự động dàn đều ngay lập tức**. Administrator, operator hoặc tooling cần chạy reshard/rebalance để chuyển một số slot từ node cũ sang node mới.
+
+Ví dụ trước khi thêm node:
 
 ![Redis Cluster slots before](images/redis-cluster-slots-before.png)
 
+~~~text
+Primary A: slots 0..5460
+Primary B: slots 5461..10922
+Primary C: slots 10923..16383
+~~~
+
+Sau khi thêm Primary D và reshard:
+
 ![Redis Cluster slots after](images/redis-cluster-slots-after.png)
 
-Trong lúc migrate, key được chuyển theo batch; `MIGRATE` thực hiện atomic transfer cho batch nhưng có thể tạo latency, nhất là big key. Cluster vẫn online và dùng `ASK` redirect, nhưng không nên khẳng định reshard “không lock request” hoặc luôn rất nhanh.
+~~~text
+Primary A: giữ một phần slot cũ
+Primary B: giữ một phần slot cũ
+Primary C: giữ một phần slot cũ
+Primary D: nhận một phần slot từ A/B/C
+~~~
 
-```bash
+Redis di chuyển key thuộc các slot được chọn sang node mới, chứ không hash lại toàn bộ keyspace. Trong lúc migrate, cluster vẫn có thể online và dùng `ASK` redirect, nhưng reshard vẫn có chi phí CPU/network/latency, đặc biệt nếu có big key.
+
+Một vài command kiểm tra hữu ích:
+
+~~~bash
 redis-cli -c -p 7000 CLUSTER KEYSLOT 'cart:{user:42}:items'
 redis-cli -c -p 7000 CLUSTER SLOTS
 redis-cli --cluster check 127.0.0.1:7000
-```
+~~~
 
-Redis Cluster hỗ trợ Pub/Sub truyền thống từ trước; Redis 7.0 bổ sung **sharded Pub/Sub** (`SSUBSCRIBE`, `SPUBLISH`, `SUNSUBSCRIBE`) để message chỉ lan trong shard liên quan.
+#### 7. Redis Cluster không giải quyết điều gì?
+
+| Nhu cầu | Cluster có giải quyết không? |
+|---|---|
+| Chia dữ liệu qua nhiều node | Có |
+| Scale-out RAM và throughput | Có, nếu key phân bố tốt |
+| Tự động failover cho từng shard | Có, nếu shard có replica đủ điều kiện |
+| Thay thế Sentinel | Có, trong mô hình Cluster không dùng Sentinel |
+| Multi-key command trên key bất kỳ | Không; thường cần cùng hash slot |
+| Nhiều logical database bằng `SELECT` | Không; Cluster chỉ hỗ trợ database `0` |
+| Strong consistency / zero data loss | Không; replication vẫn async |
+| Tự cân bằng dữ liệu hoàn toàn khi thêm node | Không; cần reshard/rebalance hoặc operator |
+| Backup/khôi phục dữ liệu bị xóa nhầm | Không; vẫn cần backup riêng |
+
+Redis Cluster có mức an toàn ghi kiểu **best-effort**. Tài liệu Redis nói rõ Cluster dùng asynchronous replication, nên vẫn có cửa sổ mất acknowledged write. Ví dụ primary nhận write, trả `OK`, nhưng chết trước khi replica nhận được write đó; replica được promote thì write vừa rồi có thể mất. Điểm này giống rủi ro đã nói ở Sentinel, chỉ khác là Cluster xử lý failover theo từng shard.
+
+Ngoài ra, khi network partition xảy ra, phía thiểu số có thể bị từ chối write sau một khoảng `NODE_TIMEOUT`, còn phía đa số có thể tiếp tục nếu đủ điều kiện. Đây là cách Cluster ưu tiên availability và scale, không phải mô hình consensus mạnh như Raft/Paxos.
+
+#### 8. Khi nào nên dùng Redis Cluster?
+
+Nên dùng khi:
+
+- Dataset lớn hơn RAM của một máy.
+- Cần scale write/read throughput theo nhiều primary.
+- Key độc lập là chủ yếu, ít cần transaction/multi-key command trên nhiều key ngẫu nhiên.
+- Team chấp nhận vận hành phức tạp hơn: cluster-aware client, slot map, reshard, failover, hot key, big key.
+- Chấp nhận eventual consistency/async replication và có thiết kế riêng cho dữ liệu critical.
+
+Không nên dùng Cluster chỉ vì "nghe production hơn". Nếu dataset vẫn vừa một máy, workload cần nhiều multi-key operation, và mục tiêu chính chỉ là tự động failover, Sentinel có thể đơn giản hơn.
+
+Tóm lại:
+
+> **Redis Cluster chia keyspace thành 16.384 hash slot, phân slot cho nhiều primary, dùng cluster-aware client để route request, và tự failover theo shard khi có replica. Cluster giúp scale-out, nhưng không đảm bảo strong consistency, không thay backup, và không loại bỏ nhu cầu thiết kế key cẩn thận.**
 
 ### Chọn kiến trúc nào?
 
@@ -1669,3 +1901,16 @@ Redis Cluster hỗ trợ Pub/Sub truyền thống từ trước; Redis 7.0 bổ 
 - Kiểm tra điều kiện thành công: Client coi như đã lấy được khóa khi và chỉ khi nó nhận được thành công từ ít nhất (N/2 + 1) instance (với N=5 thì tối thiểu là 3) và tổng thời gian trôi qua (elapsed) phải nhỏ hơn thời gian sống của khóa (TTL).
 - Tính thời gian hiệu lực còn lại: Nếu thành công, thời gian thực sự mà client có thể sử dụng tài nguyên là: TTL - elapsed. Ví dụ: SET TTL là 10 giây, nhưng client mất 2 giây để ghi vào 3 cái Redis, vậy client chỉ còn được dùng tài nguyên trong 8 giây.
 - Xử lý thất bại: Nếu không thỏa mãn đa số (ví dụ chỉ ghi được 2 server) hoặc thời gian trôi qua vượt quá TTL, client phải hủy khóa (rollback) bằng cách gửi lệnh giải phóng khóa (thường là script Lua xóa key) tới tất cả các instance (kể cả những cái đã ghi thành công). Điều này để tránh tình trạng rác (orphan lock).
+
+## Những phần cần bổ sung/sửa sau
+
+- **Cache patterns production**: cache-aside/lazy loading, cache invalidation, cache penetration, cache stampede/thundering herd, cache avalanche, TTL jitter, stale-while-revalidate.
+- **Distributed lock correctness**: sửa lại phần lock theo hướng `SET key token NX PX ttl`, release bằng Lua check token, tránh `SETNX` + `EXPIRE` tách rời, thêm fencing token và cảnh báo Redis lock không đảm bảo consistency tuyệt đối.
+- **Key design và big key**: bổ sung quy tắc đặt key, namespace, TTL, tránh key/value quá lớn, dùng `MEMORY USAGE`, `OBJECT ENCODING`, `SCAN/HSCAN/SSCAN/ZSCAN`, dùng `UNLINK` khi xóa big key.
+- **Rate limiting patterns**: fixed window, sliding window log/counter, token bucket/leaky bucket, dùng Lua để atomic.
+- **Security production**: `AUTH`, ACL user, TLS, protected mode, bind interface, firewall, không expose Redis ra Internet.
+- **Client config production**: timeout, connection pool, retry/backoff, circuit breaker, cluster-aware/sentinel-aware client, read from replica và rủi ro stale read.
+- **Backup/restore/migration**: backup RDB/AOF, test restore thật, `DUMP/RESTORE`, migration dữ liệu, chú ý Redis 7 multi-part AOF.
+- **Observability sâu hơn**: `SLOWLOG`, `LATENCY DOCTOR`, `INFO`, `MONITOR` chỉ dùng cẩn thận, metrics cần alert như memory, ops/sec, evicted keys, rejected connections, replication lag.
+- **Data type nâng cao**: Bitmap, HyperLogLog, Geo, Bloom filter, Top-K/Count-Min Sketch nếu dùng Redis Stack.
+- **Sửa reference nội bộ**: đoạn `Redis mechanism` đang trỏ tới `Hash slots concept`, nhưng heading này hiện không tồn tại; nên đổi về `Redis Architecture type` -> `Redis Cluster`.
