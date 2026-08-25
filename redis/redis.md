@@ -1403,937 +1403,155 @@ Application ── read/write ──> Redis (toàn bộ dataset)
 
 ![Redis Sentinel overview](images/redis-sentinel-overview.png)
 
-#### Sentinel giải quyết vấn đề gì?
+#### 1. Redis Sentinel là gì?
 
-Với Standalone chỉ có một Redis server:
+Hãy tưởng tượng một cửa hàng chỉ có một thu ngân:
 
-~~~text
-Application ──> Redis duy nhất
-~~~
+- **Primary** là thu ngân chính, nhận mọi yêu cầu ghi dữ liệu.
+- **Replica** là người dự phòng, liên tục sao chép dữ liệu từ primary.
+- **Sentinel** là quản lý: theo dõi thu ngân chính và chỉ định người dự phòng lên thay khi cần.
 
-Nếu Redis này dừng, application không còn nơi đọc/ghi. Ta có thể tạo replica chứa bản sao, nhưng replica **không tự biết khi nào cần trở thành primary**, còn application cũng **không tự biết địa chỉ primary mới**.
+Nếu chỉ có primary và replica, khi primary chết thì replica **không tự động lên thay**, còn application vẫn cố kết nối tới địa chỉ primary cũ. Redis Sentinel giải quyết đúng hai việc đó:
 
-Redis Sentinel bổ sung phần điều phối:
-
-- **Primary**: Redis node nhận write.
-- **Replica**: Redis node giữ bản sao, sẵn sàng thay primary.
-- **Sentinel**: “người giám sát”; kiểm tra Redis nodes và tổ chức failover.
-- **Application/client**: hỏi Sentinel để tìm primary, sau đó kết nối trực tiếp tới Redis.
-
-> Sentinel không lưu dữ liệu business, không phải proxy và không chuyển tiếp từng lệnh Redis. Dữ liệu vẫn nằm trong primary/replica.
-
-Một deployment production thường có:
+1. Theo dõi và tự động failover khi primary gặp sự cố.
+2. Cho client biết primary hiện tại nằm ở đâu.
 
 ~~~text
-                         replicate
-                    ┌──────────────> Replica 1
-Application ───────> Primary
-      │             └──────────────> Replica 2
-      │
-      └── hỏi Sentinel: “Primary hiện tại là node nào?”
+                                      sao chép dữ liệu
+Application ─────────────────> Primary ──────────────> Replica
+     │
+     └── hỏi Sentinel: “Primary hiện tại là node nào?”
 
-Sentinel 1 + Sentinel 2 + Sentinel 3
-     giám sát, biểu quyết và tổ chức failover
+             Sentinel 1 ─ Sentinel 2 ─ Sentinel 3
+                  theo dõi và biểu quyết khi có lỗi
 ~~~
 
-#### Sentinel leader là gì?
+> Sentinel không lưu dữ liệu business và không đứng giữa application với Redis. Sau khi hỏi được địa chỉ, application kết nối trực tiếp tới primary.
 
-Trước khi nói về quorum và failover, cần hiểu **Sentinel leader**. Đây là khái niệm rất dễ bị nhầm với Redis primary.
+#### 2. Một lần failover diễn ra như thế nào?
 
-Trong hệ thống có hai loại “vai trò đứng đầu” hoàn toàn khác nhau:
-
-| Khái niệm | Thuộc nhóm nào? | Nhiệm vụ |
-|---|---|---|
-| Redis Primary | Redis data nodes | Nhận write và replicate dữ liệu sang replicas |
-| Sentinel leader | Các Sentinel | Tạm thời điều phối **một lần failover** |
-
-Sentinel leader **không lưu dữ liệu**, không nhận lệnh GET/SET của application và không thay thế Redis primary.
-
-##### Bình thường có leader không?
-
-Trong trạng thái bình thường, các Sentinel là các peer ngang hàng:
-
-~~~text
-Sentinel S1  <── trao đổi thông tin ──>  Sentinel S2
-      ^                                  ^
-      └──────────> Sentinel S3 <─────────┘
-
-Không có leader cố định khi hệ thống đang bình thường.
-~~~
-
-Mỗi Sentinel tự ping primary, replicas và các Sentinel khác. Không có một “Sentinel master” luôn điều khiển hai Sentinel còn lại.
-
-Leader chỉ được bầu khi cần thực hiện một lần failover cụ thể:
-
-~~~text
-Primary lỗi
-    ↓
-Các Sentinel xác nhận ODOWN
-    ↓
-Bầu một Sentinel làm leader cho lần failover này
-    ↓
-Leader chọn replica và điều phối promote
-    ↓
-Failover hoàn tất → vai trò leader tạm thời kết thúc
-~~~
-
-Ở lần failover sau, một Sentinel khác có thể trở thành leader.
-
-##### Vì sao cần bầu leader?
-
-Giả sử ba Sentinel cùng thấy primary A đã chết. Nếu cả ba tự hành động độc lập:
-
-~~~text
-S1 muốn promote Replica B
-S2 muốn promote Replica C
-S3 cũng đang sửa topology
-~~~
-
-Hệ thống có thể có nhiều Sentinel cùng promote node khác nhau, tạo cấu hình xung đột hoặc nhiều primary tạm thời.
-
-Vì vậy các Sentinel thống nhất chỉ **một leader** điều phối lần failover:
-
-~~~text
-S1, S2, S3 cùng phát hiện lỗi
-          ↓ bầu cử
-      S2 là leader
-          ↓
-S2 chọn Replica B
-S2 promote B
-S2 cấu hình các replica khác theo B
-S2 công bố topology mới
-~~~
-
-Các Sentinel không làm leader vẫn tiếp tục monitoring, bỏ phiếu và tiếp nhận topology mới, nhưng không đồng thời điều phối một failover cạnh tranh.
-
-##### Leader được bầu như thế nào?
-
-Phần này dễ rối vì Sentinel thực tế phải trả lời **hai câu hỏi khác nhau**:
-
-1. **Primary có thật sự không truy cập được không?**
-2. **Nếu cần failover, Sentinel nào được quyền điều phối?**
-
-Đây là hai quyết định riêng:
-
-| Quyết định | Dùng khái niệm gì? | Kết quả |
-|---|---|---|
-| Primary có down không? | SDOWN, ODOWN và quorum | Có cần bắt đầu failover hay không |
-| Ai điều phối failover? | Bầu leader và majority | Sentinel nào được chọn replica/promote |
-
-###### Bước 1: xác nhận primary down
-
-Giả sử có ba Sentinel:
-
-~~~text
-S1     S2     S3
-~~~
-
-Primary A không trả lời. S1 tự kiểm tra và cho rằng A down:
-
-~~~text
-S1: “Tôi không kết nối được A”
-~~~
-
-Nhận định của riêng S1 chỉ tạo trạng thái **SDOWN**. S1 phải hỏi các Sentinel khác:
-
-~~~text
-S1 hỏi S2: “Bạn có kết nối được A không?”
-S1 hỏi S3: “Bạn có kết nối được A không?”
-~~~
-
-Giả sử S2 cũng không kết nối được A, còn quorum được cấu hình là 2:
-
-~~~text
-S1: A down
-S2: A down
-S3: chưa trả lời
-
-Có 2 Sentinel đồng ý → đạt quorum 2 → A được đánh dấu ODOWN
-~~~
-
-Đến đây hệ thống mới kết luận rằng cần thử failover. **Chưa có Sentinel leader nào được chọn.**
-
-###### Bước 2: bầu một Sentinel làm leader
-
-Sau khi A thành ODOWN, các Sentinel cần chọn đúng một người điều phối. Giả sử S1 đề nghị:
-
-~~~text
-S1: “Hãy cho tôi quyền điều phối lần failover này”
-~~~
-
-S1 xin phiếu từ S2 và S3. Mỗi Sentinel chỉ được bỏ một phiếu trong cùng một vòng bầu cử.
-
-Một kết quả đơn giản có thể là:
-
-| Sentinel bỏ phiếu | Bỏ phiếu cho |
-|---|---|
-| S1 | S1 |
-| S2 | S1 |
-| S3 | S3 |
-
-S1 nhận hai trong ba phiếu:
-
-~~~text
-S1 = 2 phiếu
-S3 = 1 phiếu
-
-S1 đạt majority 2/3 → S1 trở thành leader
-~~~
-
-Từ lúc này, chỉ S1 điều phối:
-
-1. Chọn replica phù hợp.
-2. Promote replica thành primary mới.
-3. Cấu hình các replica còn lại theo primary mới.
-4. Công bố topology mới.
-
-S2 và S3 vẫn tiếp tục monitoring và nhận cấu hình mới, nhưng không tự chọn/promote một replica khác.
-
-###### Nếu không ai đủ phiếu thì sao?
-
-Ví dụ việc bỏ phiếu bị chia nhỏ do timing hoặc network:
-
-~~~text
-S1 nhận 1 phiếu
-S2 nhận 1 phiếu
-S3 nhận 1 phiếu
-~~~
-
-Không ai có majority nên chưa có leader. Sentinel không được tự ý promote replica. Sau khoảng thời gian retry, hệ thống mở một vòng bầu cử mới và thử lại.
-
-Điều này có thể làm failover chậm hơn, nhưng an toàn hơn việc nhiều Sentinel cùng điều phối và tạo ra các primary cạnh tranh.
-
-###### Quorum và majority khác nhau ở đâu?
-
-Với ba Sentinel và quorum 2, cả hai con số tình cờ đều là 2 nên rất dễ bị nhầm:
-
-~~~text
-Quorum 2:
-“Có đủ Sentinel đồng ý Primary A down không?”
-
-Majority 2/3:
-“Có đủ phiếu cho một Sentinel làm leader không?”
-~~~
-
-Quorum trả lời **có cần failover không**. Majority trả lời **ai được quyền thực hiện failover**.
-
-Với năm Sentinel và quorum 2, sự khác biệt rõ hơn:
-
-~~~text
-2/5 Sentinel thấy A down
-→ đủ quorum để đánh dấu ODOWN
-
-Nhưng leader vẫn cần ít nhất 3/5 phiếu
-→ cần majority để được điều phối failover
-~~~
-
-Nói chính xác hơn, một leader phải đạt số phiếu theo các quy tắc của Sentinel; thực tế cần ít nhất majority và không thể thấp hơn quorum được cấu hình. Với cấu hình production thông thường 3 Sentinel, quorum 2, leader cần 2 phiếu.
-
-###### Epoch là gì? — phần nâng cao, chưa cần nhớ ngay
-
-Sentinel có thể phải bầu cử lại nếu vòng đầu thất bại. Vì vậy nó gắn mỗi vòng/cấu hình failover với một số tăng dần gọi là **epoch**. Có thể hiểu epoch như **mã số của vòng bầu cử/phiên bản cấu hình**, không phải một Redis node.
-
-~~~text
-Epoch 10: vòng/cấu hình cũ
-Epoch 11: lần failover mới hơn
-Epoch 12: lần thử sau nếu cần
-~~~
-
-Mỗi Sentinel chỉ bỏ một phiếu trong một epoch. Quy tắc này ngăn một Sentinel cùng lúc hứa trao quyền cho nhiều candidate trong cùng vòng.
-
-Khi failover tạo topology mới, configuration epoch còn giúp các Sentinel so sánh thông tin:
-
-~~~text
-Thông tin epoch 10: A là primary
-Thông tin epoch 11: B là primary
-
-Epoch 11 mới hơn → cập nhật B là primary
-~~~
-
-Nếu đang học Sentinel lần đầu, chỉ cần nhớ:
-
-> Quorum xác nhận primary down → majority bầu một leader → leader chọn và promote replica.
-
-Epoch là cơ chế nội bộ giúp việc bầu cử và truyền topology không bị lẫn giữa lần cũ với lần mới.
-
-##### Sentinel leader thực hiện những việc gì?
-
-Sau khi được bầu, leader:
-
-1. Lọc các replica không phù hợp, ví dụ disconnected quá lâu hoặc có priority bằng 0.
-2. Chọn replica tốt nhất dựa trên **replica-priority**, replication offset và các tiêu chí lựa chọn khác.
-3. Gửi lệnh promote replica được chọn thành primary.
-4. Chờ xác nhận node đó thực sự báo role primary.
-5. Cấu hình các replica còn lại replicate từ primary mới.
-6. Công bố cấu hình mới cho các Sentinel.
-7. Khi primary cũ quay lại, cấu hình nó thành replica của primary mới.
-
-Leader không di chuyển toàn bộ dữ liệu giữa các node. Replica được chọn vốn đã nhận replication stream trước đó; leader chủ yếu thay đổi role và topology.
-
-##### Nếu leader chết giữa lúc failover thì sao?
-
-Leader không phải single point of failure lâu dài. Nếu leader crash hoặc không hoàn tất failover:
-
-1. Lần thử hiện tại có thể bị gián đoạn và làm thời gian khôi phục dài hơn.
-2. Các Sentinel còn lại tiếp tục monitoring.
-3. Sau các timeout/rules liên quan **failover-timeout**, một Sentinel khác có thể xin authorization cho lần thử tiếp theo.
-4. Configuration epoch và voting rules giúp tránh các Sentinel tùy ý chạy nhiều failover cạnh tranh cùng lúc.
-5. Cuối cùng, nếu vẫn còn majority Sentinel và một replica phù hợp, một leader khác có thể hoàn tất failover.
-
-Điều này giải thích vì sao cần nhiều Sentinel: không chỉ để cùng xác nhận primary down, mà còn để vẫn có thể bầu leader khi một Sentinel gặp sự cố.
-
-##### Ví dụ đầy đủ
-
-Giả sử:
+Giả sử ban đầu có:
 
 ~~~text
 Redis A: Primary
-Redis B: Replica, offset 1000, priority 100
-Redis C: Replica, offset 980,  priority 100
-
-Sentinel S1, S2, S3
-Quorum = 2
-~~~
-
-Khi A chết:
-
-1. S1 và S2 cùng xác nhận A không truy cập được → đạt quorum 2 → A thành ODOWN.
-2. S1 xin phiếu để điều phối failover.
-3. S1 nhận đủ authorization của majority → S1 là leader cho lần failover.
-4. S1 so sánh B và C. Hai node cùng priority nhưng B có replication offset mới hơn, nên B thường được ưu tiên.
-5. S1 promote B thành primary.
-6. S1 cấu hình C replicate từ B.
-7. S2 và S3 nhận topology mới/configuration epoch mới.
-8. Client hỏi Sentinel lại và kết nối tới B.
-9. Khi A quay lại, A được cấu hình thành replica của B.
-10. Vai trò leader tạm thời của S1 kết thúc.
-
-Kết quả:
-
-~~~text
-Redis B: Primary mới
-Redis A: Replica sau khi quay lại
+Redis B: Replica
 Redis C: Replica
 
-S1, S2, S3: trở lại trạng thái peer; không có leader cố định
+Sentinel S1, S2, S3; quorum = 2
 ~~~
 
-#### Vì sao thường cần ít nhất ba Sentinel?
+Khi Redis A ngừng phản hồi:
 
-Sentinel phải **biểu quyết với nhau** trước khi tự động failover. Mục tiêu của biểu quyết là tránh trường hợp chỉ một Sentinel gặp lỗi mạng rồi hiểu nhầm primary đã chết và tự ý promote replica.
-
-Hãy phân biệt hai con số:
-
-- **Số process Sentinel**: tổng số Sentinel đang tham gia giám sát.
-- **Majority**: quá nửa tổng số Sentinel. Với 3 Sentinel, majority là 2; với 5 Sentinel, majority là 3.
-- **Quorum**: số Sentinel phải cùng đánh giá primary không truy cập được để primary được đánh dấu ODOWN. Quorum được cấu hình ở cuối lệnh **sentinel monitor**.
-
-Ví dụ có ba Sentinel S1, S2 và S3, quorum bằng 2:
+1. S1 tự thấy A không truy cập được và đánh dấu **SDOWN** (*Subjectively Down*). Đây mới là nhận định riêng của S1.
+2. S1 hỏi S2 và S3. Nếu ít nhất 2 Sentinel cùng thấy A lỗi, A được đánh dấu **ODOWN** (*Objectively Down*).
+3. Các Sentinel bầu một Sentinel làm leader cho **lần failover này**.
+4. Leader chọn replica phù hợp nhất, ví dụ B có dữ liệu mới hơn C.
+5. B được promote thành primary mới; C chuyển sang sao chép từ B.
+6. Client hỏi Sentinel lại, nhận địa chỉ của B rồi kết nối tới B.
+7. Khi A quay lại, A trở thành replica của B thay vì tự giành lại vai trò primary.
 
 ~~~text
-Primary A       Replica B
+Trước lỗi:  Application ──> A (Primary) ──> B, C (Replicas)
 
-Sentinel S1     Sentinel S2     Sentinel S3
-     └──────── majority cần ít nhất 2/3 ────────┘
+A bị lỗi:   S1 + S2 xác nhận ──> bầu leader ──> promote B
+
+Sau lỗi:    Application ──> B (Primary) ──> A, C (Replicas)
 ~~~
 
-Khi A không phản hồi:
+Application có thể gặp lỗi kết nối trong vài giây lúc failover. Vì vậy client vẫn cần timeout, reconnect và retry có giới hạn.
 
-1. S1 tự thấy A lỗi và đánh dấu A là SDOWN. Đây mới là nhận định của riêng S1.
-2. S1 hỏi S2 và S3.
-3. Khi ít nhất hai Sentinel đồng ý A không truy cập được, A được đánh dấu ODOWN vì đạt quorum 2.
-4. Một Sentinel muốn điều phối failover còn phải nhận authorization của majority, tức ít nhất 2/3 Sentinel.
-5. Sentinel leader mới chọn B và promote thành primary.
+#### 3. SDOWN, ODOWN, quorum và majority
 
-Như vậy, nếu chỉ S1 bị lỗi mạng với A còn S2 và S3 vẫn thấy A bình thường, S1 không đủ phiếu để failover. Điều này giảm nguy cơ failover sai.
+Đây là bốn khái niệm dễ nhầm nhất, nhưng chúng trả lời hai câu hỏi khác nhau:
 
-##### Tại sao không dùng một Sentinel?
-
-~~~text
-Primary A       Replica B       Sentinel S1
-~~~
-
-Nếu S1 còn sống, nó có thể phát hiện lỗi và điều phối. Nhưng nếu chính S1 chết:
-
-- Primary và replica vẫn có thể replicate bình thường.
-- Không còn thành phần tự động giám sát và failover.
-- Client phụ thuộc Sentinel có thể không discover được primary mới.
-- Operator phải can thiệp thủ công.
-
-S1 trở thành single point of failure của control plane. Vì vậy một Sentinel chỉ phù hợp local development hoặc demo, không phải HA production.
-
-##### Tại sao hai Sentinel thường không tốt?
-
-Với hai Sentinel, majority vẫn là 2:
-
-~~~text
-Sentinel S1 <──── cần 2/2 ────> Sentinel S2
-~~~
-
-Nếu một Sentinel chết hoặc hai Sentinel mất kết nối với nhau, chỉ còn 1/2 và không có majority. Hệ thống có thể vẫn phục vụ trên primary hiện tại, nhưng không thể tự động authorize failover khi primary thật sự chết.
-
-Số node chẵn cũng tạo tình huống chia đôi 1–1 mà không bên nào có majority. Thêm Sentinel thứ ba giúp một phía có thể đạt 2/3 khi chỉ một Sentinel gặp sự cố.
-
-##### Ba Sentinel chịu được lỗi gì?
-
-Ba Sentinel trên ba failure domain độc lập có thể mất **một Sentinel** mà vẫn còn:
-
-~~~text
-S1 down
-S2 alive + S3 alive = 2/3 = vẫn có majority
-~~~
-
-Điều này không có nghĩa hệ thống chịu được mọi hai lỗi đồng thời. Nếu mất hai Sentinel thì chỉ còn 1/3, không đủ majority để thực hiện failover tự động.
-
-Quy tắc tổng quát với **N** Sentinel là hệ thống có thể mất tối đa số Sentinel sao cho phần còn lại vẫn lớn hơn **N/2**:
-
-| Tổng Sentinel | Majority | Số Sentinel có thể mất mà vẫn còn majority |
-|---:|---:|---:|
-| 1 | 1 | 0 |
-| 2 | 2 | 0 |
-| 3 | 2 | 1 |
-| 5 | 3 | 2 |
-| 7 | 4 | 3 |
-
-Thông thường ba Sentinel đủ cho phần lớn hệ thống. Năm Sentinel có thể phù hợp khi cần chịu lỗi hai Sentinel/control-plane location, nhưng tăng số process, kết nối, cấu hình và độ phức tạp vận hành. Không nên tăng số lượng mà không có failure model rõ ràng.
-
-##### Failure domain là gì?
-
-**Failure domain** là một nhóm tài nguyên có thể hỏng cùng lúc vì chung một nguyên nhân. Ví dụ:
-
-- Cùng process: application crash có thể làm toàn bộ chức năng trong process mất.
-- Cùng container/pod: pod bị reschedule làm mọi process trong pod mất.
-- Cùng VM/physical host: máy tắt, kernel panic hoặc mất nguồn làm mọi process trên máy mất.
-- Cùng rack: switch hoặc nguồn của rack hỏng.
-- Cùng Availability Zone: AZ mất điện hoặc network có sự cố.
-- Cùng region: sự cố diện rộng của region.
-- Cùng network path/firewall: cấu hình sai có thể cô lập cả nhóm node.
-
-Vì vậy “có ba Sentinel” chỉ nói về **số process**, chưa nói chúng có độc lập trước lỗi hay không.
-
-##### Vì sao ba Sentinel trên cùng máy vẫn không phải HA?
-
-Bố trí sau nhìn có vẻ có đủ ba Sentinel:
-
-~~~text
-Host X
-├── Sentinel S1
-├── Sentinel S2
-└── Sentinel S3
-~~~
-
-Nhưng nếu Host X mất nguồn, kernel panic, hết disk, bị reboot hoặc mất network thì S1, S2 và S3 cùng mất. Khi đó còn 0/3 Sentinel, hoàn toàn không có majority.
-
-Ba process trên một host chỉ bảo vệ được trước một số lỗi process riêng lẻ; chúng không bảo vệ trước lỗi host/network chung. Tương tự:
-
-- Ba container trên cùng Docker host vẫn chung failure domain là Docker host.
-- Ba pod Kubernetes bị scheduler đặt trên cùng worker node vẫn chung failure domain là worker node.
-- Ba VM nằm trên cùng physical host có thể cùng mất nếu hypervisor chết.
-- Ba node cùng một AZ có thể cùng mất khi AZ gặp sự cố.
-
-##### Bố trí đúng và sai
-
-**Không nên:**
-
-~~~text
-Host A: Primary + Replica + Sentinel S1 + S2 + S3
-~~~
-
-Mất Host A đồng nghĩa mất Redis data nodes và toàn bộ Sentinel.
-
-**Tốt hơn trong một data center:**
-
-~~~text
-Host A: Primary A + Sentinel S1
-Host B: Replica B + Sentinel S2
-Host C: Replica C hoặc application node + Sentinel S3
-~~~
-
-Mất một host vẫn thường còn một Redis node phù hợp và 2/3 Sentinel.
-
-**Trong ba Availability Zone:**
-
-~~~text
-AZ-1: Primary A + Sentinel S1
-AZ-2: Replica B + Sentinel S2
-AZ-3: Replica C + Sentinel S3
-~~~
-
-Thiết kế này chịu được mất một AZ tốt hơn, với điều kiện network latency và topology phù hợp. Cần cân nhắc placement của primary/replica và chi phí cross-AZ.
-
-**Trong Kubernetes:**
-
-- Chạy Sentinel bằng nhiều pod.
-- Dùng **pod anti-affinity** hoặc **topology spread constraints** để tránh đặt tất cả pod trên cùng worker/AZ.
-- Dùng PodDisruptionBudget để hạn chế voluntary disruption làm mất majority.
-- Kiểm tra endpoint Sentinel công bố có thể được Redis nodes và clients truy cập.
-- Không giả định StatefulSet tự động đảm bảo các pod nằm khác failure domain nếu chưa cấu hình scheduling rules.
-
-##### Sentinel có nên chạy cùng Redis không?
-
-Có thể chạy Sentinel trên cùng host với Redis nếu các host đã độc lập. Ví dụ ba host, mỗi host có một Redis node và một Sentinel là bố trí phổ biến.
-
-Điều quan trọng là không để **majority Sentinel cùng nằm trong một failure domain**. Sentinel nhẹ hơn Redis và cũng có thể chạy cạnh application nodes, nhưng cần tài nguyên ổn định, network tốt, clock hợp lý và không bị application CPU/memory pressure làm mất phản hồi.
-
-##### Best practices khi bố trí Sentinel
-
-1. Dùng ít nhất ba Sentinel cho production thông thường.
-2. Đặt chúng trên ít nhất ba host hoặc failure domain độc lập.
-3. Với ba Sentinel, quorum 2 là cấu hình phổ biến.
-4. Không đặt majority Sentinel cùng một host, rack hoặc AZ nếu failure model yêu cầu chịu lỗi ở cấp đó.
-5. Đảm bảo Sentinel có thể kết nối tới primary, replicas và các Sentinel khác.
-6. Đảm bảo application có danh sách nhiều Sentinel endpoint, không chỉ một địa chỉ.
-7. Theo dõi số Sentinel reachable và cảnh báo ngay khi mất một Sentinel; 2/3 vẫn chạy nhưng không còn dư địa chịu thêm lỗi.
-8. Kiểm thử bằng cách tắt hẳn một host/AZ giả lập, không chỉ kill một Sentinel process.
-9. Sau bảo trì/deploy, kiểm tra scheduler không vô tình gom các Sentinel về cùng host.
-10. Nhớ rằng Sentinel HA không thay thế replica placement và backup: còn majority Sentinel nhưng không còn replica phù hợp thì vẫn không thể failover.
-
-#### Hệ thống hoạt động bình thường
-
-Giả sử primary là Redis A, replicas là B và C:
-
-1. Client hỏi một Sentinel để lấy địa chỉ primary.
-2. Sentinel trả địa chỉ Redis A.
-3. Client kết nối trực tiếp tới A và gửi write.
-4. A gửi replication stream sang B và C.
-5. Khi mất kết nối, client hỏi Sentinel lại.
-
-Sentinel không xuất hiện trên data path của từng request, nên không phải nút thắt throughput.
-
-#### Write và asynchronous replication
-
-Mặc định, primary trả kết quả mà không chờ replica xác nhận:
-
-~~~text
-Client ── SET order:1001 paid ──> Primary ── trả OK
-                                      │
-                                      ├──> Replica B
-                                      └──> Replica C
-                                           (replicate bất đồng bộ)
-~~~
-
-Cách này có latency thấp, nhưng có một khoảng rất ngắn primary đã trả **OK** còn replica chưa nhận write. Nếu primary chết đúng lúc đó và replica được promote, write vừa rồi có thể mất. Replication tăng availability và tạo bản sao, nhưng **không có nghĩa không bao giờ mất dữ liệu**.
-
-#### Có nên đọc từ replica?
-
-- **Đọc primary**: đơn giản, phù hợp khi cần đọc ngay giá trị vừa ghi.
-- **Đọc replica**: giảm tải primary, nhưng có thể nhận dữ liệu cũ do replication lag.
-
-~~~text
-1. Client ghi balance = 500 vào Primary
-2. Primary trả OK
-3. Client đọc Replica trước khi replication tới
-4. Replica vẫn có thể trả balance = 400
-~~~
-
-Sentinel **không tự chia đều read request**. Application, Redis client hoặc proxy phải cấu hình read strategy. Không nên đọc replica cho quyết định yêu cầu dữ liệu mới nhất như số dư, trạng thái thanh toán hay tồn kho vừa cập nhật.
-
-#### WAIT giúp gì và không giúp gì?
-
-Sau write, client có thể chờ replica xác nhận đã **nhận** các write trước đó trên cùng connection:
-
-~~~redis
-SET order:1001 paid
-WAIT 1 100
-~~~
-
-**WAIT 1 100** nghĩa là chờ tối đa 100 ms để ít nhất một replica xác nhận:
-
-~~~text
-Client ── SET ──> Primary ──> Replica
-Client ── WAIT 1 100 ───────> chờ replica ACK, tối đa 100 ms
-~~~
-
-Application phải kiểm tra kết quả:
-
-- Kết quả từ 1 trở lên: đạt yêu cầu một replica.
-- Kết quả 0: hết timeout mà chưa replica nào xác nhận; lệnh SET trước đó **không tự rollback**.
-
-WAIT giảm khả năng mất acknowledged write, nhưng không tạo strong consistency. ACK replication cũng không mặc nhiên nghĩa là đã fsync xuống disk. **WAITAOF** liên quan đến AOF; cả hai không thay transactional database khi nghiệp vụ đòi consistency/durability nghiêm ngặt.
-
-#### Failover diễn ra như thế nào?
-
-~~~text
-Trước failover:                 Sau failover:
-Redis A (Primary)               Redis A (down)
- ├── Redis B (Replica)          Redis B (Primary mới)
- └── Redis C (Replica)           └── Redis C (Replica)
-~~~
-
-1. **SDOWN:** một Sentinel mất liên lạc và tự đánh dấu A *subjectively down*.
-2. **ODOWN:** Sentinel hỏi các Sentinel khác; đủ số theo quorum thì A thành *objectively down*.
-3. **Bầu leader:** các Sentinel chọn một leader điều phối lần failover.
-4. **Chọn replica:** leader xét kết nối, replication offset, **replica-priority**... để chọn node tốt nhất.
-5. **Promote:** ví dụ B trở thành primary mới.
-6. **Cấu hình lại:** C replicate từ B; Sentinel công bố địa chỉ primary mới.
-7. **Client reconnect:** client Sentinel-aware hỏi lại và kết nối tới B.
-8. **Node cũ quay lại:** A thường trở thành replica của B, tránh hai primary độc lập.
-
-Failover vẫn có gián đoạn: client có thể gặp timeout/connection error cho tới khi promote và reconnect xong. Application cần timeout, retry có kiểm soát và idempotency cho nghiệp vụ quan trọng.
-
-#### Quorum không phải số replica
-
-~~~conf
-sentinel monitor mymaster 10.0.0.10 6379 2
-~~~
-
-Số **2** là quorum: cần ít nhất hai Sentinel đồng ý primary không truy cập được để đánh dấu ODOWN. Nó **không phải số replica**. Việc authorize failover còn cần majority của toàn bộ Sentinel có quyền biểu quyết.
-
-Quorum tránh một Sentinel lỗi mạng đơn lẻ tự ý failover. Tuy vậy, Sentinel ưu tiên availability và không cung cấp linearizable consistency.
-
-#### Phân biệt ba khái niệm dễ nhầm: replication, high availability và backup
-
-Người mới thường thấy có replica rồi nghĩ dữ liệu đã “an toàn tuyệt đối”. Thực tế ba khái niệm giải quyết ba vấn đề khác nhau:
-
-| Khái niệm | Trả lời câu hỏi | Sentinel có cung cấp không? |
-|---|---|---|
-| Replication | Có node khác đang giữ bản sao gần nhất không? | Có, thông qua primary/replica |
-| High availability | Primary chết thì hệ thống có tự chọn node khác để tiếp tục phục vụ không? | Có |
-| Backup | Có thể quay lại dữ liệu tại một thời điểm cũ sau khi xóa nhầm/corruption không? | Không |
-
-Ví dụ application vô tình chạy **FLUSHALL** trên primary:
-
-1. Primary xóa toàn bộ key.
-2. Lệnh xóa được replicate sang B và C.
-3. Cả replica cũng mất dữ liệu.
-4. Sentinel thấy các node vẫn hoạt động bình thường nên không failover.
-5. Chỉ backup độc lập, nếu có, mới giúp khôi phục dữ liệu cũ.
-
-Vì vậy:
-
-> Replica bảo vệ chủ yếu trước lỗi node; backup bảo vệ trước lỗi thao tác, lỗi logic và một số dạng corruption. Production thường cần cả hai.
-
-#### Vì sao chỉ Primary + Replica vẫn chưa đủ?
-
-Giả sử có A là primary và B là replica nhưng không có Sentinel:
-
-~~~text
-Application ──> Redis A (Primary)
-                    │
-                    └──> Redis B (Replica)
-~~~
-
-Khi A chết, B vẫn có dữ liệu nhưng:
-
-- Không có thành phần nào xác nhận A thực sự chết hay chỉ chậm mạng.
-- Không có thành phần nào tự chạy **REPLICAOF NO ONE** để promote B.
-- Application vẫn đang giữ địa chỉ A và tiếp tục kết nối sai node.
-- Operator phải kiểm tra, promote B và đổi cấu hình application thủ công.
-
-Sentinel tự động hóa việc **phát hiện → biểu quyết → chọn replica → promote → công bố topology mới**. Đây là lý do tên đầy đủ của mô hình nên được hiểu là **Primary-Replica + Sentinel**, không phải Sentinel tự tạo ra bản sao dữ liệu.
-
-#### Ví dụ cấu hình hoàn chỉnh để học và thử nghiệm
-
-Ví dụ dưới đây chạy tất cả process trên một máy để học:
-
-| Process | Port | Vai trò ban đầu |
-|---|---:|---|
-| redis-a | 6379 | Primary |
-| redis-b | 6380 | Replica |
-| redis-c | 6381 | Replica |
-| sentinel-1 | 26379 | Sentinel |
-| sentinel-2 | 26380 | Sentinel |
-| sentinel-3 | 26381 | Sentinel |
-
-> Chạy cùng máy chỉ phù hợp local lab. Production phải tách qua nhiều máy/AZ/failure domain.
-
-**Cấu hình primary A:**
-
-~~~conf
-port 6379
-appendonly yes
-appendfsync everysec
-~~~
-
-**Cấu hình replica B:**
-
-~~~conf
-port 6380
-replicaof 127.0.0.1 6379
-appendonly yes
-appendfsync everysec
-~~~
-
-Replica C tương tự nhưng dùng port 6381.
-
-Dòng **replicaof 127.0.0.1 6379** có nghĩa: khi khởi động, node này kết nối tới Redis A và sao chép dữ liệu từ A. Khi Sentinel failover, Sentinel sẽ tự rewrite topology cần thiết; không nên có automation khác liên tục ghi đè cấu hình cũ.
-
-**Cấu hình sentinel-1:**
-
-~~~conf
-port 26379
-
-sentinel monitor mymaster 127.0.0.1 6379 2
-sentinel down-after-milliseconds mymaster 5000
-sentinel failover-timeout mymaster 60000
-sentinel parallel-syncs mymaster 1
-~~~
-
-Sentinel 2 và 3 giống cấu hình trên, chỉ đổi port thành 26380 và 26381.
-
-Ý nghĩa từng dòng:
-
-- **mymaster**: tên logic của nhóm primary/replica. Client sử dụng tên này thay vì hard-code địa chỉ primary.
-- **127.0.0.1 6379**: địa chỉ primary ban đầu để Sentinel bootstrap. Sau failover, Sentinel cập nhật địa chỉ mới.
-- **2**: quorum; cần hai Sentinel đồng ý primary không truy cập được để chuyển từ SDOWN sang ODOWN.
-- **down-after-milliseconds 5000**: một Sentinel nghi ngờ node down sau khoảng 5 giây không nhận phản hồi hợp lệ.
-- **failover-timeout 60000**: timeout được dùng trong nhiều giai đoạn/quy tắc retry của failover; không nên hiểu đơn giản là “đúng 60 giây hệ thống sẽ xong”.
-- **parallel-syncs 1**: sau failover, chỉ reconfigure/resync một replica tại một thời điểm, tránh nhiều replica cùng tạm không phục vụ read.
-
-Sentinel tự phát hiện replica và Sentinel khác; không cần khai báo thủ công từng replica trong **sentinel monitor**. File **sentinel.conf** phải có quyền ghi vì Sentinel tự rewrite file khi topology/configuration thay đổi.
-
-Các giá trị 5 giây và 60 giây trên thuận tiện cho lab, **không phải mặc định tốt cho mọi production**.
-
-#### Client tìm primary bằng cách nào?
-
-Application không nên chỉ cấu hình:
-
-~~~text
-redis.host = 10.0.0.10
-redis.port = 6379
-~~~
-
-Nếu 10.0.0.10 chết và replica 10.0.0.11 được promote, application vẫn tìm node cũ.
-
-Thay vào đó, client Sentinel-aware được cấu hình bằng:
-
-~~~text
-master name: mymaster
-sentinels:
-  - 10.0.0.21:26379
-  - 10.0.0.22:26379
-  - 10.0.0.23:26379
-~~~
-
-Luồng discovery đơn giản hóa:
-
-1. Client thử kết nối từng Sentinel với timeout ngắn.
-2. Client hỏi **SENTINEL get-master-addr-by-name mymaster**.
-3. Sentinel trả IP/port primary hiện tại.
-4. Client kết nối Redis node đó và kiểm tra role.
-5. Khi connection lỗi hoặc bị ngắt do failover, client hỏi Sentinel lại.
-6. Nếu dùng connection pool và primary thay đổi, các connection cũ phải được đóng/thay thế.
-
-Có thể quan sát thủ công:
-
-~~~bash
-redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster
-redis-cli -p 26379 SENTINEL master mymaster
-redis-cli -p 26379 SENTINEL replicas mymaster
-redis-cli -p 26379 SENTINEL sentinels mymaster
-~~~
-
-Kết quả lệnh đầu có dạng:
-
-~~~text
-1) "127.0.0.1"
-2) "6379"
-~~~
-
-Sau failover sang B, cùng lệnh có thể trả port 6380. Tên **mymaster** không đổi, chỉ endpoint phía sau thay đổi.
-
-Ví dụ cấu hình Spring Boot thường có dạng:
-
-~~~yaml
-spring:
-  data:
-    redis:
-      sentinel:
-        master: mymaster
-        nodes:
-          - 10.0.0.21:26379
-          - 10.0.0.22:26379
-          - 10.0.0.23:26379
-      timeout: 2s
-      connect-timeout: 2s
-~~~
-
-Tên property có thể khác theo Spring Boot version, nhưng nguyên tắc không đổi: cấu hình **master name + danh sách Sentinel**, không hard-code primary. Driver như Lettuce/Jedis phải chạy ở chế độ Sentinel và application vẫn cần xử lý timeout/retry phù hợp.
-
-#### Authentication và network
-
-Trong production, cả Redis và Sentinel phải được bảo vệ. Nếu primary yêu cầu authentication thì replica cần credentials để replicate, Sentinel cần credentials để monitor/reconfigure Redis, và application cần credentials riêng để đọc/ghi.
-
-Không nên copy một superuser password dùng chung cho mọi thành phần. Với Redis ACL, nên tạo user có quyền tối thiểu theo vai trò:
-
-- Application chỉ có command/key pattern cần thiết.
-- Replica có quyền cần cho replication.
-- Sentinel có quyền monitor và reconfigure topology.
-- Operator/admin dùng account riêng và được audit.
-
-Ngoài ra:
-
-- Chỉ mở Redis/Sentinel port trong private network cho đúng nguồn cần truy cập.
-- Dùng TLS nếu traffic đi qua network không tin cậy.
-- Cấu hình **announce-ip/announce-port** phù hợp khi chạy qua NAT, container hoặc Kubernetes; endpoint Sentinel công bố phải truy cập được từ client và các node khác.
-- Bảo vệ file cấu hình/secret; không commit password thật vào repository.
-
-#### Tự kiểm thử failover từ đầu đến cuối
-
-Một bài test không nên chỉ kiểm tra “replica được promote”, mà phải kiểm tra cả client và dữ liệu.
-
-**Bước 1 — kiểm tra topology ban đầu:**
-
-~~~bash
-redis-cli -p 6379 ROLE
-redis-cli -p 6380 ROLE
-redis-cli -p 6381 ROLE
-redis-cli -p 26379 SENTINEL master mymaster
-~~~
-
-Kỳ vọng: 6379 là primary; 6380 và 6381 là replicas; Sentinel thấy hai replica và hai Sentinel còn lại.
-
-**Bước 2 — ghi dữ liệu kiểm thử:**
-
-~~~bash
-redis-cli -p 6379 SET sentinel:demo before-failover
-redis-cli -p 6380 GET sentinel:demo
-redis-cli -p 6381 GET sentinel:demo
-~~~
-
-Hai replica cuối cùng phải đọc được giá trị, nhưng trong workload thật có thể có replication lag rất ngắn.
-
-**Bước 3 — mô phỏng lỗi primary:**
-
-Dừng process/container Redis A. Không dùng **DEBUG SLEEP** trong production. Với lab, cũng có thể yêu cầu failover có kiểm soát:
-
-~~~bash
-redis-cli -p 26379 SENTINEL FAILOVER mymaster
-~~~
-
-Manual failover hữu ích để diễn tập bảo trì, nhưng không giống hoàn toàn tình huống crash/network partition.
-
-**Bước 4 — quan sát sự kiện:**
-
-~~~bash
-redis-cli -p 26379 SENTINEL master mymaster
-redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster
-redis-cli -p 6380 ROLE
-redis-cli -p 6381 ROLE
-~~~
-
-Có thể theo dõi log/event như **+sdown**, **+odown**, **+try-failover**, **+selected-slave**, **+promoted-slave** và **+switch-master**.
-
-**Bước 5 — kiểm tra application:**
-
-- Connection cũ có bị lỗi/ngắt như dự kiến không?
-- Driver có rediscover primary không?
-- Connection pool có bỏ connection cũ không?
-- Write mới có thành công sau retry không?
-- Retry có tạo duplicate payment/order/job không?
-
-**Bước 6 — cho A quay lại:**
-
-Kiểm tra A trở thành replica của primary mới và bắt kịp replication. Không ép A trở lại primary chỉ vì nó từng là primary; hành động đó có thể làm topology xung đột hoặc mất dữ liệu mới.
-
-#### Điều gì xảy ra trong các tình huống lỗi?
-
-| Tình huống | Hành vi thường thấy |
+| Khái niệm | Ý nghĩa |
 |---|---|
-| Một replica chết | Primary vẫn đọc/ghi; mất bớt redundancy, cần cảnh báo và phục hồi replica |
-| Một Sentinel chết trong mô hình 3 Sentinel | Data path vẫn chạy; hai Sentinel còn lại thường vẫn đủ majority |
-| Primary chết, còn majority Sentinel và replica tốt | Sentinel có thể tự failover |
-| Primary chết nhưng không có replica đủ điều kiện | Không có node để promote; Sentinel không thể “tạo” dữ liệu/node mới |
-| Primary bị tách mạng cùng minority Sentinel | Majority partition có thể promote replica; primary cũ phải bị demote khi quay lại |
-| Application mất kết nối tới mọi Sentinel nhưng vẫn giữ connection primary | Connection hiện tại có thể còn chạy; khi cần rediscovery thì thất bại |
-| Xóa nhầm dữ liệu trên primary | Lệnh có thể replicate sang mọi replica; phải dùng backup để khôi phục |
+| SDOWN | Một Sentinel tự cho rằng primary không truy cập được |
+| ODOWN | Đủ Sentinel theo quorum cùng cho rằng primary không truy cập được |
+| Quorum | Số Sentinel cần đồng ý để chuyển từ SDOWN sang ODOWN |
+| Majority | Quá nửa tổng số Sentinel; dùng để cấp quyền cho leader thực hiện failover |
 
-Bảng này cho thấy Sentinel chỉ giải quyết một phần failure model. Nó không thay thế capacity planning, backup, retry policy hay monitoring.
+Với 3 Sentinel và quorum bằng 2:
 
-#### Chọn quorum và timeout như thế nào?
-
-Không có một bộ số đúng cho mọi hệ thống.
-
-**Quorum:**
-
-- Ba Sentinel thường dùng quorum 2.
-- Năm Sentinel có thể dùng quorum 3 nếu muốn majority đồng ý ODOWN.
-- Quorum quá thấp làm failover nhạy hơn với lỗi mạng.
-- Quorum quá cao làm failover khó xảy ra khi một số Sentinel không reachable.
-- Dù quorum thấp hơn majority, Sentinel leader vẫn cần authorization của majority để thực hiện failover.
-
-**down-after-milliseconds:**
-
-- Quá thấp: một đợt GC pause, CPU spike hoặc network jitter có thể gây failover không cần thiết.
-- Quá cao: downtime thật được phát hiện chậm.
-- Nên đo p99/p99.9 latency, pause time, network loss và thời gian reconnect thực tế rồi chọn giá trị có margin.
-- Đừng copy 5 giây từ local lab vào production mà không kiểm thử.
-
-**parallel-syncs:**
-
-- Giá trị thấp giảm số replica cùng resync nhưng failover/reconfiguration hoàn tất chậm hơn.
-- Giá trị cao hoàn tất nhanh hơn nhưng có thể đồng thời giảm read capacity và tăng network/disk load.
-
-#### Best practices production
-
-1. **Tối thiểu ba Sentinel và tách failure domain.** Đặt trên ba host/AZ hợp lý; không coi ba container cùng host là HA.
-2. **Mỗi primary nên có ít nhất một replica; thường cân nhắc hai.** Không có replica thì Sentinel phát hiện primary chết nhưng không có node để promote.
-3. **Không đặt replica trên cùng host với primary.** Mất host sẽ làm mất cả hai.
-4. **Dùng Sentinel-aware client.** Cấu hình nhiều Sentinel endpoint, master name, connect/command timeout và reconnect backoff.
-5. **Retry phải có giới hạn và idempotency.** Nếu client timeout sau write, không thể luôn biết write đã chạy hay chưa. Retry mù có thể tạo double payment/double job.
-6. **Đặt persistence theo mục tiêu dữ liệu.** HA không thay durability; cân nhắc AOF everysec/RDB và test restore.
-7. **Cân nhắc WAIT hoặc min-replicas cho write quan trọng.** Primary có thể cấu hình **min-replicas-to-write** và **min-replicas-max-lag** để từ chối write khi không còn đủ replica “tươi”. Đây là best-effort safety, không tạo strong consistency.
-8. **Không dùng replica read cho dữ liệu cần mới nhất.** Nếu dùng, tách rõ API/eventual-consistency use case và theo dõi replication lag.
-9. **Giám sát cả ba lớp.** Redis metrics, replication offset/lag, Sentinel events, số Sentinel reachable, failover duration và client reconnect errors.
-10. **Diễn tập failure định kỳ.** Test primary crash, replica crash, Sentinel crash, network partition giả lập và node cũ quay lại.
-11. **Dành capacity/headroom.** Replica được promote phải chịu toàn bộ traffic; đừng sizing replica yếu hơn primary. Dành RAM cho fork, replication buffer và persistence.
-12. **Không sửa đồng thời bằng nhiều control plane.** Tránh để Sentinel và script/operator khác cùng cố promote/rewrite topology.
-13. **Bảo mật và đồng bộ credentials.** Rotate secret có kế hoạch cho application, replica và Sentinel để không làm replication/failover hỏng.
-14. **Backup độc lập và test restore.** Replica không phải backup.
-
-Ví dụ hạn chế primary nhận write khi không có ít nhất một replica với lag trong khoảng 10 giây:
-
-~~~conf
-min-replicas-to-write 1
-min-replicas-max-lag 10
+~~~text
+S1 thấy A down                  → mới là SDOWN
+S1 và S2 cùng thấy A down       → đủ quorum 2, A thành ODOWN
+Một candidate nhận ít nhất 2/3 phiếu → đủ majority, được điều phối failover
 ~~~
 
-Trade-off: khi replica lỗi hoặc lag cao, primary sẽ từ chối write để giảm rủi ro mất dữ liệu. Tức là ta chủ động hy sinh một phần availability để tăng data safety. Cấu hình này cần được load-test và gắn với yêu cầu nghiệp vụ, không bật máy móc.
+Trong mô hình 3 Sentinel, quorum và majority đều thường là 2 nên trông giống nhau. Tuy nhiên chúng không phải một khái niệm:
 
-#### Các lỗi thiết kế thường gặp
+- **Quorum** trả lời: “Primary có thật sự down không?”
+- **Majority** trả lời: “Sentinel nào được quyền thực hiện failover?”
 
-- Chạy một Sentinel duy nhất: Sentinel đó lại trở thành single point of failure cho discovery/failover.
-- Chạy ba Sentinel trên cùng host: đủ số process nhưng không đủ failure-domain independence.
-- Hard-code primary IP trong application.
-- Nghĩ Sentinel tự cân bằng read hoặc tự sharding dữ liệu.
-- Cho rằng replica ACK đồng nghĩa đã fsync.
-- Đặt down-after quá thấp để “failover thật nhanh” nhưng không đo network/GC pause.
-- Retry write vô hạn sau failover mà không có idempotency key.
-- Không cấp quyền ghi cho sentinel.conf, khiến Sentinel không lưu được topology cập nhật.
-- Đưa hostname/IP mà client không route tới được do NAT/container networking.
-- Chỉ test lệnh ROLE mà không test application connection pool và nghiệp vụ end-to-end.
+Sentinel leader chỉ là người điều phối tạm thời cho một lần failover. Nó không phải Redis primary, không nhận `GET`/`SET` và không phải leader cố định của cụm Sentinel.
 
-#### Use case
+#### 4. Vì sao production thường dùng 3 Sentinel?
 
-**Phù hợp:**
+- **1 Sentinel:** nếu Sentinel đó chết thì không còn giám sát, discovery và failover tự động.
+- **2 Sentinel:** majority là 2/2; chỉ cần một Sentinel chết thì Sentinel còn lại không đủ phiếu failover.
+- **3 Sentinel:** majority là 2/3; mất một Sentinel vẫn còn hai Sentinel để failover.
 
-- Session store/cache quan trọng cần tự động phục hồi khi một Redis node chết.
-- Queue hoặc delayed job chấp nhận cửa sổ mất dữ liệu nhỏ và cần downtime thấp.
-- Dataset vẫn vừa RAM một máy nhưng cần HA.
-- Ứng dụng dùng nhiều multi-key command và không muốn giới hạn cross-slot của Cluster.
+Ba Sentinel phải nằm trên các máy hoặc failure domain độc lập:
 
-**Không đủ khi:**
+~~~text
+Nên dùng:
+Host A: Primary   + Sentinel S1
+Host B: Replica B + Sentinel S2
+Host C: Replica C + Sentinel S3
 
-- Dataset lớn hơn một máy: mỗi replica vẫn chứa toàn bộ dataset.
-- Cần scale write bằng nhiều primary: Sentinel chỉ có một primary nhận write.
-- Nghiệp vụ không được mất bất kỳ acknowledged write nào hoặc cần strong consistency.
-- Client không hỗ trợ Sentinel discovery/failover.
+Không nên:
+Host A: Primary + Replica B + Replica C + S1 + S2 + S3
+~~~
 
-#### Ưu điểm
+Ba process Sentinel trên cùng một máy không tạo ra HA: máy đó chết thì cả ba cùng chết.
 
-- Tự động phát hiện lỗi, promote replica và công bố primary mới.
-- Đơn giản hơn Cluster vì không có shard/hash slot.
-- Multi-key command, transaction và Lua không gặp CROSSSLOT.
-- Có thể offload read nếu chấp nhận eventual consistency.
+#### 5. Application tìm primary như thế nào?
 
-#### Nhược điểm và lưu ý
+Application không gửi lệnh Redis thông qua Sentinel. Luồng kết nối thực tế là:
 
-- Không scale write/dung lượng ngang; mỗi Redis node cần đủ RAM cho toàn dataset và headroom.
-- Async replication có lag và cửa sổ mất dữ liệu khi failover.
-- Hard-code IP primary sẽ không tự chuyển; client phải hỗ trợ Sentinel.
-- Phải vận hành Redis nodes cùng Sentinel quorum và kiểm thử failover.
-- Sentinel/replica không thay backup; lệnh DEL nhầm vẫn có thể replicate sang replicas.
+1. Client hỏi một Sentinel: “Primary hiện tại là node nào?”.
+2. Sentinel trả về địa chỉ primary hiện tại.
+3. Client kết nối trực tiếp tới primary để đọc/ghi.
+4. Khi failover làm connection cũ bị ngắt, client hỏi Sentinel lại và chuyển sang primary mới.
 
+~~~text
+Application ── hỏi vị trí primary ──> Sentinel
+     │
+     └──── kết nối trực tiếp ───────> Redis Primary
+~~~
+
+Vì vậy application phải dùng client có hỗ trợ Sentinel. Nếu application ghi cứng địa chỉ primary cũ, Sentinel vẫn failover được Redis nhưng application sẽ không tự chuyển sang primary mới.
+
+#### 6. Sentinel không giải quyết điều gì?
+
+| Nhu cầu | Sentinel có giải quyết không? |
+|---|---|
+| Primary chết và cần tự động đổi sang replica | Có |
+| Giúp client tìm primary mới | Có, nếu client hỗ trợ Sentinel |
+| Chia dữ liệu để vượt quá RAM một máy | Không; cần Redis Cluster |
+| Scale write qua nhiều primary | Không; vẫn chỉ có một primary nhận write |
+| Khôi phục dữ liệu bị xóa nhầm | Không; cần backup |
+| Đảm bảo không mất bất kỳ write nào | Không; replication mặc định là bất đồng bộ |
+
+Ví dụ, nếu application xóa nhầm dữ liệu trên primary, thao tác xóa cũng có thể được sao chép sang mọi replica. Sentinel thấy các node vẫn hoạt động nên không failover. Đây là lý do **replica không phải backup**.
+
+Khi primary chết, một số write mới nhất có thể chưa kịp sang replica được promote. Sentinel cung cấp high availability, không cung cấp strong consistency hay cam kết zero data loss.
+
+#### 7. Khi nào nên dùng Sentinel?
+
+Nên dùng khi:
+
+- Dataset vẫn vừa RAM của một máy.
+- Chỉ cần một primary nhận write nhưng muốn failover tự động.
+- Muốn dùng multi-key command, transaction hoặc Lua mà không gặp giới hạn cross-slot của Redis Cluster.
+- Chấp nhận một khoảng downtime ngắn và rủi ro mất một lượng nhỏ dữ liệu mới nhất.
+
+Nên cân nhắc Redis Cluster hoặc giải pháp khác khi dataset lớn hơn một máy, cần scale write ngang, hoặc nghiệp vụ yêu cầu strong consistency và không được mất acknowledged write.
+
+Tóm lại:
+
+> **Replication tạo bản sao dữ liệu. Sentinel giám sát, biểu quyết và tự động đổi primary. Client Sentinel-aware tìm primary mới. Backup vẫn là trách nhiệm riêng.**
 ### Redis Cluster
 
 ![Redis Cluster overview](images/redis-cluster-overview.png)
