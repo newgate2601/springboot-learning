@@ -436,32 +436,97 @@ ThreadLocal cho phép tạo các variable mà chỉ có thể read, write bởi 
 - ThreadLocal tự động giải phóng khi thread kết thúc.
 - Nếu dùng threadpool, sử dụng ThreadLocal cần gọi phương thức `.remove()` sau khi dùng xong (không thì data của request cũ có thể lọt qua request mới).
 
-CPU Cache Coherence là "luật giao thông" để đảm bảo các nhân CPU khác nhau không nhìn thấy dữ liệu khác nhau tại cùng một địa chỉ bộ nhớ.
+### CPU Cache Coherence
 
-- Problem: Trong hệ thống đa nhân (Multi-core), mỗi nhân có cache chứa dữ liệu riêng (L1/L2 Cache) → Nếu core A sửa giá trị biến x từ 5 lên 10 trong cache của nó → core B không biết gì cả, vẫn dùng giá trị 5 cũ kỹ trong túi của mình để tính toán → Hệ thống bị loạn, dữ liệu sai lệch hoàn toàn.
+Mỗi core CPU có cache riêng (như L1, L2) để truy cập dữ liệu nhanh hơn so với đọc trực tiếp từ RAM. CPU không nạp từng biến riêng lẻ vào cache mà nạp một khối bộ nhớ liền nhau, thường có kích thước **64 byte**. Khối này được gọi là **cache line**.
 
-Để giải quyết, CPU sử dụng một "hệ thống cảnh báo" gồm hai thành phần chính:
+Ví dụ, biến `x` chỉ chiếm 4 byte và nằm bên trong một cache line:
 
-- Giao thức trạng thái (Ví dụ: MESI): Mỗi dòng dữ liệu trong Cache sẽ được dán một cái "nhãn" để CPU biết mình có quyền làm gì với nó:
-  - Modified (M): "Tôi vừa sửa nó, chỉ mình tôi có bản mới nhất."
-  - Exclusive (E): "Chỉ mình tôi có, nhưng nó vẫn giống bản gốc trong RAM."
-  - Shared (S): "Nhiều người đang cùng giữ bản này, đừng ai tự ý sửa."
-  - Invalid (I): "Dữ liệu này vứt đi rồi, bản mới nằm ở nhân khác, hãy tải lại đi."
-- Cơ chế liên lạc (Bus Snooping): Các nhân CPU không làm việc lầm lũi một mình. Chúng liên tục "nghe lén" (snoop) các thông điệp trên đường truyền chung (Bus):
-  - Khi core A muốn ghi dữ liệu, nó hét lên: *"Tôi sẽ sửa biến x nhé!"*
-  - Core B nghe thấy, kiểm tra túi mình thấy cũng có biến x, liền lập tức dán nhãn Invalid (I) cho biến đó.
-  - Khi nào core B cần dùng lại x, nó thấy nhãn Invalid nên buộc phải sang hỏi core A hoặc RAM để lấy bản mới nhất.
+```text
+Một cache line 64 byte
+┌──────────────┬────────────┬──────────────────────┐
+│ dữ liệu khác │ x (4 byte) │ dữ liệu khác         │
+└──────────────┴────────────┴──────────────────────┘
+```
 
-Cache Coherence được xử lý hoàn toàn bằng phần cứng. Nó giúp các lập trình viên chúng ta có thể yên tâm rằng khi đọc một biến từ bộ nhớ, ta đang nhận được giá trị "tươi" nhất, dù hệ thống có bao nhiêu nhân đi chăng nữa + Cache Coherence chỉ giải quyết vấn đề ở tầng vật lý (phần cứng), còn `volatile` giải quyết vấn đề ở tầng trình biên dịch (Compiler) và sự sắp xếp lại lệnh (Instruction Reordering).
+Khi cần đọc `x`, core sẽ nạp cả cache line chứa `x` vào cache của mình. Vì mỗi core có cache riêng nên nhiều core có thể cùng giữ các bản sao của cache line này.
 
-False Sharing (Chia sẻ giả tạo) là một hiện tượng gây giảm hiệu năng nghiêm trọng trong các hệ thống đa luồng. Điều oái oăm là nó xảy ra ngay cả khi các luồng không hề dùng chung dữ liệu với nhau, nhưng lại bị hệ thống CPU Cache Coherence "phạt" nhầm.
+Giả sử không có cơ chế đồng bộ các bản sao:
 
-- Để hiểu nó, bạn cần nhớ một quy tắc vật lý của CPU: CPU không bao giờ tải từng biến riêng lẻ vào Cache, mà tải theo từng cụm gọi là Cache Line + Thông thường, một Cache Line có kích thước 64 bytes + Nếu bạn có hai biến `long a` và `long b` (mỗi biến 8 bytes) nằm cạnh nhau trong bộ nhớ, CPU sẽ hốt cả hai vào cùng một Cache Line khi nạp vào Cache của một nhân.
+1. Ban đầu `x = 5`.
+2. Core A và core B cùng nạp cache line chứa `x`; cả hai đều thấy `x = 5`.
+3. Core A sửa `x` thành `10` trong cache của mình.
+4. Cache của core B vẫn giữ bản cũ nên core B tiếp tục đọc được `x = 5`.
 
-![image-41](images/image-41.png)
+```text
+                    RAM: x = 5
+                        │
+              ┌─────────┴─────────┐
+              ▼                   ▼
+        Cache core A         Cache core B
+            x = 5                x = 5
+              │
+        core A ghi x = 10
+              │
+              ▼
+            x = 10               x = 5  ← bản cũ
+```
 
-- False Sharing cực kỳ khó phát hiện vì: code của bạn trông rất ổn, không có tranh chấp (contention) về mặt logic + threads làm việc trên các biến hoàn toàn độc lập, nhưng khi chạy thực tế, càng thêm nhiều luồng, hiệu năng càng giảm (thay vì tăng).
-- Padding: là giải pháp đẩy chúng ra xa nhau. Chúng ta thêm các biến "rác" vào giữa để đảm bảo biến `a` và biến `b` nằm ở hai Cache Line khác nhau >< Java hỗ trợ sẵn annotation `@Contended`. Khi dùng nó, JVM sẽ tự động thêm khoảng trống cần thiết để tránh False Sharing.
+Như vậy, hai core có thể nhìn thấy hai giá trị khác nhau của cùng một vùng nhớ. **CPU Cache Coherence** là cơ chế phần cứng dùng để giữ cho các bản sao của cùng một cache line trong các cache không mâu thuẫn với nhau.
+
+Khi core A muốn ghi `x = 10`, giao thức coherence xử lý như sau:
+
+1. Core A yêu cầu quyền ghi cache line chứa `x`.
+2. Bản sao của cache line đó trong các core khác, ví dụ core B, bị đánh dấu là không hợp lệ.
+3. Core A thực hiện thao tác ghi.
+4. Khi core B cần đọc `x` lần nữa, nó không được dùng bản cũ mà phải lấy lại cache line mới chứa `x = 10`.
+
+```text
+Core A ghi x = 10
+        │
+        ├── cache line tại core A: chứa x = 10
+        │
+        └── cache line tại core B: Invalid
+                                      │
+                              core B đọc x lần nữa
+                                      │
+                                      ▼
+                              lấy cache line mới
+                              và đọc được x = 10
+```
+
+Một giao thức Cache Coherence phổ biến là **MESI**. Mỗi bản sao của một cache line tại một core được gắn một trạng thái:
+
+- **Modified (M):** core này đã sửa cache line và đang giữ bản mới nhất.
+- **Exclusive (E):** chỉ core này giữ cache line và nội dung chưa bị sửa.
+- **Shared (S):** nhiều core đang giữ các bản sao giống nhau để đọc.
+- **Invalid (I):** bản sao đã hết hiệu lực và không được phép sử dụng.
+
+Các core trao đổi thông điệp coherence qua interconnect; bus snooping là một cách triển khai. Điều quan trọng là Cache Coherence theo dõi **cả cache line**, không theo dõi từng biến nằm bên trong nó. Do đó, một thao tác ghi vào một biến sẽ làm vô hiệu toàn bộ cache line tương ứng ở core khác.
+
+> Cache Coherence không thay thế `volatile`, lock hay quy tắc happens-before của Java. Cache Coherence giữ các bản sao cache line nhất quán ở tầng phần cứng; Java Memory Model quy định khi nào thao tác ghi của một thread chắc chắn nhìn thấy được bởi thread khác và kiểm soát việc sắp xếp lại lệnh.
+### False Sharing
+
+False Sharing (chia sẻ giả) là hiện tượng nhiều thread sửa **các biến khác nhau**, nhưng các biến lại nằm chung một cache line. Vì coherence hoạt động theo cache line, mỗi lần một core ghi biến của mình, bản sao của cả cache line ở core kia vẫn bị vô hiệu hóa. Kết quả là cache line liên tục bị chuyển qua lại giữa các core dù không có tranh chấp dữ liệu về mặt logic.
+
+Cache line thường có kích thước 64 byte. Giả sử hai biến `long` nằm cạnh nhau trong cùng một line:
+
+```text
+Cache line 64 byte
+┌───────────────────────────────┐
+│ a (8 byte) │ b (8 byte) │ ... │
+└───────────────────────────────┘
+      ↑             ↑
+ Thread A ghi   Thread B ghi
+
+Thread A ghi a → cache line của core B bị invalid
+Thread B ghi b → cache line của core A bị invalid
+                 ↺ lặp lại liên tục
+```
+
+Hai thread không dùng chung biến, nhưng vẫn tranh chấp **quyền sở hữu cache line**, làm tăng coherence traffic và giảm hiệu năng.
+
+Dấu hiệu thường gặp: code không có contention logic, nhưng throughput giảm khi tăng số thread. Cách khắc phục là tách các biến được ghi thường xuyên sang những cache line khác nhau bằng padding hoặc bố trí lại dữ liệu. Java có annotation `@Contended` để JVM chèn khoảng đệm, nhưng thường phải bật thêm tùy chọn JVM phù hợp khi dùng cho class của ứng dụng.
 
 ## Thread Signal
 Thread Signaling (Truyền tín hiệu giữa các luồng) trong Java. Đây là một khái niệm quan trọng để giải quyết bài toán điều phối luồng, giúp các thread làm việc nhịp nhàng với nhau thay vì chạy hỗn loạn.
