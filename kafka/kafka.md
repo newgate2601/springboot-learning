@@ -63,20 +63,160 @@ Pipeline quan trọng vì:
 
 ### ETL và ELT
 
-**ETL** là viết tắt của `Extract -> Transform -> Load`.
+ETL và ELT đều là cách đưa dữ liệu từ source tới hệ thống đích. Điểm khác nhau quan trọng nhất là **transform xảy ra trước hay sau khi dữ liệu được load vào nơi lưu trữ đích**.
 
-- **Extract**: lấy dữ liệu từ source.
-- **Transform**: xử lý, chuẩn hóa, lọc, join, aggregate dữ liệu.
-- **Load**: ghi dữ liệu đã xử lý vào sink.
+| Mô hình | Luồng xử lý | Khi nào hợp | Điểm cần chú ý |
+| --- | --- | --- | --- |
+| **ETL** | `Extract -> Transform -> Load` | Sink chỉ nên nhận dữ liệu sạch; cần mask dữ liệu nhạy cảm trước khi lưu; cần chuẩn hóa realtime để nhiều downstream dùng chung | Phải định nghĩa transform sớm. Nếu logic sai, cần sửa logic rồi replay/backfill dữ liệu |
+| **ELT** | `Extract -> Load -> Transform` | Data Lake/Lakehouse/Warehouse có storage và compute mạnh; muốn giữ raw data để audit, thử nhiều model hoặc transform lại | Raw zone cần governance, phân quyền, schema, retention và kiểm soát PII chặt chẽ |
 
-Ví dụ: lấy order từ MySQL, đổi currency về VND, tính total revenue theo ngày, rồi ghi vào Data Warehouse.
+#### ETL là gì?
 
-**ELT** là `Extract -> Load -> Transform`. Dữ liệu được đưa thô vào nơi lưu trữ trước, sau đó mới transform bên trong Data Warehouse hoặc Lakehouse. ELT thường hợp với hệ thống analytics lớn, nơi storage/compute đủ mạnh để xử lý dữ liệu sau khi load.
+**ETL** là viết tắt của `Extract -> Transform -> Load`:
 
-Với Kafka, có thể gặp cả hai kiểu:
+- **Extract**: lấy dữ liệu từ database, API, log, file, application event,...
+- **Transform**: validate schema, lọc record lỗi, đổi format/timezone/currency, mask PII, deduplicate, join, enrich hoặc aggregate.
+- **Load**: ghi dữ liệu đã được xử lý vào Data Warehouse, Elasticsearch, database phục vụ báo cáo hoặc một Kafka topic khác.
 
-- **Streaming ETL**: source connector đưa data vào Kafka, stream processor transform, sink connector ghi data đã xử lý ra ngoài.
-- **Streaming ingestion/ELT**: source connector đưa data thô vào Kafka hoặc Data Lake trước, sau đó các job analytics xử lý sau.
+Ví dụ thực tế: hệ thống bán hàng cần tạo dữ liệu order chuẩn hóa cho dashboard realtime.
+
+```text
+MySQL binlog
+  -> CDC source connector
+  -> Kafka topic: mysql.shop.orders.raw
+  -> Kafka Streams/Flink
+       - chỉ giữ order hợp lệ
+       - đổi USD sang VND
+       - chuẩn hóa created_at về UTC
+       - loại bỏ/mask thông tin nhạy cảm
+  -> Kafka topic: analytics.orders.cleaned
+  -> Warehouse sink connector
+  -> bảng fact_orders
+```
+
+Đây là **streaming ETL** vì dữ liệu được transform trước khi load vào bảng đích `fact_orders`. Kafka topic `mysql.shop.orders.raw` vẫn có thể giữ event gốc trong một khoảng retention để debug hoặc replay, nhưng xét theo đích phân tích thì bước transform vẫn nằm trước bước load.
+
+#### ELT là gì?
+
+**ELT** là viết tắt của `Extract -> Load -> Transform`. Dữ liệu được load gần như nguyên bản vào Data Lake, Lakehouse hoặc staging/raw table trước; các SQL job, dbt, Spark hoặc engine của Warehouse mới tạo các bảng đã chuẩn hóa sau đó.
+
+```text
+MySQL/PostgreSQL/SaaS API
+  -> source connector hoặc CDC
+  -> Kafka raw topics
+  -> S3/GCS/ADLS/BigQuery/Snowflake raw zone
+  -> SQL/dbt/Spark transform
+  -> staging_orders
+  -> fact_orders
+  -> sales_daily
+```
+
+Đây là **streaming ingestion + ELT**: Kafka và sink connector đưa dữ liệu mới vào raw zone liên tục, nhưng transform business chính diễn ra sau khi load. ELT không đồng nghĩa với batch; bước transform có thể chạy theo lịch, micro-batch hoặc continuous tùy nền tảng đích.
+
+#### Kafka nằm ở đâu trong ETL/ELT?
+
+Kafka là **event streaming platform và lớp trung chuyển/lưu event**, không phải cứ đưa dữ liệu qua Kafka thì pipeline tự động trở thành ETL hoặc ELT.
+
+- **Kafka Connect** chủ yếu di chuyển dữ liệu vào/ra Kafka. `Source Connector` đọc từ hệ thống ngoài và ghi vào topic; `Sink Connector` đọc topic rồi ghi sang hệ thống đích.
+- **Single Message Transform (SMT)** của Kafka Connect hợp với thay đổi đơn giản trên từng record như rename field, thêm timestamp, route topic hoặc mask field. Không nên dùng SMT cho join, aggregate hoặc business logic phức tạp.
+- **Kafka Streams/Flink/ksqlDB** phù hợp với transform phức tạp như filter, branch, join, enrich, aggregate, windowing và xử lý theo event time.
+- **Data Warehouse/Lakehouse engine** phù hợp khi chọn ELT và muốn transform bằng SQL/dbt/Spark sau khi raw data đã được load.
+
+Hai kiến trúc thường gặp:
+
+```text
+Streaming ETL
+Source -> Kafka raw topic -> Stream processor -> Kafka cleaned topic -> Sink
+
+Streaming ingestion + ELT
+Source -> Kafka raw topic -> Raw storage/table -> Transform trong Lakehouse/Warehouse
+```
+
+Kafka có thể xuất hiện ở cả ETL lẫn ELT. Thậm chí một hệ thống thường dùng **hybrid**: mask PII và validate schema trước khi load, sau đó mới join/aggregate trong Warehouse.
+
+#### Ví dụ hybrid thực tế
+
+Giả sử công ty cần phân tích payment nhưng không được đưa số thẻ thô vào Data Lake:
+
+```text
+Payment DB
+  -> CDC
+  -> payments.raw (quyền truy cập rất hạn chế)
+  -> stream processor tokenization/masking
+  -> payments.sanitized
+  -> Data Lake raw zone
+  -> dbt/Spark join với orders, customers
+  -> payment_daily_report
+```
+
+- Mask/tokenize số thẻ **trước khi load** là ETL vì đây là yêu cầu bảo mật.
+- Join và aggregate **sau khi load** là ELT vì Warehouse/Lakehouse làm phần transform analytics.
+- Không nhất thiết ép toàn bộ pipeline vào đúng một nhãn; điều quan trọng là đặt transform ở nơi phù hợp với latency, bảo mật, chi phí và khả năng replay.
+
+#### Những vấn đề production phải thiết kế
+
+**1. Schema và data contract**
+
+Producer và consumer cần thống nhất schema. Nên dùng Avro, Protobuf hoặc JSON Schema cùng Schema Registry/data contract để quản lý compatibility. Nếu producer tự ý đổi tên hoặc xóa field, connector hay stream processor có thể lỗi hoặc tạo dữ liệu sai âm thầm.
+
+**2. Duplicate và delivery semantics**
+
+Kafka/connector thường có thể xử lý theo `at-least-once`, nên record có thể được gửi hoặc xử lý lại khi retry/restart. Sink nên idempotent, chẳng hạn upsert theo `order_id`, hoặc processor cần deduplicate theo business key/event id.
+
+> Không nên hiểu `exactly-once` là tự động đúng một lần từ database nguồn đến mọi hệ thống đích. Kafka Streams có thể đảm bảo atomic giữa input offset, state store và output Kafka topic khi cấu hình phù hợp; Kafka Connect còn phụ thuộc vào khả năng của từng connector và sink bên ngoài.
+
+**3. Ordering và partition key**
+
+Kafka chỉ đảm bảo thứ tự trong một partition. Nếu cần giữ đúng thứ tự trạng thái của cùng một order, các event nên dùng `order_id` làm key để đi vào cùng partition.
+
+```text
+order_id=9001: CREATED -> PAID -> SHIPPED
+```
+
+Nếu key không ổn định, `SHIPPED` có thể được xử lý ở partition khác và xuất hiện trước `PAID` ở downstream.
+
+**4. Event đến trễ và dữ liệu thay đổi**
+
+Aggregate theo phút/ngày cần phân biệt **event time** với thời điểm processor nhận event. Với event đến trễ, cần thiết kế window/grace period và cách cập nhật lại kết quả đã xuất. CDC cũng có `INSERT`, `UPDATE`, `DELETE`; bỏ qua delete/tombstone có thể làm Warehouse giữ record đã bị xóa ở source.
+
+**5. Record lỗi và poison message**
+
+Không nên để một record sai schema làm đứng toàn bộ connector/pipeline. Cần có retry có giới hạn, Dead Letter Queue (DLQ), alert và quy trình sửa rồi replay record lỗi. DLQ chỉ cô lập lỗi, không thay thế việc theo dõi và xử lý nguyên nhân.
+
+**6. Replay và backfill**
+
+Kafka cho phép consumer đọc lại khi event còn trong retention. Tuy nhiên replay an toàn cần:
+
+- Giữ raw topic đủ lâu hoặc archive sang object storage.
+- Transform có tính deterministic hoặc version rõ ràng.
+- Sink chịu được upsert/deduplicate.
+- Tách luồng backfill khỏi realtime nếu replay tạo tải lớn.
+- Biết output cũ cần ghi đè, hiệu chỉnh hay tạo dataset version mới.
+
+#### Khi nào chọn ETL, ELT hoặc hybrid?
+
+| Nhu cầu | Lựa chọn thường phù hợp |
+| --- | --- |
+| Fraud detection, alert, search index cần dữ liệu sạch trong vài giây | Streaming ETL |
+| Mask PII trước khi dữ liệu rời vùng bảo mật | ETL hoặc bước ETL đầu của hybrid |
+| Giữ raw data để audit, data science, transform lại nhiều lần | ELT |
+| Báo cáo phức tạp, nhiều join lớn, logic thay đổi thường xuyên | ELT trong Warehouse/Lakehouse |
+| Vừa cần realtime serving vừa cần analytics linh hoạt | Hybrid: ETL realtime + ELT analytics |
+
+Tư duy chọn nhanh:
+
+- Cần phản ứng ngay hoặc sink chỉ được nhận dữ liệu đã làm sạch: transform trước khi load.
+- Cần giữ dữ liệu gốc và thường xuyên thay đổi logic analytics: load raw trước rồi transform.
+- Chỉ cần đổi tên/mask/route từng record: cân nhắc Kafka Connect SMT.
+- Cần join, aggregate, window hoặc stateful processing realtime: dùng stream processor.
+- Cần join rất lớn và truy vấn ad-hoc trên lịch sử dài: thường để Warehouse/Lakehouse xử lý.
+
+#### Đánh giá lại ghi chú cũ
+
+- Đúng: ETL là `Extract -> Transform -> Load`, ELT là `Extract -> Load -> Transform`; Kafka có thể tham gia cả hai mô hình.
+- Cần làm rõ: Kafka không tự thực hiện toàn bộ ETL/ELT. Kafka Connect đảm nhiệm data movement; transform phức tạp cần stream processor hoặc compute engine ở hệ thống đích.
+- Cần bổ sung: ELT không nhất thiết là batch, còn streaming ETL không loại trừ việc giữ raw topic để replay.
+- Cần cẩn trọng: delivery guarantee phải xét **end-to-end**. Không nên tuyên bố exactly-once chỉ vì một đoạn Kafka Streams hoặc connector đã bật exactly-once.
 
 ### Batch Processing
 
@@ -141,32 +281,489 @@ Tư duy chọn nhanh:
 
 ## Kafka Concept
 
-🙂 Apache Kafka là một nền tảng phân phối dữ liệu theo thời gian thực (Real-time Event Streaming Platform).
+🙂 Apache Kafka là một **distributed event streaming platform**. Nói ngắn gọn, Kafka cho phép nhiều hệ thống **publish, lưu trữ, đọc và xử lý một dòng event liên tục** với throughput cao, có thể scale ngang và chịu lỗi.
 
-- **Netflix:** Dùng Kafka để gợi ý phim cho bạn ngay lập tức dựa trên những gì bạn vừa xem.
-- **Uber:** Sử dụng Kafka để tính toán lộ trình, giá tiền và vị trí tài xế theo thời gian thực.
+Kafka kết hợp ba khả năng chính:
 
-🙂 Log-based: Kafka là hệ thống **Log-based** (dựa trên nhật ký dữ liệu), không phải Queue-based truyền thống (như RabbitMQ hay ActiveMQ).
+1. **Publish/subscribe event**: producer ghi event, consumer đăng ký đọc event.
+2. **Lưu event bền vững**: event được giữ trong topic theo retention policy, không bị xóa chỉ vì một consumer đã đọc xong.
+3. **Xử lý event stream**: application có thể filter, join, aggregate, enrich hoặc phản ứng với event khi nó xuất hiện.
 
-- Trong Kafka, mỗi Topic được chia thành các Partition + Mỗi Partition thực chất là một file log có cấu trúc append-only (chỉ ghi thêm vào cuối).
-- Ghi dữ liệu: Khi có tin nhắn mới, Kafka chỉ đơn giản là "dán" nó vào cuối file log, Append-only log, nhanh hơn Random write hàng ngàn lần, thậm chí có khi lại nhanh hơn cả Random write trong RAM.
-- Đọc dữ liệu: Consumer giữ một "dấu trang" gọi là Offset (số thứ tự) để biết mình đã đọc đến đâu.
-- Hiệu suất cực cao (High Throughput), vì chỉ ghi vào cuối file (Sequential I/O), Kafka tránh được việc phải tìm kiếm vị trí trên đĩa (Disk seek), giúp tốc độ ghi cực nhanh + khả năng "Phát lại" (Replayability), ở hệ thống Queue, tin nhắn thường bị xóa sau khi Consumer nhận xong nhưng ở Kafka, tin nhắn vẫn nằm đó, nếu ứng dụng của bạn bị lỗi, bạn có thể chỉnh Offset quay lại để đọc và xử lý lại dữ liệu từ 2 ngày trước + hỗ trợ nhiều Consumer (Fan-out), nhiều ứng dụng khác nhau có thể đọc cùng một file log tại các vị trí (Offset) khác nhau mà không ảnh hưởng đến nhau + Hệ thống thoát ly hoàn toàn (Decoupling): Producer cứ ghi, Consumer cứ đọc theo tốc độ của riêng mình, nếu Consumer chậm (Slow Consumer), nó không làm nghẽn hệ thống vì dữ liệu đã được lưu an toàn trong file log + khôi phục sau thảm họa (Event Sourcing), nếu database của bạn bị hỏng, bạn có thể chạy lại toàn bộ log từ Kafka để tái thiết lập trạng thái cuối cùng của dữ liệu.
-- Tốn tài nguyên lưu trữ, vì không xóa tin nhắn ngay lập tức, bạn cần một dung lượng đĩa lớn hơn để lưu trữ log + độ phức tạp phía Client, consumer phải tự quản lý hoặc phối hợp với Kafka để theo dõi Offset, đòi hỏi logic xử lý phức tạp hơn một chút so với việc chỉ "nhận và quên" như Queue.
+```text
+Event sources              Kafka                         Event consumers
+Order Service  ─┐      ┌─ orders ────────────────┐   ┌─ Payment Service
+Payment DB/CDC ─┼────> │  partitioned event log  │ ─>├─ Fraud Detection
+Mobile App     ─┘      └─────────────────────────┘   ├─ Data Warehouse
+                                                    └─ Realtime Dashboard
+```
 
-## Why Kafka Fast?
+Điểm cốt lõi là producer và consumer **không cần biết trực tiếp về nhau**. `Order Service` chỉ publish `OrderCreated`; Payment, Fraud, Analytics hoặc một consumer được thêm sau này có thể đọc event theo nhu cầu riêng.
 
-- Partition detach: giúp các Partition có thể nằm riêng biệt trên các Broker khác nhau + consume/ produce message 1 cách độc lập với từng Partition → hệ thống sẽ nhanh hơn >< đánh đổi là thứ tự consume message trong các Partition sẽ không đồng đều (nhưng giải pháp dùng message key).
-- Compress message: giúp tốc độ truyền message trên network xảy ra nhanh hơn + lúc lưu message trên disk của Broker sẽ tốn ít dung lượng hơn.
-- Batch publish: giúp gom các message lại rồi mới truyền đi trong 1 request, nhìn chung lúc send request có vẻ sẽ chậm hơn nhưng hiệu suất tổng thể nhìn chung sẽ nhanh hơn, traffic network cũng tốt hơn.
-- In-memory Buffering: các message gửi tới Kafka, nó sẽ nằm trong vùng nhớ này trước, tổng hợp nhiều message rồi flush xuống disk để giảm số lần system call.
-- I/O sequence: là quá trình write/ read data từ các block liên tiếp -> tốc độ nhanh hơn nhiều với Random I/O + Data ở concept này thì liên tục, không có fragment nên chỉ cần đọc dọc theo chiều data là sẽ lấy được data tiếp theo → do vậy mà lúc write thì đầu đọc của disk chỉ cần di chuyển 1 lần và write liên tục; data cũng được đọc liên tục trên disk thay vì tìm kiếm ở nhiều block khác nhau)
-- No application-level caching: Thay vì tự quản lý bộ nhớ đệm (Cache) trong RAM của ứng dụng (làm tăng gánh nặng cho Garbage Collection trong Java), Kafka tận dụng luôn Page Cache của hệ điều hành.
-- Nếu một Consumer đọc dữ liệu vừa mới được ghi, dữ liệu đó chắc chắn vẫn còn nằm trong Page Cache của hệ điều hành, Kafka sẽ lấy trực tiếp từ RAM ra gửi đi mà không cần chạm vào đĩa cứng.
-- Việc này giúp Kafka "đứng trên vai khổng lồ" là khả năng quản lý bộ nhớ cực tốt của nhân Kernel (Linux).
-- Zero-copy: Kafka sử dụng hàm `sendfile()` của hệ điều hành để thực hiện Zero-copy. Dữ liệu đi thẳng từ Read Buffer sang Socket Buffer, bỏ qua bước sao chép vào bộ nhớ ứng dụng (User Space). Điều này giảm tải CPU và tiết kiệm băng thông bộ nhớ một cách khủng khiếp.
+### “Stream” có nghĩa là gì?
 
-![Kafka image 4](images/kafka-image-04.png)
+**Stream** là một dòng event xuất hiện nối tiếp theo thời gian. Khác với một dataset hữu hạn đã có sẵn, stream thường không có điểm kết thúc rõ ràng: khi hệ thống còn hoạt động thì event mới vẫn tiếp tục được sinh ra.
+
+```text
+thời gian ---------------------------------------------------------->
+
+OrderCreated -> PaymentSucceeded -> OrderPacked -> OrderShipped -> ...
+```
+
+Ví dụ:
+
+- Mỗi lần user click sản phẩm tạo một event trong click stream.
+- Mỗi lần tài xế gửi vị trí tạo một event trong location stream.
+- Mỗi thay đổi `INSERT/UPDATE/DELETE` trong database có thể trở thành một event trong CDC stream.
+- Mỗi order mới hoặc lần đổi trạng thái order tạo event trong order stream.
+
+Trong Kafka, stream không phải một object đơn lẻ nằm trọn trong memory. Nó là cách nhìn logic về chuỗi record được ghi liên tục vào topic. Topic có thể có nhiều partition nên Kafka chỉ đảm bảo thứ tự record trong từng partition, không có một thứ tự toàn cục cho toàn bộ stream.
+
+Cần phân biệt:
+
+- **Event stream**: dòng event liên tục, ví dụ các event trong topic `order-events`.
+- **Event streaming**: toàn bộ việc capture, lưu trữ, vận chuyển và cung cấp dòng event cho các hệ thống khác.
+- **Stream processing**: đọc dòng event và xử lý liên tục như filter, enrich, join, aggregate hoặc phát sinh event mới.
+
+```text
+Event stream đầu vào
+  -> Stream processing
+  -> Event stream đầu ra
+
+orders.raw
+  -> validate + enrich + aggregate
+  -> orders.cleaned / sales-per-minute
+```
+
+Kafka được gọi là **event streaming platform** vì nó không chỉ chuyển message: Kafka còn lưu dòng event để consumer có thể xử lý ngay khi event xuất hiện hoặc đọc lại dữ liệu cũ còn trong retention. Chi tiết cách xử lý stream được trình bày tại mục `Stream Processing - Event Driven Architecture`; phần này chỉ giải thích ý nghĩa của chữ “stream”.
+
+### Mental model tổng quan
+
+Có thể hình dung Kafka như một **distributed append-only log**:
+
+```text
+Producer -> Topic -> Partitioned log -> Consumer group
+```
+
+- **Event/record**: ghi lại sự thật rằng một việc đã xảy ra, ví dụ `OrderCreated`, `PaymentSucceeded`, `ProductStockChanged`.
+- **Producer**: application ghi event vào Kafka.
+- **Topic**: dòng event có tên, ví dụ `order-events`.
+- **Partition**: chia topic thành nhiều ordered log để lưu và xử lý song song.
+- **Offset**: vị trí của record trong một partition.
+- **Consumer/consumer group**: application đọc event; nhiều instance trong cùng group chia nhau các partition để scale.
+- **Broker/replica**: broker lưu partition; replica cung cấp khả năng chịu lỗi khi broker gặp sự cố.
+
+Mục này chỉ cung cấp mental model. Các cơ chế được giải thích chi tiết ở phần sau:
+
+| Muốn tìm hiểu | Đọc mục |
+| --- | --- |
+| Broker, topic, partition, segment, offset, ordering và event key | `Broker + Topic + Partitions + Segment + Offset` |
+| Cấu trúc event/message/record/data | `Event / Message / Record / Data` |
+| Producer, serializer, partition strategy, ACK, retry, idempotence, compression | `Producer` |
+| Consumer group, commit offset, rebalance, offset reset và consumer thread | `Consumer` |
+| At-most-once, at-least-once và exactly-once | `Kafka Delivery Semantics` |
+| Leader, follower, ISR và replication | `Kafka Replica` |
+| Retention, segment deletion và log compaction | `Log Retention + Cleanup Policy` |
+| Vì sao Kafka có throughput cao | `Why Kafka Fast?` |
+| So sánh với message broker truyền thống | `RabbitMQ vs Kafka` |
+
+> Lưu ý: partition là **ordered log ở góc nhìn logic**, không nên hiểu đơn giản là đúng một file vật lý. Trên disk, một partition gồm nhiều segment; xem chi tiết tại `Broker + Topic + Partitions + Segment + Offset`.
+
+### Log-based khác queue truyền thống ở điểm nào?
+
+Với queue truyền thống, message thường được broker theo dõi theo vòng đời giao nhận và được loại khỏi queue sau khi consumer xử lý/ACK theo cơ chế của broker. Với Kafka, record được giữ độc lập với việc đã có consumer đọc hay chưa; mỗi consumer group theo dõi vị trí đọc của riêng mình.
+
+Điều này đem lại bốn đặc tính quan trọng:
+
+- **Replay**: có thể đọc lại event còn trong retention để sửa bug, rebuild projection/search index hoặc backfill pipeline.
+- **Fan-out**: nhiều consumer group đọc cùng topic độc lập; Payment đọc không làm Analytics mất event.
+- **Decoupling**: producer không phải gọi trực tiếp mọi downstream; từng consumer có thể deploy và scale riêng.
+- **Buffering**: consumer có thể xử lý chậm hơn producer trong một khoảng thời gian vì event đã được lưu trong Kafka.
+
+Kafka không làm slow consumer biến mất. Nếu consumer lag quá lâu và record đã hết retention, phần dữ liệu đó có thể bị xóa trước khi consumer đọc tới. Cơ chế offset và retention được giải thích ở các mục `Consumer` và `Log Retention + Cleanup Policy`.
+
+### Ví dụ thực tế: order flow
+
+```text
+Order Service
+  -> publish OrderCreated(key=orderId:9001)
+  -> Kafka topic: order-events
+       -> Payment Service
+       -> Fraud Service
+       -> Notification Service
+       -> Analytics Service
+```
+
+Nếu Analytics ngừng 30 phút, Payment vẫn có thể tiếp tục hoạt động. Khi Analytics chạy lại, nó đọc tiếp từ vị trí đã commit nếu dữ liệu vẫn còn trong retention. Nếu thêm Recommendation Service sau này, service mới chỉ cần subscribe topic; không phải sửa flow chính của Order Service.
+
+Dùng `orderId` làm key thường giúp các event của cùng order đi vào cùng partition:
+
+```text
+OrderCreated -> PaymentSucceeded -> OrderPacked -> OrderShipped
+```
+
+Nhờ vậy có thể giữ thứ tự theo từng order. Kafka không đảm bảo total order giữa mọi partition. Cách chọn key và ảnh hưởng tới ordering được trình bày tại `Producer Message Key`, `Producer Partition Strategy` và `Event Key`.
+
+### Kafka phù hợp với use case nào?
+
+- Event-driven microservices và tích hợp bất đồng bộ giữa nhiều hệ thống.
+- CDC: đưa thay đổi từ database thành event stream.
+- Realtime analytics, monitoring và dashboard.
+- Log, metric và user activity tracking tập trung.
+- Fraud detection, recommendation, notification và IoT telemetry.
+- Streaming ETL/ELT và đồng bộ dữ liệu sang Data Lake, Warehouse hoặc Elasticsearch.
+- Event Sourcing khi application được thiết kế theo mô hình đó ngay từ đầu.
+
+Hai ví dụ quen thuộc:
+
+- Hệ thống xem phim có thể publish `MovieWatched`, `MoviePaused`, `SearchPerformed` để pipeline recommendation cập nhật gợi ý gần realtime.
+- Hệ thống gọi xe có thể stream vị trí tài xế, trạng thái chuyến đi và payment event cho tracking, pricing, fraud và analytics.
+
+Các ví dụ này mô tả kiểu bài toán Kafka phù hợp, không có nghĩa Kafka tự thực hiện thuật toán recommendation, tìm đường hoặc tính giá. Business logic vẫn nằm ở stream processor hoặc service phía consumer.
+
+### Kafka không tự giải quyết điều gì?
+
+- Kafka không thay thế relational database cho CRUD, truy vấn ad-hoc, join tùy ý hoặc transaction business thông thường.
+- Kafka không tự đảm bảo end-to-end exactly-once với mọi database/API bên ngoài; xem `Kafka Delivery Semantics`.
+- Kafka không tự tạo schema/data contract đúng hoặc ngăn producer phát event sai business.
+- Kafka không phải lựa chọn tự nhiên nhất cho mọi task queue cần priority, per-message delay, complex routing hoặc request/reply đơn giản.
+- Kafka không tự đem lại Event Sourcing. Event Sourcing là cách thiết kế domain; Kafka chỉ có thể là một thành phần của kiến trúc đó.
+- Kafka không nên được coi là backup duy nhất của database nếu retention/compaction không giữ đủ dữ liệu để phục hồi.
+
+### Đánh đổi cần nhớ
+
+- Lưu record sau khi consume giúp replay và fan-out nhưng tốn storage, replication traffic và chi phí vận hành.
+- Partition giúp scale nhưng đổi lại chỉ có ordering trong partition; chọn sai key có thể gây hot partition hoặc sai thứ tự theo entity.
+- Consumer linh hoạt về vị trí đọc nhưng application phải xử lý duplicate, retry, rebalance, poison message và consumer lag.
+- Decoupling giúp hệ thống dễ mở rộng nhưng tăng eventual consistency và làm tracing/debug phức tạp hơn synchronous call.
+- Production cần theo dõi broker health, disk, under-replicated partition, throughput, consumer lag và schema compatibility.
+
+Chi tiết của từng đánh đổi được khai thác tại các mục kỹ thuật tương ứng ở phía dưới; `Kafka Concept` chỉ đóng vai trò bản đồ tổng quan.
+
+### Tư duy chọn nhanh
+
+- Cần một event được nhiều hệ thống độc lập đọc: Kafka phù hợp.
+- Cần throughput cao, lưu event và replay: Kafka phù hợp.
+- Chỉ cần giao một job đơn giản cho một worker, trong khi routing/delay/priority quan trọng hơn replay: nên đánh giá message broker/task queue khác.
+- Cần request-response tức thời và caller phải nhận kết quả ngay: HTTP/gRPC thường tự nhiên hơn; Kafka có thể xử lý các side effect bất đồng bộ.
+- Chưa có retention, data contract và idempotency rõ ràng: chưa nên đưa pipeline lên production chỉ vì đã có Kafka.
+
+### Đánh giá lại ghi chú cũ
+
+- Đúng: Kafka là log-based event streaming platform; partition là ordered append-only log ở góc nhìn logic; offset cho phép consumer theo dõi vị trí và replay; nhiều consumer group có thể đọc độc lập.
+- Cần sửa: partition không chỉ là một file vật lý mà gồm nhiều segment; Kafka chỉ đảm bảo ordering trong partition; slow consumer vẫn có nguy cơ mất dữ liệu đã hết retention.
+- Cần bỏ cách nói tuyệt đối: sequential disk I/O có lợi cho throughput nhưng không nên khẳng định chung rằng nó “nhanh hơn random write trong RAM hàng nghìn lần”. Các yếu tố hiệu năng được phân tích riêng tại `Why Kafka Fast?`.
+- Cần nói cẩn trọng hơn: replay có thể rebuild projection/search index hoặc state nếu giữ đủ event và transform deterministic; nó không mặc nhiên phục hồi được database hay biến hệ thống thành Event Sourcing.
+
+## Why is Kafka fast?
+
+Kafka nhanh nhờ nhiều cơ chế phối hợp với nhau, không phải chỉ vì “ghi tuần tự xuống disk” hoặc “dùng zero-copy”. Nói chính xác hơn: Kafka được thiết kế để đạt **throughput cao** bằng cách biến nhiều record nhỏ thành các luồng dữ liệu lớn, liên tục và có thể xử lý song song.
+
+Các yếu tố chính:
+
+1. Append-only log và sequential I/O.
+2. Tận dụng OS page cache.
+3. Batching ở nhiều tầng.
+4. Compression theo record batch.
+5. Zero-copy trên đường đọc phù hợp.
+6. Partitioning để xử lý song song trên nhiều broker/consumer.
+7. Pull model và fetch theo batch.
+8. Ít trạng thái giao nhận riêng cho từng consumer trên broker.
+
+> “Fast” trong Kafka chủ yếu nói về **tổng lượng dữ liệu xử lý trong một đơn vị thời gian**. Một cấu hình tối ưu throughput có thể cố ý chờ thêm vài mili giây để gom batch, nên không đồng nghĩa mọi record luôn có latency thấp nhất.
+
+### 1. Append-only log và sequential I/O
+
+Record mới được append vào cuối active segment của partition. Kafka không phải tìm một vị trí ngẫu nhiên trên disk cho từng record giống workload random update.
+
+```text
+Partition log
+
+[record 0][record 1][record 2][record 3] ---> append record mới
+```
+
+Vì sao ghi tuần tự lại nhanh?
+
+Giả sử Kafka cần ghi 1.000 record. Nếu mỗi record được ghi vào một vị trí rải rác, storage phải liên tục tìm và chuyển tới vị trí cần ghi. Đây là **random I/O**. Kafka chủ yếu nối record mới vào cuối log, nên dữ liệu được ghi thành một luồng liên tiếp:
+
+```text
+Random I/O:     ghi chỗ A -> tìm chỗ B -> tìm chỗ C -> ...
+Sequential I/O: [record 1][record 2][record 3]... -> ghi tiếp ở cuối
+```
+
+Cách ghi tuần tự có lợi vì:
+
+- **Ít disk seek**: với HDD, đầu đọc/ghi ít phải di chuyển giữa nhiều vị trí. SSD không có đầu đọc cơ học nhưng ghi/đọc theo block liên tục vẫn hiệu quả hơn nhiều thao tác nhỏ rời rạc.
+- **Ghi theo batch lớn**: nhiều record nhỏ được gom lại, nên Kafka thực hiện ít lần ghi và ít `system call` hơn. `System call` là mỗi lần application phải nhờ operating system thực hiện I/O; gọi quá nhiều lần sẽ tạo thêm overhead.
+- **Consumer cũng thường đọc tuần tự**: consumer đọc từ offset hiện tại rồi tiến về phía trước, nên storage không phải tìm record ở các vị trí ngẫu nhiên.
+- **OS có thể read-ahead**: khi thấy application đang đọc liên tiếp, operating system có thể đoán các block tiếp theo sẽ được dùng và nạp trước chúng vào page cache.
+
+Vì vậy, điểm chính không phải là “disk nhanh hơn RAM”, mà là Kafka dùng một **access pattern thân thiện với storage và operating system**: ghi nối đuôi, đọc liên tục và xử lý theo batch.
+
+Chi tiết cách partition được chia thành segment nằm tại `Broker + Topic + Partitions + Segment + Offset`.
+
+### 2. Kafka tận dụng OS page cache
+
+Kafka chủ yếu dựa vào **page cache của operating system** thay vì tự xây một object cache lớn trong JVM.
+
+Khi broker ghi vào file:
+
+```text
+Kafka broker
+  -> write system call
+  -> OS page cache
+  -> kernel flush xuống disk theo cơ chế của OS/filesystem
+```
+
+Khi consumer đọc dữ liệu vừa được ghi, các page tương ứng **thường** vẫn còn trong page cache:
+
+```text
+Consumer fetch
+  <- dữ liệu từ page cache
+  <- không nhất thiết phải đọc physical disk ở lần fetch đó
+```
+
+Tác dụng:
+
+- Tránh giữ thêm một bản cache lớn dưới dạng Java object/byte array trong heap.
+- Giảm áp lực Garbage Collection.
+- OS tự dùng phần RAM còn trống làm cache và thu hồi khi hệ thống cần memory.
+- Dữ liệu cache có thể tiếp tục tồn tại sau khi Kafka process restart, miễn OS chưa reboot hoặc reclaim page.
+
+> Không nên viết “consumer đọc dữ liệu mới thì chắc chắn lấy từ RAM”. Page cache phụ thuộc memory pressure, working set và trạng thái hệ thống; dữ liệu có thể đã bị evict và phải đọc lại từ storage.
+
+Page cache cũng không đồng nghĩa record đã an toàn tuyệt đối trước power loss. Durability còn phụ thuộc replication, `acks`, ISR và cấu hình filesystem/broker; xem `Producer ACK` và `Kafka Replica`.
+
+### 3. Batching giảm system call và network round-trip
+
+Nếu gửi 1.000 record bằng 1.000 request riêng:
+
+```text
+1 record -> 1 request -> 1 network round-trip -> 1 lần xử lý nhỏ
+```
+
+thì phần overhead của request header, syscall, network packet và broker processing có thể lớn hơn chính payload.
+
+Kafka cố gắng xử lý theo batch:
+
+```text
+1.000 records
+  -> gom thành các record batch theo partition
+  -> ít produce request hơn
+  -> broker append các block lớn hơn
+  -> consumer fetch nhiều record trong một response
+```
+
+Batching xuất hiện ở nhiều tầng:
+
+- Producer gom record theo partition trước khi gửi.
+- Một produce request có thể chứa nhiều batch.
+- Broker ghi và replicate dữ liệu theo block/batch hiệu quả hơn.
+- Consumer fetch một vùng dữ liệu thay vì yêu cầu từng record.
+
+Tác dụng:
+
+- Ít request và system call hơn.
+- Network packet lớn và hiệu quả hơn.
+- Sequential disk operation lớn hơn.
+- Compression tốt hơn vì có nhiều dữ liệu giống nhau trong cùng batch.
+
+Đánh đổi là **latency vs throughput**. Chờ lâu hơn giúp batch đầy hơn nhưng một record có thể phải đợi trước khi được gửi. Các cấu hình liên quan như `batch.size`, `linger.ms` và `buffer.memory` được khai thác tại `High Load Producer`.
+
+### 4. Compression theo batch
+
+Các event cùng loại thường lặp lại field name và nhiều giá trị:
+
+```json
+{"eventType":"UserClicked","userId":1001,"productId":501}
+{"eventType":"UserClicked","userId":1001,"productId":502}
+{"eventType":"UserClicked","userId":1002,"productId":501}
+```
+
+Nén từng record riêng lẻ không tận dụng tốt phần dữ liệu lặp. Kafka nén **record batch**, giúp compression ratio tốt hơn:
+
+```text
+Record batch
+  -> compress một lần
+  -> gửi qua network
+  -> lưu trong Kafka log ở dạng compressed
+  -> truyền batch compressed cho consumer
+  -> consumer decompress
+```
+
+Lợi ích:
+
+- Giảm network bandwidth producer -> broker.
+- Giảm dung lượng storage.
+- Giảm bandwidth khi replicate giữa broker.
+- Giảm bandwidth broker -> consumer.
+
+Đánh đổi:
+
+- Producer và consumer tốn CPU để compress/decompress.
+- Batch nhỏ thường nén kém hiệu quả.
+- Chọn thuật toán phụ thuộc ưu tiên CPU, ratio, throughput và compatibility.
+
+Kafka hỗ trợ các codec như `gzip`, `snappy`, `lz4`, `zstd`. Cấu hình và cách chọn được trình bày chi tiết tại `Producer Compression`.
+
+### 5. Zero-copy giảm việc copy dữ liệu qua user space
+
+Nội dung trong ảnh cũ mô tả đường truyền file thông thường:
+
+```text
+Không dùng zero-copy
+
+1. Disk -> kernel read buffer/page cache
+2. Kernel space -> user-space application buffer
+3. User space -> kernel socket buffer
+4. Kernel socket buffer -> NIC
+```
+
+Ở đường này, Kafka application không biến đổi payload nhưng dữ liệu vẫn bị copy vào user space rồi copy ngược về kernel để gửi qua network. Việc đó tốn CPU, memory bandwidth và system call.
+
+Với `sendfile()`/zero-copy, OS có thể chuyển dữ liệu từ page cache tới network mà không cần copy payload qua Kafka user-space buffer:
+
+```text
+Có zero-copy
+
+Disk -> OS page cache -> socket/NIC -> network
+             ^
+        Kafka yêu cầu kernel gửi vùng file này
+```
+
+Tác dụng:
+
+- Giảm số lần copy dữ liệu.
+- Giảm context switch giữa user space và kernel space.
+- Giảm CPU và memory bandwidth của broker.
+- Broker có thể phục vụ consumer với tốc độ gần giới hạn network hơn khi dữ liệu đã nằm trong page cache.
+
+Zero-copy chủ yếu hữu ích trên đường broker gửi log data cho consumer/follower khi Kafka không cần deserialize và transform từng record.
+
+> Giới hạn quan trọng: tài liệu Kafka ghi rõ `sendfile` không được dùng khi bật SSL/TLS vì thư viện TLS hoạt động trong user space và Kafka hiện không dùng in-kernel `SSL_sendfile`. Khi đó vẫn có lợi từ batching, compression, page cache và partitioning, nhưng không nên khẳng định đường truyền có đầy đủ zero-copy như plaintext.
+
+### 6. Partitioning tạo parallelism
+
+Một topic có thể chia thành nhiều partition và phân bố trên nhiều broker:
+
+```text
+Topic: order-events
+
+Partition 0 -> Broker A
+Partition 1 -> Broker B
+Partition 2 -> Broker C
+```
+
+Nhờ đó:
+
+- Nhiều producer có thể ghi vào các partition khác nhau.
+- Nhiều broker phục vụ I/O song song.
+- Nhiều consumer trong cùng group xử lý các partition khác nhau.
+- Có thể scale ngang bằng cách thêm broker, partition và consumer phù hợp.
+
+Partitioning không làm một partition đơn lẻ nhanh vô hạn. Một hot key có thể dồn phần lớn traffic vào một partition và một broker, trong khi các partition khác nhàn rỗi.
+
+```text
+Sai distribution:
+Partition 0: ████████████████████
+Partition 1: ██
+Partition 2: █
+```
+
+Cách chọn key, số partition và ảnh hưởng tới ordering được trình bày tại `Event Key`, `Producer Message Key` và `Producer Partition Strategy`.
+
+### 7. Consumer pull và fetch theo batch
+
+Kafka consumer chủ động gửi fetch request và chỉ rõ offset muốn đọc. Broker trả về một vùng record liên tiếp, thay vì phải push và theo dõi trạng thái giao nhận của từng record cho từng consumer.
+
+```text
+Consumer: cho tôi dữ liệu từ offset 500, tối đa theo fetch config
+Broker:   trả về [500...N] trong một response
+```
+
+Pull model giúp consumer:
+
+- Tự điều chỉnh tốc độ lấy dữ liệu theo khả năng xử lý.
+- Fetch nhiều record trong một lần.
+- Tạm dừng rồi tiếp tục từ offset.
+- Replay bằng cách đổi vị trí đọc.
+
+Nếu fetch quá nhỏ, consumer tạo nhiều request và giảm throughput. Nếu fetch/batch quá lớn, memory usage và thời gian xử lý một poll có thể tăng. Các cơ chế commit, rebalance và consumer thread được trình bày tại `Consumer`.
+
+### 8. Kafka giữ ít trạng thái giao nhận per-message trên broker
+
+Kafka không xóa record chỉ vì một consumer đã đọc xong. Record được cleanup theo retention/compaction của topic; tiến độ consumer group được biểu diễn chủ yếu bằng committed offset.
+
+```text
+Topic data:       giữ theo retention/compaction
+Consumer group A: offset 1.000
+Consumer group B: offset   750
+Consumer group C: offset 1.200
+```
+
+Broker không cần đánh dấu riêng từng record là “đã ACK bởi consumer A/B/C rồi xóa record đó”. Mô hình log + offset giúp thêm consumer group mới tương đối rẻ và cho phép nhiều group đọc độc lập.
+
+Điều này không có nghĩa consumer logic đơn giản: application vẫn phải thiết kế commit offset, idempotency, retry và duplicate handling. Xem `Consumer Offset Commit Strategy` và `Kafka Delivery Semantics`.
+
+### Ví dụ thực tế: vì sao gửi từng message lại chậm?
+
+Giả sử application phát 50.000 click event mỗi giây, mỗi event khoảng 300 bytes.
+
+Cách kém hiệu quả:
+
+```text
+50.000 event
+  -> 50.000 request nhỏ
+  -> nhiều header, packet, syscall và broker request
+```
+
+Cách Kafka tối ưu:
+
+```text
+50.000 event
+  -> batch theo partition
+  -> compress batch
+  -> ít request lớn hơn
+  -> append tuần tự
+  -> consumer fetch theo block
+```
+
+Payload gốc chỉ khoảng 15 MB/s, nhưng gửi từng record có thể tạo overhead rất lớn. Batching và compression giúp hệ thống tiến gần hơn tới việc truyền chính payload thay vì dành phần lớn tài nguyên cho thao tác bao quanh từng message.
+
+### Khi nào Kafka vẫn chậm?
+
+Kafka có thể có throughput thấp hoặc latency cao nếu:
+
+- Producer gửi từng record với batch rất nhỏ hoặc `linger.ms` không phù hợp workload.
+- Payload quá lớn, serialization hoặc compression tiêu tốn nhiều CPU.
+- Chọn key tạo hot partition.
+- Số partition/broker không đủ cho mức parallelism cần thiết.
+- Disk chậm, gần đầy hoặc page cache bị memory pressure.
+- Network giữa producer, broker, replica và consumer bị nghẽn.
+- Replication factor, `acks=all` và ISR làm tăng chi phí để đổi lấy durability cao hơn.
+- Consumer xử lý business logic chậm hoặc gọi database/API đồng bộ cho từng record.
+- Consumer poll/fetch không hợp lý hoặc xảy ra rebalance thường xuyên.
+- TLS, authorization, quotas và cross-region traffic thêm CPU/network overhead.
+- Broker vừa phục vụ traffic realtime vừa chịu replay/backfill lớn.
+
+Kafka nhanh ở data plane không có nghĩa toàn bộ pipeline nhanh. Nếu consumer nhận một batch trong 10 ms nhưng mất 5 giây để insert từng record vào database, bottleneck nằm ở downstream chứ không phải Kafka.
+
+### Tư duy tối ưu nhanh
+
+- Muốn tăng throughput producer: ưu tiên batching, compression và phân phối key đều; xem `High Load Producer`, `Producer Compression`.
+- Muốn tăng throughput consumer: fetch/process theo batch, scale theo partition và tránh gọi downstream từng record nếu có thể.
+- Muốn giảm latency: giảm thời gian chờ batch nhưng chấp nhận throughput/CPU/network có thể kém hơn.
+- Muốn durability cao: cấu hình ACK, replica và ISR đúng; không đánh đổi an toàn dữ liệu chỉ để benchmark đẹp.
+- Muốn tìm bottleneck: đo producer request latency, broker disk/network, under-replicated partition và consumer lag thay vì chỉ nhìn message/second.
+
+### Đánh giá lại ghi chú cũ
+
+- Đúng: Kafka hưởng lợi từ partition parallelism, batching, compression, sequential I/O, OS page cache và zero-copy.
+- Cần sửa thuật ngữ: `Partition detach` nên viết là **partitioning tạo parallelism và phân phối tải**.
+- Cần sửa: broker không đơn giản gom message trong một “in-memory buffer riêng” rồi mới flush. Producer có buffer/batch; broker ghi vào log thông qua filesystem và tận dụng OS page cache.
+- Cần nói cẩn trọng hơn: dữ liệu mới ghi **thường** còn trong page cache, không phải “chắc chắn”.
+- Cần bỏ cách nói tuyệt đối: sequential I/O có thể rất hiệu quả nhưng không phải luôn nhanh hơn mọi random access trong RAM.
+- Cần bổ sung: zero-copy có điều kiện và không dùng theo đường `sendfile` khi Kafka bật SSL/TLS.
+- Cần nhớ: throughput cao là kết quả end-to-end của batch lớn, I/O liên tục và parallelism; cấu hình tối ưu throughput thường đánh đổi latency, CPU, memory hoặc durability.
 
 ## RabbitMQ vs Kafka
 
