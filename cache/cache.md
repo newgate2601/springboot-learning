@@ -75,7 +75,7 @@ Không nên cache hoặc phải rất thận trọng với:
 
 Ví dụ thực tế: danh mục sản phẩm thường đọc nhiều hơn ghi nên có thể cache 5 phút. Số dư ví thì không nên coi cache là nguồn quyết định giao dịch; bước trừ tiền phải kiểm tra trên storage có transaction/consistency phù hợp.
 
-## Pre-warming và predictive caching
+## Pre-warming và prefetching
 
 ### Pre-warm cache
 
@@ -89,11 +89,28 @@ Use case:
 
 Không nên pre-warm toàn bộ database. Việc đó dễ làm đầy RAM, tạo cache pollution và gây tải lớn đúng lúc hệ thống đang khởi động.
 
-### Predictive caching
+### Prefetching
 
-**Predictive caching** dự đoán dữ liệu sắp được dùng dựa trên hành vi, lịch sử hoặc quan hệ giữa các dữ liệu rồi nạp trước.
+**Prefetching** là chủ động tải trước dữ liệu có khả năng cao sẽ được dùng ngay tiếp theo. Khác với pre-warming thường diễn ra khi khởi động hoặc trước một sự kiện lớn, prefetching được kích hoạt trong lúc người dùng đang sử dụng hệ thống.
 
-Ví dụ: người dùng đang xem trang 1 của danh sách, hệ thống có thể prefetch trang 2; ứng dụng xem video có thể tải trước segment tiếp theo. Dự đoán sai sẽ lãng phí RAM và băng thông, nên cần đo tỷ lệ dữ liệu prefetch thực sự được dùng.
+Ví dụ: người dùng đang đọc trang 1 của danh sách sản phẩm. Trong lúc họ xem, ứng dụng âm thầm tải và cache trang 2. Nếu người dùng bấm “Trang tiếp theo”, dữ liệu đã có sẵn nên màn hình hiển thị nhanh hơn.
+
+```text
+User mở trang 1
+       ├── trả dữ liệu trang 1
+       └── tải trước trang 2 -> lưu cache
+
+User mở trang 2 -> cache hit -> trả kết quả nhanh
+```
+
+Một số trường hợp phù hợp:
+
+- Tải trước trang tiếp theo của danh sách hoặc kết quả tìm kiếm.
+- Tải trước segment tiếp theo khi phát video/audio.
+- Cache thông tin chi tiết khi người dùng hover hoặc sắp mở một item.
+- Tải trước dữ liệu của bước kế tiếp trong quy trình checkout nhiều bước.
+
+Chỉ nên prefetch khi xác suất sử dụng đủ cao. Nếu tải trước quá nhiều, hệ thống sẽ tốn RAM, băng thông và có thể chiếm tài nguyên của request thật. Nên giới hạn số request chạy nền, hủy prefetch không còn cần thiết và đo **prefetch hit rate** — tỷ lệ dữ liệu tải trước thực sự được sử dụng.
 
 ## Những sự cố cache thường gặp
 
@@ -107,8 +124,8 @@ Ví dụ: key `homepage:campaign` hết hạn lúc 20:00, đúng lúc 20.000 use
 
 Giải pháp:
 
-- **Request coalescing/singleflight:** chỉ một request load dữ liệu; các request cùng key chờ chung kết quả.
-- **Distributed lock:** một worker giữ lock để rebuild; lock phải có TTL, timeout và ownership token.
+- **Request coalescing/singleflight trong cùng application instance:** các request cùng key được gộp vào một tác vụ đang chạy. Chỉ request đầu tiên đọc backend; các request còn lại dùng chung `Future/Promise` và nhận cùng kết quả. Cách này không cần distributed lock nhưng không ngăn một instance khác đồng thời rebuild cùng key.
+- **Điều phối giữa nhiều application instance:** khi toàn hệ thống chỉ được phép có một instance rebuild key, có thể dùng distributed lock hoặc một cơ chế coordinator tương đương. Instance giữ lock đọc backend và ghi cache; các instance khác chờ, đọc lại cache hoặc tạm trả stale data. Lock phải có TTL, ownership token và timeout chờ.
 - **Stale-while-revalidate:** tạm trả bản cũ trong lúc một worker refresh nền.
 - **Refresh-ahead:** chủ động refresh hot key trước khi TTL kết thúc.
 - **TTL jitter:** cộng một khoảng ngẫu nhiên để nhiều key không hết hạn cùng lúc.
@@ -581,3 +598,5 @@ Thiết kế này phân biệt rõ dữ liệu **để hiển thị nhanh** và 
 ## Tóm tắt
 
 Cache đổi **memory và độ phức tạp consistency** lấy **latency thấp hơn và backend load nhỏ hơn**. Cache tốt không chỉ là `GET/SET`; nó cần key đúng, TTL hợp lý, invalidation rõ ràng, chống stampede, failure handling và observability. Bắt đầu bằng cache-aside cho dữ liệu đọc nhiều, đo kết quả, rồi chỉ thêm multi-level cache, refresh-ahead hoặc write-behind khi workload thực sự cần.
+
+
