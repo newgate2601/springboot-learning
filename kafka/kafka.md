@@ -1,283 +1,1190 @@
 # Apache Kafka
 
-## Tài liệu tham khảo
+## Event-Driven Architecture
 
-- <https://kafka.apache.org/documentation/>
-- <https://developer.confluent.io/courses/kafka-connect/intro/>
-- <https://developer.confluent.io/learn/kafka-transactions-and-guarantees/>
-- <https://piotrminkowski.com/2022/01/24/distributed-transactions-in-microservices-with-kafka-streams-and-spring-boot/>
-- <https://romanglushach.medium.com/the-evolution-of-kafka-architecture-from-zookeeper-to-kraft-f42d511ba242>
-
-## Kafka vs RabbitMQ Overview
-
-- Message: Kafka persistence >< RabbitMQ xóa ngay sau khi nhận ACK từ consumer.
-- Kafka dùng batching nên thông lượng cao hơn >< RabbitMQ từng message.
-- Performance: Kafka performance tốt hơn, hàng triệu messages 1s, thiết kế để hoạt động trong môi trường distributed để xử lý song song >< RabbitMQ cũng tốt nhưng không bằng Kafka, khoảng 10000 message 1s.
-- Độ tin cậy, durability: Kafka độ tin cậy cao, persist message trên disk, hỗ trợ replica để đảm bảo dữ liệu không bị mất nếu node bị lỗi, ACK >< RabbitMQ cũng dùng ACK, replica.
-- Consume: Kafka dùng pull >< RabbitMQ mặc định dùng push, có thể chuyển sang pull
-- Usecase: Kafka dùng trong xử lý big data, real time, monitoring >< RabbitMQ hạn chế hơn, phù hợp với truyền thông giữa các service, tác vụ không yêu cầu thông lượng cao.
-- Scale: Kafka dễ scale hơn RabbitMQ.
-
-## Pipeline
-
-![Kafka image 1](images/kafka-image-01.png)
-
-![Kafka image 2](images/kafka-image-02.png)
-
-**Data pipeline** là một luồng xử lý dữ liệu tự động hoặc bán tự động. Nó lấy dữ liệu từ một hoặc nhiều nguồn, xử lý/biến đổi dữ liệu đó, rồi đưa kết quả tới một hoặc nhiều nơi nhận.
-
-Trong context Kafka, pipeline thường là **event streaming pipeline**: dữ liệu được ghi nhận dưới dạng các event, lưu vào Kafka topic, sau đó nhiều consumer hoặc connector có thể đọc cùng dòng event đó để xử lý theo mục đích riêng.
-
-Nói đơn giản:
-
-- **Data source**: nơi phát sinh hoặc lưu dữ liệu gốc, ví dụ MySQL, PostgreSQL, MongoDB, log file, API, app backend.
-- **Kafka topic**: nơi Kafka lưu dòng event. Topic giống một dòng dữ liệu có tên, ví dụ `order-created`, `payment-succeeded`, `user-clicked-product`.
-- **Pipeline processor**: phần xử lý ở giữa, có thể dùng Kafka Streams, Flink, consumer service tự viết, hoặc job xử lý dữ liệu khác.
-- **Data sink**: nơi nhận dữ liệu sau xử lý, ví dụ Elasticsearch, Redis, Data Warehouse, S3, dashboard realtime, service khác.
-- **Source connector**: connector đọc dữ liệu từ hệ thống ngoài rồi ghi vào Kafka, ví dụ đọc thay đổi từ PostgreSQL vào topic.
-- **Sink connector**: connector đọc dữ liệu từ Kafka rồi ghi ra hệ thống ngoài, ví dụ đẩy event từ Kafka sang Elasticsearch hoặc S3.
-
-Ví dụ thực tế trong hệ thống bán hàng:
+🙂 **Event-Driven Architecture (EDA)** là kiến trúc trong đó các thành phần phối hợp chủ yếu bằng cách **phát sinh, truyền và phản ứng với event**. Event là bản ghi bất biến mô tả sự thật đã xảy ra như `OrderCreated`, `PaymentSucceeded`, `InventoryReserved`.
 
 ```text
-Order Service
-  -> Kafka topic: order-created
-  -> Fraud Check Service
-  -> Payment Service
-  -> Data Warehouse
-  -> Realtime Dashboard
+Order Service ──publish──> OrderCreated
+                              ├──> Payment Service
+                              ├──> Inventory Service
+                              ├──> Notification Service
+                              └──> Analytics Service
 ```
 
-Khi user đặt hàng, `Order Service` không cần gọi trực tiếp tất cả service còn lại. Nó chỉ publish event `order-created` vào Kafka. Các service khác subscribe event đó và xử lý theo nhu cầu riêng. Cách này giúp hệ thống dễ mở rộng hơn, vì thêm service mới chỉ cần subscribe topic, không phải sửa lại flow chính của `Order Service`.
+Producer biết điều gì đã xảy ra nhưng không cần biết tất cả ai sẽ phản ứng. Consumer tự đăng ký, deploy và scale độc lập.
 
-Pipeline quan trọng vì:
+> EDA không đồng nghĩa với Kafka. EDA là cách thiết kế; Kafka, RabbitMQ hoặc cloud pub/sub là hạ tầng có thể dùng để hiện thực kiến trúc đó.
 
-- Giảm thao tác thủ công khi di chuyển/xử lý dữ liệu.
-- Tách rời source và sink, giúp hệ thống bớt phụ thuộc trực tiếp vào nhau.
-- Kafka có thể đóng vai trò buffer ở giữa, giúp hệ thống chịu tải tốt hơn khi consumer xử lý chậm.
-- Dễ scale từng phần: producer, Kafka broker, partition, consumer, connector, storage.
-- Có thể replay dữ liệu trong thời gian Kafka còn giữ log, hữu ích khi downstream service lỗi hoặc cần xử lý lại.
-- Phù hợp cho logging, analytics, monitoring, CDC, notification, recommendation, fraud detection.
+### Tại sao cần Event-Driven Architecture?
 
-![Kafka image 3](images/kafka-image-03.png)
+Synchronous flow `Order -> Payment -> Inventory -> Shipping -> Notification` dễ hiểu khi hệ thống nhỏ, nhưng khi số service và lưu lượng tăng lên sẽ xuất hiện các vấn đề sau.
 
-### ETL và ELT
+#### 1. Temporal coupling
 
-ETL và ELT đều là cách đưa dữ liệu từ source tới hệ thống đích. Điểm khác nhau quan trọng nhất là **transform xảy ra trước hay sau khi dữ liệu được load vào nơi lưu trữ đích**.
+**Temporal coupling** nghĩa là các service phải cùng hoạt động tại đúng thời điểm request được xử lý.
 
-| Mô hình | Luồng xử lý | Khi nào hợp | Điểm cần chú ý |
+```text
+Order Service       UP
+Payment Service     UP
+Inventory Service   DOWN  -> cả synchronous flow bị chặn
+Shipping Service    UP
+```
+
+Chỉ cần Inventory đang restart, deploy hoặc mất kết nối thì toàn bộ request có thể thất bại dù các service khác vẫn hoạt động. Producer và downstream bị ràng buộc về **thời gian tồn tại**: caller không thể hoàn tất nếu callee chưa sẵn sàng ngay lúc đó.
+
+Với event-driven flow, Order Service có thể publish `OrderCreated` vào hạ tầng lưu event. Inventory Service tạm dừng rồi đọc event sau khi hoạt động trở lại, miễn event vẫn còn được lưu. Producer và consumer không bắt buộc online cùng lúc.
+
+> Không phải bước nào cũng có thể xử lý sau. Nếu business bắt buộc xác nhận còn hàng trước khi trả kết quả checkout, bước đó vẫn cần synchronous call hoặc một cơ chế reservation phù hợp.
+
+#### 2. Availability coupling
+
+**Availability coupling** nghĩa là độ sẵn sàng của toàn bộ flow phụ thuộc vào độ sẵn sàng của mọi service trên critical path.
+
+Giả sử mỗi service có availability `99.9%` và request phải đi qua năm service độc lập:
+
+```text
+Availability xấp xỉ
+= 99.9% × 99.9% × 99.9% × 99.9% × 99.9%
+≈ 99.5%
+```
+
+Con số chỉ mang tính minh họa vì failure thực tế không hoàn toàn độc lập. Ý chính là thêm dependency bắt buộc có thể làm availability end-to-end thấp hơn availability của từng service.
+
+```text
+Order đã lưu -> Payment thành công -> Inventory đã giữ
+                                     -> Notification timeout
+                                     -> API trả lỗi 500
+```
+
+User nhận lỗi dù nghiệp vụ quan trọng đã chạy gần hoàn tất. Nếu Notification chỉ là side effect, đặt nó trên critical path là coupling không cần thiết. Publish `OrderConfirmed` để Notification xử lý bất đồng bộ giúp lỗi gửi email không làm lỗi việc xác nhận order.
+
+EDA không làm downstream tự nhiên có availability cao hơn. Nó giúp **cô lập lỗi**, cho phép consumer phục hồi và xử lý backlog; broker/event platform lúc này lại là dependency hạ tầng cần được thiết kế chịu lỗi.
+
+#### 3. Latency cộng dồn
+
+Trong chuỗi gọi tuần tự, caller phải chờ từng network round-trip và thời gian xử lý của từng downstream:
+
+```text
+Order DB                 40 ms
+Payment Service         250 ms
+Inventory Service       120 ms
+Shipping Service        180 ms
+Notification Service    300 ms
+--------------------------------
+Tổng gần đúng            890 ms
+```
+
+Ngoài business logic còn có DNS, connection pool, TLS, serialization, network congestion, queue trong server và Garbage Collection. Chỉ một service có tail latency cao cũng kéo dài toàn bộ request:
+
+```text
+Payment bình thường:  250 ms
+Payment tại p99:     2.000 ms
+                     -> latency end-to-end tăng mạnh
+```
+
+Gọi song song các downstream độc lập có thể giảm tổng thời gian xuống gần latency của nhánh chậm nhất, nhưng caller vẫn phải chờ và xử lý partial failure.
+
+Với EDA, API chỉ hoàn tất phần bắt buộc rồi publish event; Notification, Analytics hoặc Loyalty chạy sau. Điều này giảm **response latency mà client phải chờ**, không có nghĩa toàn bộ business process hoàn thành ngay. End-to-end processing latency có thể dài hơn và cần SLA riêng.
+
+#### 4. Retry mơ hồ
+
+Timeout chỉ nói rằng caller **không nhận được response đúng hạn**, không khẳng định downstream chưa thực hiện nghiệp vụ.
+
+```text
+Order Service -> Payment Service: charge 1.250.000 VND
+Payment Service -> ngân hàng: thanh toán thành công
+Payment Service -> lưu transaction thành công
+Response -> bị mất hoặc tới sau timeout
+Order Service -> chỉ nhìn thấy timeout
+```
+
+Nếu Order Service retry ngây thơ, khách hàng có thể bị charge hai lần. Nếu không retry, order có thể bị đánh dấu thất bại dù tiền đã trừ.
+
+Các câu hỏi bắt buộc xuất hiện:
+
+- Retry lỗi nào: timeout, `503`, connection reset hay tất cả?
+- Retry bao nhiêu lần và backoff thế nào?
+- Request đầu tiên đã tạo side effect chưa?
+- Downstream có hỗ trợ idempotency key không?
+- Caller crash sau khi downstream thành công thì phục hồi state thế nào?
+
+EDA cũng có duplicate vì producer hoặc consumer có thể retry. Event flow phải thiết kế delivery semantics, mang `eventId`/business key và yêu cầu consumer idempotent. Broker không tự giải quyết idempotency của Payment hoặc external database.
+
+#### 5. Khó thêm downstream mới
+
+Trong synchronous orchestration, Order Service thường biết trực tiếp mọi downstream:
+
+```java
+paymentClient.charge(order);
+inventoryClient.reserve(order);
+notificationClient.send(order);
+analyticsClient.track(order);
+loyaltyClient.addPoints(order);
+```
+
+Thêm Fraud Detection hoặc Recommendation đòi hỏi sửa code, config, authentication, timeout, circuit breaker, test và deployment của Order Service. Service gốc ngày càng biết nhiều capability không thuộc trách nhiệm cốt lõi:
+
+```text
+Thêm Loyalty Service
+  -> sửa Order Service
+  -> thêm client/config/auth
+  -> thay đổi error handling
+  -> regression test checkout
+  -> deploy lại Order Service
+```
+
+Với event `OrderConfirmed`, consumer mới chỉ cần subscribe contract phù hợp; producer không cần biết Analytics, Loyalty hay Recommendation tồn tại.
+
+Việc thêm consumer vẫn có chi phí: schema compatibility, ACL, tải bổ sung lên broker, replay policy và tác động nếu consumer gọi ngược hệ thống nguồn.
+
+#### 6. Khó hấp thụ traffic spike
+
+Giả sử flash sale tạo `10.000 order/s`, nhưng Inventory chỉ xử lý được `3.000 request/s`:
+
+```text
+Order traffic:       10.000 request/s
+Inventory capacity:  3.000 request/s
+Chênh lệch:           7.000 request/s
+```
+
+Trong synchronous flow, request dồn vào connection pool, thread pool và queue trong memory:
+
+```text
+Traffic spike
+  -> connection pool đầy
+  -> request chờ lâu
+  -> timeout
+  -> caller retry
+  -> traffic tăng thêm
+  -> cascading failure
+```
+
+Retry đồng loạt có thể tạo **retry storm**: downstream vừa phục hồi đã bị request cũ và mới đánh cùng lúc.
+
+Event broker có thể đóng vai trò buffer:
+
+```text
+Producer: 10.000 event/s -> durable event log -> Consumer: 3.000 event/s
+                                      |
+                                      -> backlog/consumer lag tăng
+```
+
+Producer tiếp tục ghi trong giới hạn throughput và storage; consumer xử lý theo capacity rồi bắt kịp sau khi spike kết thúc. Nhưng buffer không tạo thêm năng lực xử lý và không vô hạn:
+
+- Backlog tăng thêm `7.000 event/s`.
+- Consumer lag làm business result tới chậm hơn.
+- Spike kéo dài có thể làm cạn storage hoặc vượt retention.
+- Vẫn cần autoscaling, backpressure, rate limit, quota và capacity planning.
+
+Kafka giúp lưu backlog bền vững và quan sát consumer lag, nhưng hệ thống vẫn phải xác định độ trễ tối đa chấp nhận được và cách bảo vệ downstream.
+
+### Thành phần và cấu trúc event
+
+```text
+Producer -> topic/queue/stream -> broker/platform -> consumer/processor
+```
+
+- **Producer** phát hiện thay đổi và publish event.
+- **Channel** là luồng logic như `order-events`.
+- **Broker/platform** nhận, lưu hoặc route event.
+- **Consumer/processor** filter, enrich, join, aggregate hoặc tạo event mới.
+- **Contract/schema** quy định field, type, semantic và compatibility.
+
+```json
+{
+  "eventId": "01J6A8Y7M4N9K2P3Q5R6S7T8V9",
+  "eventType": "OrderCreated",
+  "eventVersion": 2,
+  "occurredAt": "2026-08-28T09:15:30Z",
+  "producer": "order-service",
+  "correlationId": "checkout-7f3c",
+  "data": {"orderId":"9001","customerId":"C101","totalAmount":1250000}
+}
+```
+
+`eventId` dùng deduplicate; `eventVersion` xác định contract; `occurredAt` là thời điểm business xảy ra; `correlationId` nối event cùng flow.
+
+### Choreography
+
+#### Cách các service phối hợp với nhau
+
+Trong Choreography không có một service trung tâm đứng ra điều khiển toàn bộ quy trình. Mỗi service chỉ cần biết:
+
+- Nó phải nhận thông báo từ service nào.
+- Khi nhận thông báo thì thực hiện phần nghiệp vụ nào.
+- Xử lý xong thì thông báo kết quả cho các service khác.
+- Nếu thất bại thì phải thông báo lỗi để service đã thực hiện bước trước biết mà hoàn tác.
+
+Xét quy trình đặt hàng gồm ba service chính:
+
+- **Order Service** quản lý trạng thái đơn hàng.
+- **Inventory Service** quản lý số lượng hàng và việc giữ hàng.
+- **Payment Service** quản lý thanh toán và hoàn tiền.
+
+Order Service không gọi lần lượt Inventory rồi Payment. Thay vào đó, mỗi service phát thông báo về kết quả công việc của mình; service quan tâm sẽ nhận thông báo đó và tiếp tục xử lý.
+
+#### Luồng xử lý bình thường
+
+Khi khách hàng tạo đơn, Order Service lưu đơn ở trạng thái đang xử lý rồi phát một thông báo cho biết có đơn hàng mới.
+
+Inventory Service là service đăng ký nhận thông báo này. Sau khi nhận được, Inventory kiểm tra số lượng hàng và giữ hàng cho đơn.
+
+Nếu giữ hàng thành công, Inventory phát thông báo cho biết phần hàng của đơn đã được giữ. Payment Service đăng ký nhận loại thông báo này, vì Payment chỉ được phép thanh toán sau khi Inventory đã giữ được hàng.
+
+Payment thực hiện thanh toán. Khi thanh toán thành công, Payment phát thông báo kết quả. Order Service nhận thông báo đó và chuyển đơn sang trạng thái đã xác nhận.
+
+Có thể mô tả bằng trách nhiệm của từng service:
+
+```text
+Order Service:
+Phát thông báo có đơn mới
+        |
+        v
+Inventory Service:
+Nhận thông báo -> giữ hàng -> phát thông báo giữ hàng thành công
+        |
+        v
+Payment Service:
+Nhận thông báo -> thanh toán -> phát thông báo thanh toán thành công
+        |
+        v
+Order Service:
+Nhận thông báo -> xác nhận đơn
+```
+
+Điểm quan trọng là service phía trước không gọi trực tiếp service phía sau:
+
+- Order không gọi Payment.
+- Inventory không gọi Payment.
+- Inventory chỉ thông báo kết quả giữ hàng.
+- Payment tự đăng ký nhận kết quả đó và quyết định bắt đầu thanh toán.
+
+Luồng được hình thành từ việc service nào đăng ký nhận thông báo của service nào.
+
+#### Compensation
+
+Compensation là một **nghiệp vụ mới để bù tác động của bước đã thành công**, không phải rollback hay xóa lịch sử. Ví dụ: Payment thất bại sau khi Inventory đã giữ hàng thì Inventory phải release reservation; đã thu tiền thì Payment hoàn tiền; đã tạo vận đơn thì Shipping hủy vận đơn.
+
+Nguyên tắc ownership: service nào sở hữu resource thì service đó bù resource của mình. Order chỉ theo dõi trạng thái chung, không tự cộng stock hay hoàn tiền thay service khác.
+
+| Resource cần bù | Service thực hiện | Hành động |
+| --- | --- | --- |
+| Reservation | Inventory | Trả hàng |
+| Payment | Payment | Hoàn tiền |
+| Shipment | Shipping | Hủy vận đơn |
+
+Trong Choreography, service gặp lỗi phát event; các service liên quan tự subscribe và phản ứng:
+
+```text
+PaymentFailed
+  -> Inventory: release hàng
+  -> Order: CANCELLING
+
+InventoryReleased
+  -> Order: CANCELLED
+```
+
+Order chỉ chuyển sang `CANCELLED` sau khi mọi compensation bắt buộc hoàn tất. Trong lúc chờ, giữ trạng thái `CANCELLING`.
+
+Nếu nhiều bước cần bù, có thể:
+
+- Chạy **tuần tự** khi business yêu cầu thứ tự, thường theo chiều ngược với flow đã chạy.
+- Chạy **song song** khi các hành động độc lập; Order phải lưu và chờ đủ kết quả.
+
+Có thể để từng service nghe trực tiếp failure event, hoặc để Order phát một event chung như `OrderCancellationRequested`. Cách thứ hai giảm số loại lỗi downstream mà mỗi service phải biết; nhưng nếu Order điều khiển chi tiết thứ tự và chờ từng bước, nó đã trở thành orchestrator.
+
+Các yêu cầu bắt buộc:
+
+- **Idempotent:** duplicate event không được hoàn tiền hay cộng stock hai lần; chỉ cho phép transition hợp lệ như `RESERVED -> RELEASED`.
+- **Retry và phục hồi:** compensation lỗi thì retry với backoff, sau đó DLT/alert/replay hoặc `MANUAL_REVIEW`; không đánh dấu hoàn tất chỉ vì đã gửi message.
+- **Xử lý timeout thận trọng:** timeout là kết quả chưa rõ, đặc biệt với Payment; cần reconcile bằng business key/idempotency key trước khi retry hoặc hoàn tiền.
+- **Chặn vòng lặp:** event có ý nghĩa rõ, không phát lại do duplicate, từ chối transition sai và dùng `correlationId` để trace.
+
+Khi số compensation, deadline và ràng buộc thứ tự tăng cao, nên chuyển critical flow sang Orchestration.
+
+#### Quan sát luồng Choreography
+
+Do không có coordinator, cần biết rõ:
+
+- Service nào phát từng loại thông báo.
+- Service nào consume.
+- Service nào compensation resource nào.
+- Order đang chờ compensation nào.
+- Message nào đang retry hoặc nằm trong Dead-Letter Topic.
+
+Một bảng ownership có thể dùng khi thiết kế:
+
+| Tình huống | Service phát | Service consume | Hành động |
 | --- | --- | --- | --- |
-| **ETL** | `Extract -> Transform -> Load` | Sink chỉ nên nhận dữ liệu sạch; cần mask dữ liệu nhạy cảm trước khi lưu; cần chuẩn hóa realtime để nhiều downstream dùng chung | Phải định nghĩa transform sớm. Nếu logic sai, cần sửa logic rồi replay/backfill dữ liệu |
-| **ELT** | `Extract -> Load -> Transform` | Data Lake/Lakehouse/Warehouse có storage và compute mạnh; muốn giữ raw data để audit, thử nhiều model hoặc transform lại | Raw zone cần governance, phân quyền, schema, retention và kiểm soát PII chặt chẽ |
+| Có đơn mới | Order | Inventory | Giữ hàng |
+| Giữ hàng thành công | Inventory | Payment | Thanh toán |
+| Thanh toán thành công | Payment | Order | Xác nhận đơn |
+| Thanh toán thất bại | Payment | Inventory, Order | Trả hàng, bắt đầu hủy |
+| Shipping thất bại | Shipping | Payment, Inventory, Order | Hoàn tiền, trả hàng, theo dõi hủy |
+| Hoàn tiền xong | Payment | Order | Đánh dấu phần payment đã bù |
+| Trả hàng xong | Inventory | Order | Đánh dấu phần inventory đã bù |
 
-#### ETL là gì?
+Bảng này quan trọng hơn việc chỉ vẽ một chuỗi tên event, vì nó thể hiện rõ ownership và trách nhiệm.
 
-**ETL** là viết tắt của `Extract -> Transform -> Load`:
+#### Khi nào Choreography bắt đầu quá phức tạp?
 
-- **Extract**: lấy dữ liệu từ database, API, log, file, application event,...
-- **Transform**: validate schema, lọc record lỗi, đổi format/timezone/currency, mask PII, deduplicate, join, enrich hoặc aggregate.
-- **Load**: ghi dữ liệu đã được xử lý vào Data Warehouse, Elasticsearch, database phục vụ báo cáo hoặc một Kafka topic khác.
+Choreography phù hợp khi:
 
-Ví dụ thực tế: hệ thống bán hàng cần tạo dữ liệu order chuẩn hóa cho dashboard realtime.
+- Flow ngắn.
+- Service phản ứng tương đối độc lập.
+- Compensation ít và không cần thứ tự phức tạp.
+- Không cần một nơi trung tâm quản lý workflow.
 
-```text
-MySQL binlog
-  -> CDC source connector
-  -> Kafka topic: mysql.shop.orders.raw
-  -> Kafka Streams/Flink
-       - chỉ giữ order hợp lệ
-       - đổi USD sang VND
-       - chuẩn hóa created_at về UTC
-       - loại bỏ/mask thông tin nhạy cảm
-  -> Kafka topic: analytics.orders.cleaned
-  -> Warehouse sink connector
-  -> bảng fact_orders
-```
+Nên cân nhắc Orchestration khi:
 
-Đây là **streaming ETL** vì dữ liệu được transform trước khi load vào bảng đích `fact_orders`. Kafka topic `mysql.shop.orders.raw` vẫn có thể giữ event gốc trong một khoảng retention để debug hoặc replay, nhưng xét theo đích phân tích thì bước transform vẫn nằm trước bước load.
+- Có nhiều bước bắt buộc.
+- Compensation phải chạy theo thứ tự.
+- Order phải chờ nhiều kết quả bù.
+- Có nhiều timeout và retry policy.
+- Có manual review.
+- Không còn rõ service nào chịu trách nhiệm kết thúc flow.
+- Muốn biết chính xác workflow đang ở bước nào từ một nơi duy nhất.
 
-#### ELT là gì?
-
-**ELT** là viết tắt của `Extract -> Load -> Transform`. Dữ liệu được load gần như nguyên bản vào Data Lake, Lakehouse hoặc staging/raw table trước; các SQL job, dbt, Spark hoặc engine của Warehouse mới tạo các bảng đã chuẩn hóa sau đó.
+Quy tắc thực tế:
 
 ```text
-MySQL/PostgreSQL/SaaS API
-  -> source connector hoặc CDC
-  -> Kafka raw topics
-  -> S3/GCS/ADLS/BigQuery/Snowflake raw zone
-  -> SQL/dbt/Spark transform
-  -> staging_orders
-  -> fact_orders
-  -> sales_daily
+Flow ngắn, phản ứng độc lập
+  -> Choreography
+
+Flow dài, nhiều nhánh, timeout và compensation
+  -> Orchestration
+
+Critical path phức tạp nhưng có nhiều side effect độc lập
+  -> Orchestration cho critical path
+  -> Choreography cho side effect
 ```
 
-Đây là **streaming ingestion + ELT**: Kafka và sink connector đưa dữ liệu mới vào raw zone liên tục, nhưng transform business chính diễn ra sau khi load. ELT không đồng nghĩa với batch; bước transform có thể chạy theo lịch, micro-batch hoặc continuous tùy nền tảng đích.
+### Orchestration
 
-#### Kafka nằm ở đâu trong ETL/ELT?
-
-Kafka là **event streaming platform và lớp trung chuyển/lưu event**, không phải cứ đưa dữ liệu qua Kafka thì pipeline tự động trở thành ETL hoặc ELT.
-
-- **Kafka Connect** chủ yếu di chuyển dữ liệu vào/ra Kafka. `Source Connector` đọc từ hệ thống ngoài và ghi vào topic; `Sink Connector` đọc topic rồi ghi sang hệ thống đích.
-- **Single Message Transform (SMT)** của Kafka Connect hợp với thay đổi đơn giản trên từng record như rename field, thêm timestamp, route topic hoặc mask field. Không nên dùng SMT cho join, aggregate hoặc business logic phức tạp.
-- **Kafka Streams/Flink/ksqlDB** phù hợp với transform phức tạp như filter, branch, join, enrich, aggregate, windowing và xử lý theo event time.
-- **Data Warehouse/Lakehouse engine** phù hợp khi chọn ELT và muốn transform bằng SQL/dbt/Spark sau khi raw data đã được load.
-
-Hai kiến trúc thường gặp:
+Orchestration dùng một **orchestrator** để quyết định bước tiếp theo của workflow. Participant vẫn sở hữu nghiệp vụ và dữ liệu của mình; orchestrator chỉ gửi command, nhận kết quả và lưu tiến độ.
 
 ```text
-Streaming ETL
-Source -> Kafka raw topic -> Stream processor -> Kafka cleaned topic -> Sink
-
-Streaming ingestion + ELT
-Source -> Kafka raw topic -> Raw storage/table -> Transform trong Lakehouse/Warehouse
+OrderCreated
+  -> Orchestrator gửi ReserveInventory
+  <- InventoryReserved
+  -> Orchestrator gửi ChargePayment
+  <- PaymentSucceeded
+  -> Orchestrator gửi CreateShipment
+  <- ShipmentCreated
+  -> COMPLETED
 ```
 
-Kafka có thể xuất hiện ở cả ETL lẫn ELT. Thậm chí một hệ thống thường dùng **hybrid**: mask PII và validate schema trước khi load, sau đó mới join/aggregate trong Warehouse.
+Khác với Choreography, Inventory không cần biết Payment hay Shipping tồn tại. Nó chỉ xử lý command thuộc domain của mình và trả kết quả.
 
-#### Ví dụ hybrid thực tế
+Orchestrator cần lưu bền vững một lượng state tối thiểu cho mỗi Saga:
 
-Giả sử công ty cần phân tích payment nhưng không được đưa số thẻ thô vào Data Lake:
+- Workflow đang ở bước nào và đang chờ kết quả gì.
+- Những bước nào đã thành công để biết cần compensation gì.
+- Deadline, số lần retry và version để chống cập nhật đồng thời.
+- Trạng thái kết thúc như `COMPLETED`, `COMPENSATED` hoặc `MANUAL_REVIEW`.
+
+Khi một bước lỗi, orchestrator chỉ gửi compensation command cho những bước thực sự đã thành công:
 
 ```text
-Payment DB
-  -> CDC
-  -> payments.raw (quyền truy cập rất hạn chế)
-  -> stream processor tokenization/masking
-  -> payments.sanitized
-  -> Data Lake raw zone
-  -> dbt/Spark join với orders, customers
-  -> payment_daily_report
+InventoryReserved
+PaymentSucceeded
+ShipmentFailed
+  -> RefundPayment
+  -> ReleaseInventory
+  -> OrderCancelled
 ```
 
-- Mask/tokenize số thẻ **trước khi load** là ETL vì đây là yêu cầu bảo mật.
-- Join và aggregate **sau khi load** là ELT vì Warehouse/Lakehouse làm phần transform analytics.
-- Không nhất thiết ép toàn bộ pipeline vào đúng một nhãn; điều quan trọng là đặt transform ở nơi phù hợp với latency, bảo mật, chi phí và khả năng replay.
+Thứ tự compensation do business quyết định, thường ngược với flow đã chạy. Orchestrator phải chờ kết quả thực tế; gửi `RefundPayment` chưa có nghĩa tiền đã được hoàn.
 
-#### Những vấn đề production phải thiết kế
+Các yêu cầu quan trọng:
 
-**1. Schema và data contract**
+- **Durable state:** restart vẫn tiếp tục được workflow đang chạy.
+- **Idempotency:** retry command không được charge, refund hay release hai lần.
+- **Timeout và reconciliation:** timeout là trạng thái chưa rõ; phải kiểm tra kết quả bằng business key trước khi retry hoặc compensation.
+- **Concurrency:** dùng partition theo Saga ID, optimistic locking hoặc cơ chế tương đương để tránh hai nhánh cùng cập nhật sai state.
+- **Failure recovery:** retry với backoff; quá SLA thì alert, DLT hoặc chuyển `MANUAL_REVIEW`.
+- **Atomicity:** cập nhật Saga state và phát command cần Outbox hoặc cơ chế transaction phù hợp.
 
-Producer và consumer cần thống nhất schema. Nên dùng Avro, Protobuf hoặc JSON Schema cùng Schema Registry/data contract để quản lý compatibility. Nếu producer tự ý đổi tên hoặc xóa field, connector hay stream processor có thể lỗi hoặc tạo dữ liệu sai âm thầm.
+Orchestrator không nên chứa domain logic, đọc database của participant hoặc tự thực hiện payment/inventory. Nếu nó làm mọi việc, hệ thống sẽ thành một God Service. Orchestration cũng không bắt buộc gọi HTTP đồng bộ; command và result có thể truyền bất đồng bộ qua broker.
 
-**2. Duplicate và delivery semantics**
+Nên dùng Orchestration khi flow có nhiều bước bắt buộc, nhiều nhánh, timeout, compensation theo thứ tự hoặc cần biết chính xác workflow đang ở đâu. Với reaction độc lập như Notification, Analytics hay Loyalty, Choreography thường gọn hơn.
 
-Kafka/connector thường có thể xử lý theo `at-least-once`, nên record có thể được gửi hoặc xử lý lại khi retry/restart. Sink nên idempotent, chẳng hạn upsert theo `order_id`, hoặc processor cần deduplicate theo business key/event id.
+### So sánh tổng hợp
 
-> Không nên hiểu `exactly-once` là tự động đúng một lần từ database nguồn đến mọi hệ thống đích. Kafka Streams có thể đảm bảo atomic giữa input offset, state store và output Kafka topic khi cấu hình phù hợp; Kafka Connect còn phụ thuộc vào khả năng của từng connector và sink bên ngoài.
+| Tiêu chí | Choreography | Orchestration |
+| --- | --- | --- |
+| Ai quyết định bước tiếp? | Consumer phản ứng với event | Orchestrator |
+| Flow nằm ở đâu? | Phân tán qua subscription | State machine/workflow tập trung |
+| Message thường dùng | Event | Command + result/event |
+| Fan-out | Rất tự nhiên | Thường phát event ra ngoài flow |
+| Timeout | Cần owner/timer riêng | Orchestrator quản lý |
+| Compensation | Phân tán | Điều phối tập trung |
+| Quan sát tiến độ | Tổng hợp event/trace | Đọc Saga state |
+| Flow ngắn | Phù hợp | Có thể dư thừa |
+| Flow dài, nhiều nhánh | Dễ rối | Phù hợp hơn |
+| Nguy cơ | Dependency ẩn, event spaghetti | God Orchestrator |
+| Thêm reaction độc lập | Ít sửa producer | Không cần đưa vào orchestrator |
+| Thay đổi trình tự bắt buộc | Sửa nhiều consumer | Chủ yếu sửa workflow |
 
-**3. Ordering và partition key**
+### Có thể kết hợp cả hai không?
 
-Kafka chỉ đảm bảo thứ tự trong một partition. Nếu cần giữ đúng thứ tự trạng thái của cùng một order, các event nên dùng `order_id` làm key để đi vào cùng partition.
+Có, và đây thường là cách thực tế nhất.
+
+Dùng orchestration cho **critical path**:
 
 ```text
-order_id=9001: CREATED -> PAID -> SHIPPED
+Order Saga
+  -> ReserveInventory
+  -> ChargePayment
+  -> CreateShipment
+  -> OrderConfirmed
 ```
 
-Nếu key không ổn định, `SHIPPED` có thể được xử lý ở partition khác và xuất hiện trước `PAID` ở downstream.
+Dùng choreography cho **side effect**:
 
-**4. Event đến trễ và dữ liệu thay đổi**
+```text
+OrderConfirmed
+  ├-> Notification
+  ├-> Analytics
+  ├-> Loyalty
+  ├-> Recommendation
+  └-> Data Warehouse
+```
 
-Aggregate theo phút/ngày cần phân biệt **event time** với thời điểm processor nhận event. Với event đến trễ, cần thiết kế window/grace period và cách cập nhật lại kết quả đã xuất. CDC cũng có `INSERT`, `UPDATE`, `DELETE`; bỏ qua delete/tombstone có thể làm Warehouse giữ record đã bị xóa ở source.
+Lợi ích:
 
-**5. Record lỗi và poison message**
+- Critical path có state, timeout và compensation rõ.
+- Side effect vẫn loose coupling và dễ mở rộng.
+- Orchestrator không cần biết mọi consumer.
+- Analytics lỗi không làm Saga thất bại.
 
-Không nên để một record sai schema làm đứng toàn bộ connector/pipeline. Cần có retry có giới hạn, Dead Letter Queue (DLQ), alert và quy trình sửa rồi replay record lỗi. DLQ chỉ cô lập lỗi, không thay thế việc theo dõi và xử lý nguyên nhân.
+### Quan hệ với Saga
 
-**6. Replay và backfill**
+**Saga** là pattern quản lý một business transaction trải qua nhiều local transaction.
 
-Kafka cho phép consumer đọc lại khi event còn trong retention. Tuy nhiên replay an toàn cần:
+Saga có thể được triển khai bằng:
 
-- Giữ raw topic đủ lâu hoặc archive sang object storage.
-- Transform có tính deterministic hoặc version rõ ràng.
-- Sink chịu được upsert/deduplicate.
-- Tách luồng backfill khỏi realtime nếu replay tạo tải lớn.
-- Biết output cũ cần ghi đè, hiệu chỉnh hay tạo dataset version mới.
+```text
+Choreography-based Saga
+  -> participant phản ứng với event
 
-#### Khi nào chọn ETL, ELT hoặc hybrid?
+Orchestration-based Saga
+  -> orchestrator gửi command và theo dõi result
+```
 
-| Nhu cầu | Lựa chọn thường phù hợp |
+Saga không đồng nghĩa với orchestration. Điểm chung là không dùng một ACID transaction bao trùm mọi service; failure được xử lý bằng compensation.
+
+### Event và Command trong hai mô hình
+
+Choreography thiên về business event:
+
+```text
+OrderCreated
+InventoryReserved
+PaymentSucceeded
+```
+
+Orchestration thường kết hợp command và result:
+
+```text
+Command: ReserveInventory
+Result:  InventoryReserved / InventoryRejected
+```
+
+Khác biệt semantic:
+
+- Event nói: “Việc này đã xảy ra”.
+- Command nói: “Hãy thử thực hiện việc này”.
+- Command có target/capability cụ thể.
+- Event có thể có nhiều consumer không biết trước.
+
+### Observability cho cả hai mô hình
+
+Mọi message trong cùng flow nên có:
+
+```json
+{
+  "eventId": "E110",
+  "correlationId": "order-9001",
+  "causationId": "E100",
+  "eventType": "InventoryReserved",
+  "occurredAt": "2026-08-28T10:00:10Z"
+}
+```
+
+- `eventId`: nhận diện message và deduplicate.
+- `correlationId`: nối toàn bộ flow của order.
+- `causationId`: message nào tạo ra message hiện tại.
+- `occurredAt`: thời điểm business event xảy ra.
+
+Cần theo dõi:
+
+- Workflow/Saga đang ở state nào.
+- Event cuối cùng của mỗi order.
+- Processing latency từng bước.
+- Timeout và retry count.
+- Consumer lag.
+- Compensation đang pending.
+- Event nằm trong DLT.
+- Workflow quá SLA.
+
+Choreography cần event map và trace tốt hơn vì không có state trung tâm. Orchestration cần dashboard Saga/workflow và alert cho state bị kẹt.
+
+### Cách lựa chọn từng bước
+
+Đặt các câu hỏi sau:
+
+1. Flow có bao nhiêu bước bắt buộc?
+2. Có nhiều nhánh hoặc điều kiện business không?
+3. Có deadline dài hạn không?
+4. Một bước lỗi có cần bù các bước trước không?
+5. Có cần biết chính xác flow đang ở đâu không?
+6. Có manual review không?
+7. Reaction có độc lập với kết quả chính không?
+8. Thêm consumer mới có thường xuyên không?
+
+Gợi ý:
+
+```text
+Reaction độc lập, fan-out
+  -> ưu tiên Choreography
+
+Flow bắt buộc, dài, nhiều nhánh/timeout/compensation
+  -> cân nhắc Orchestration
+
+Critical path phức tạp + nhiều side effect độc lập
+  -> kết hợp cả hai
+```
+
+### Checklist thiết kế Choreography
+
+- Event có business meaning rõ không?
+- Event owner là team/domain nào?
+- Consumer nào nghe từng event?
+- Có event cycle không?
+- Ai sở hữu timeout?
+- Failure event là gì?
+- Compensation do service nào kích hoạt?
+- Làm sao biết flow bị kẹt?
+- Có `correlationId` và tracing không?
+- Consumer có idempotent không?
+- Schema thay đổi được kiểm soát không?
+- Replay có chạy lại side effect không?
+
+### Checklist thiết kế Orchestration
+
+- State machine có được vẽ rõ không?
+- Mỗi state chờ message nào?
+- Deadline của từng bước là gì?
+- Command có idempotency key không?
+- State và command publication có atomic không?
+- Duplicate/out-of-order được xử lý thế nào?
+- Compensation theo thứ tự nào?
+- Compensation thất bại thì retry/manual review ra sao?
+- Orchestrator restart có resume được không?
+- Nhiều instance update cùng Saga được bảo vệ thế nào?
+- Workflow version mới xử lý instance cũ ra sao?
+- Orchestrator có lấn sang domain logic không?
+- Side effect độc lập có thể chuyển sang choreography không?
+
+### Kết luận ngắn
+
+```text
+Choreography:
+“Có việc X đã xảy ra; service nào quan tâm thì tự phản ứng.”
+
+Orchestration:
+“Workflow đang ở bước X; service Y hãy làm việc Z,
+sau đó trả kết quả để tôi quyết định bước tiếp theo.”
+```
+
+Choreography tối ưu cho autonomy, fan-out và reaction độc lập. Orchestration tối ưu cho visibility, trình tự bắt buộc, timeout và compensation. Một hệ thống tốt không cố dùng duy nhất một mô hình; nó chọn mô hình theo tính chất của từng business flow.
+
+### Các kiểu sử dụng event
+
+#### 1. Event Notification
+
+Event chỉ báo rằng việc gì đó đã xảy ra:
+
+```json
+{"eventType":"OrderCreated","orderId":"9001"}
+```
+
+Consumer phải gọi lại producer để lấy chi tiết:
+
+```text
+OrderCreated(9001)
+  -> Notification
+      -> GET /orders/9001
+      -> gửi email
+```
+
+Ưu điểm: payload nhỏ, ít phát tán dữ liệu nhạy cảm, producer vẫn là nguồn chính.
+
+Nhược điểm: consumer lại phụ thuộc runtime vào producer; nhiều consumer có thể làm API nguồn quá tải; dữ liệu đọc được có thể khác thời điểm event; replay event cũ có thể không lấy được state lịch sử.
+
+#### 2. Event-Carried State Transfer
+
+Event mang đủ dữ liệu để consumer xử lý:
+
+```json
+{
+  "eventType":"OrderCreated",
+  "orderId":"9001",
+  "customerId":"C101",
+  "items":[{"productId":"P10","quantity":2}],
+  "totalAmount":1250000
+}
+```
+
+Consumer không phải gọi lại Order Service, có thể xử lý khi producer downtime và replay đúng state lúc event xảy ra.
+
+Đổi lại payload lớn hơn, dữ liệu bị sao chép, có thể stale, schema phức tạp và phải quản lý PII. Không nên nhét toàn bộ database row vào event “cho chắc”; chỉ mang dữ liệu thực sự cần.
+
+#### 3. Event Sourcing
+
+CRUD thường chỉ giữ state cuối:
+
+```text
+account.balance = 800.000
+```
+
+Event Sourcing giữ chuỗi event tạo nên state:
+
+```text
+AccountOpened(0)
+MoneyDeposited(+1.000.000)
+MoneyWithdrawn(-200.000)
+--------------------------
+Balance = 800.000
+```
+
+Ưu điểm: audit trail, biết nguyên nhân thay đổi, dựng projection mới, xem state quá khứ.
+
+Chi phí: event cũ phải đọc được lâu dài; replay có thể chậm nên cần snapshot; side effect không được chạy lại; sửa event sai và xóa PII khó.
+
+> Kafka có log và replay nhưng không tự biến application thành Event Sourcing. Đây là quyết định thiết kế domain và cách dựng state.
+
+#### 4. CQRS và Materialized View
+
+CQRS tách write model và read model:
+
+```text
+Order Service ghi order
+  -> OrderCreated / OrderUpdated
+      ├-> Elasticsearch: Order Search
+      ├-> Customer Order History
+      └-> Sales Dashboard
+```
+
+Consumer tạo **materialized view** đã join/tính sẵn để query nhanh. Đánh đổi là eventual consistency:
+
+```text
+10:00:00.000 Order cập nhật SHIPPED
+10:00:00.050 publish OrderShipped
+10:00:00.200 consumer cập nhật Search
+10:00:00.250 UI mới thấy SHIPPED
+```
+
+Trong 250 ms, write model và read model khác nhau. Hệ thống phải xác định độ trễ chấp nhận được.
+
+### Use case thực tế: quy trình đặt hàng
+
+#### Bước 1. Tạo order
+
+```text
+Client -> POST /orders
+Order Service:
+  1. validate
+  2. tính tổng tiền
+  3. lưu order=PENDING
+  4. publish OrderCreated
+  5. trả orderId=9001
+```
+
+#### Bước 2. Giữ hàng
+
+```text
+Đủ hàng:
+InventoryReserved(orderId=9001, reservationId=R500)
+
+Thiếu hàng:
+InventoryRejected(orderId=9001, reason=OUT_OF_STOCK)
+```
+
+Reservation cần deadline, ví dụ 15 phút, vì không thể giữ hàng mãi khi khách chưa thanh toán.
+
+#### Bước 3. Thanh toán
+
+```text
+InventoryReserved
+  -> ChargePayment(9001, 1.250.000)
+      -> PaymentSucceeded
+      hoặc PaymentFailed
+```
+
+Payment phải idempotent để retry không charge hai lần.
+
+#### Bước 4. Hoàn tất hoặc compensation
+
+Thành công:
+
+```text
+InventoryReserved + PaymentSucceeded
+  -> OrderConfirmed
+  -> CreateShipment
+  -> ShipmentCreated
+```
+
+Thanh toán thất bại:
+
+```text
+InventoryReserved + PaymentFailed
+  -> ReleaseInventory
+  -> InventoryReleased
+  -> OrderCancelled
+```
+
+Đã thanh toán nhưng không giữ được hàng:
+
+```text
+PaymentSucceeded + InventoryRejected
+  -> RefundPayment
+  -> PaymentRefunded
+  -> OrderCancelled
+```
+
+Đây là **Saga**: business transaction lớn được chia thành local transaction. Khi bước sau thất bại, hệ thống chạy **compensation**.
+
+Compensation không phải rollback tuyệt đối:
+
+- Refund là transaction mới, không xóa payment cũ.
+- Release inventory là state change mới.
+- Email đã gửi không thể thực sự thu hồi.
+- Compensation cũng có thể thất bại và cần retry/manual review.
+
+#### Bước 5. Fan-out
+
+```text
+OrderConfirmed
+  ├-> Notification gửi email/push
+  ├-> Loyalty cộng điểm
+  ├-> Analytics cập nhật doanh thu
+  ├-> Recommendation học sở thích
+  └-> Data Platform ghi Warehouse
+```
+
+Mỗi consumer độc lập. Notification lỗi không làm Analytics dừng.
+
+#### Trạng thái user nhìn thấy
+
+| Trạng thái | Ý nghĩa |
 | --- | --- |
-| Fraud detection, alert, search index cần dữ liệu sạch trong vài giây | Streaming ETL |
-| Mask PII trước khi dữ liệu rời vùng bảo mật | ETL hoặc bước ETL đầu của hybrid |
-| Giữ raw data để audit, data science, transform lại nhiều lần | ELT |
-| Báo cáo phức tạp, nhiều join lớn, logic thay đổi thường xuyên | ELT trong Warehouse/Lakehouse |
-| Vừa cần realtime serving vừa cần analytics linh hoạt | Hybrid: ETL realtime + ELT analytics |
+| `PENDING` | Đã nhận đơn, đang xử lý |
+| `RESERVING_INVENTORY` | Đang giữ hàng |
+| `PAYMENT_PROCESSING` | Đang thanh toán |
+| `CONFIRMED` | Đơn được chấp nhận |
+| `CANCELLED` | Đơn thất bại/đã hoàn tác |
+| `MANUAL_REVIEW` | Cần nhân viên xử lý |
 
-Tư duy chọn nhanh:
+Không nên trả “thành công” khi mới nhận event. Có thể trả `202 Accepted` hoặc order `PENDING`, rồi client polling/WebSocket/SSE để nhận kết quả cuối.
 
-- Cần phản ứng ngay hoặc sink chỉ được nhận dữ liệu đã làm sạch: transform trước khi load.
-- Cần giữ dữ liệu gốc và thường xuyên thay đổi logic analytics: load raw trước rồi transform.
-- Chỉ cần đổi tên/mask/route từng record: cân nhắc Kafka Connect SMT.
-- Cần join, aggregate, window hoặc stateful processing realtime: dùng stream processor.
-- Cần join rất lớn và truy vấn ad-hoc trên lịch sử dài: thường để Warehouse/Lakehouse xử lý.
+### Những use case phù hợp với EDA
 
-#### Đánh giá lại ghi chú cũ
-
-- Đúng: ETL là `Extract -> Transform -> Load`, ELT là `Extract -> Load -> Transform`; Kafka có thể tham gia cả hai mô hình.
-- Cần làm rõ: Kafka không tự thực hiện toàn bộ ETL/ELT. Kafka Connect đảm nhiệm data movement; transform phức tạp cần stream processor hoặc compute engine ở hệ thống đích.
-- Cần bổ sung: ELT không nhất thiết là batch, còn streaming ETL không loại trừ việc giữ raw topic để replay.
-- Cần cẩn trọng: delivery guarantee phải xét **end-to-end**. Không nên tuyên bố exactly-once chỉ vì một đoạn Kafka Streams hoặc connector đã bật exactly-once.
-
-### Batch Processing
-
-**Batch Processing** là cách xử lý dữ liệu theo từng lô. Hệ thống gom dữ liệu trong một khoảng thời gian rồi mới chạy job xử lý.
-
-Ví dụ:
-
-- Mỗi đêm tính doanh thu trong ngày.
-- Mỗi 30 phút đồng bộ tồn kho từ database sang Elasticsearch.
-- Mỗi giờ tổng hợp log để tạo report.
-
-Ưu điểm:
-
-- Dễ triển khai, dễ debug.
-- Phù hợp với report, thống kê, backup, data warehouse.
-- Có thể xử lý dữ liệu lớn nhưng không yêu cầu realtime.
-
-Nhược điểm:
-
-- Dữ liệu không phải mới nhất tại thời điểm user xem.
-- Nếu job chạy lâu hoặc lỗi, dữ liệu bị trễ.
-- Có thể phải scan cả dataset, kể cả phần không thay đổi.
-- Không hợp với use case cần phản ứng ngay như fraud detection, notification realtime, tracking tài xế.
-
-MapReduce là một mô hình xử lý batch nổi tiếng cho dữ liệu lớn. Tuy nhiên với hệ thống hiện đại, batch job cũng có thể dùng Spark, Flink batch, SQL job trong Data Warehouse, hoặc scheduler như Airflow.
-
-### Stream Processing - Event Driven Architecture
-
-**Stream Processing** là cách xử lý dữ liệu ngay khi dữ liệu vừa xuất hiện dưới dạng event. Thay vì đợi đủ một lô lớn như batch, hệ thống xử lý liên tục.
-
-Ví dụ:
+#### Notification và side effect
 
 ```text
-User click product
-  -> click event vào Kafka
-  -> Recommendation Service cập nhật gợi ý
-  -> Analytics Service cập nhật dashboard realtime
-  -> Fraud Service kiểm tra hành vi bất thường
+PasswordChanged
+  ├-> gửi email cảnh báo
+  ├-> revoke session
+  └-> ghi audit log
 ```
 
-Đặc điểm quan trọng:
+#### Realtime analytics
 
-- **Continuous processing**: pipeline chạy liên tục, có event tới là xử lý.
-- **Low latency**: độ trễ thấp, thường tính bằng mili giây hoặc dưới vài giây.
-- **Event-time processing**: xử lý dựa trên thời điểm event thật sự xảy ra, không chỉ dựa trên thời điểm event đến hệ thống. Điểm này quan trọng khi event đến trễ hoặc đến không đúng thứ tự.
-- **Change Data Capture (CDC)**: bắt thay đổi từ database rồi đẩy thành event, ví dụ user update email, order đổi status, product đổi stock.
+```text
+ProductViewed / AddedToCart / OrderConfirmed
+  -> aggregate theo phút
+  -> dashboard conversion
+```
 
-Use case thực tế:
+#### Change Data Capture
 
-- Realtime dashboard: số order, doanh thu, active user cập nhật liên tục.
-- Notification: gửi email/push notification khi order được tạo hoặc payment thành công.
-- Fraud detection: phát hiện giao dịch bất thường ngay lúc nó xảy ra.
-- Search indexing: update Elasticsearch khi product/user/order thay đổi.
-- Log monitoring: gom log từ nhiều service để alert khi error tăng đột biến.
-- Recommendation: cập nhật gợi ý dựa trên hành vi vừa xảy ra của user.
+```text
+PostgreSQL/MySQL -> CDC -> customer-changes
+                           ├-> Elasticsearch
+                           ├-> Cache
+                           └-> Data Warehouse
+```
 
-Tư duy chọn nhanh:
+CDC đồng bộ tốt nhưng database row change không phải lúc nào cũng có semantic rõ như domain event.
 
-- Dữ liệu xử lý theo lịch, không cần realtime: dùng **Batch Processing**.
-- Dữ liệu cần phản ứng ngay khi phát sinh: dùng **Stream Processing**.
-- Cần tách rời nhiều service và cho nhiều consumer đọc cùng dữ liệu: Kafka rất hợp làm trung tâm event pipeline.
+#### Fraud detection
+
+```text
+LoginAttempt + DeviceChanged + PaymentRequested
+  -> join theo account
+  -> risk score
+  -> FraudSuspected
+```
+
+#### IoT và telemetry
+
+Hàng nghìn thiết bị gửi nhiệt độ, vị trí, metric; consumer lưu lịch sử, phát hiện bất thường hoặc cập nhật dashboard.
+
+#### Streaming ETL
+
+```text
+Raw event -> validate -> loại lỗi -> enrich -> chuẩn hóa -> Data Lake
+```
+
+### Ưu điểm của EDA
+
+- **Loose coupling**: producer phụ thuộc event contract, không biết implementation của mọi consumer.
+- **Scale độc lập**: Payment, Notification và Analytics scale theo capacity riêng.
+- **Cô lập lỗi**: consumer lỗi không nhất thiết làm producer lỗi; có thể đọc backlog sau.
+- **Buffer traffic spike**: broker giữ backlog trong giới hạn storage/retention.
+- **Fan-out**: nhiều hệ thống dùng cùng business fact.
+- **Replay/backfill**: rebuild index, sửa projection, tạo pipeline mới.
+
+Replay phải chặn external side effect; không được gửi lại email hoặc charge lại tiền.
+
+### Nhược điểm và chi phí
+
+- **Eventual consistency**: service cập nhật khác thời điểm.
+- **Debug khó**: flow không nằm trong một call stack.
+- **Duplicate/out-of-order**: consumer phải idempotent và xử lý ordering.
+- **Schema evolution**: producer/consumer deploy độc lập.
+- **Distributed transaction**: cần Saga, compensation, Outbox.
+- **Vận hành**: broker, disk, replication, lag, retry, DLT, ACL.
+- **Kiểm thử**: phải test duplicate, event muộn, crash, replay, compensation lỗi.
+
+> EDA không tự động làm hệ thống nhanh hơn. Nó giảm thời gian caller chờ và tăng khả năng scale, nhưng toàn bộ business flow có thể hoàn tất chậm hơn.
+
+### Những bài toán bắt buộc phải thiết kế
+
+#### 1. Dual-write problem
+
+```java
+orderRepository.save(order);    // database
+eventPublisher.publish(event);  // broker
+```
+
+Hai lỗi nguy hiểm:
+
+```text
+DB commit + publish lỗi -> có order, không có OrderCreated
+Publish xong + DB rollback -> consumer thấy order không tồn tại
+```
+
+`try/catch` không thể tạo atomicity giữa hai hệ thống.
+
+#### 2. Transactional Outbox
+
+```sql
+BEGIN;
+INSERT INTO orders(id, status) VALUES ('9001', 'PENDING');
+INSERT INTO outbox_events(event_id, event_type, payload)
+VALUES ('E100', 'OrderCreated', '{...}');
+COMMIT;
+```
+
+Relay/CDC đọc Outbox rồi publish:
+
+```text
+orders + outbox_events -> Relay/CDC -> Kafka
+```
+
+Rollback thì cả order và outbox mất; commit thì event còn trong outbox để retry. Relay có thể publish lặp nếu crash sau publish, nên Outbox không loại bỏ duplicate.
+
+#### 3. Idempotency
+
+Idempotent nghĩa là xử lý cùng input nhiều lần vẫn có kết quả business tương đương một lần.
+
+```text
+PaymentSucceeded(E200)
+PaymentSucceeded(E200)  // duplicate
+```
+
+Consumer lưu `eventId` với unique constraint và cập nhật state trong cùng transaction. Có thể dùng business key như `orderId + paymentAttempt` khi hai event khác ID nhưng cùng một hành động.
+
+#### 4. Ordering
+
+```text
+Mong muốn: OrderCreated(v1) -> OrderPaid(v2) -> OrderShipped(v3)
+Có thể gặp: OrderPaid(v2) -> OrderCreated(v1) -> OrderShipped(v3)
+```
+
+Cách xử lý:
+
+- Route event cùng entity theo `orderId`.
+- Mang `aggregateVersion`.
+- Chỉ áp dụng version hợp lệ.
+- Buffer/retry event đến sớm.
+- Dùng state machine từ chối transition sai.
+
+Không yêu cầu total order nếu chỉ cần order theo từng order/account vì sẽ giảm parallelism.
+
+#### 5. Retry và Dead-Letter Topic
+
+| Lỗi | Ví dụ | Xử lý |
+| --- | --- | --- |
+| Tạm thời | timeout, `503` | Retry với backoff |
+| Quá tải | `429` | Backoff dài, rate limit |
+| Dữ liệu lỗi | thiếu field | Không retry vô hạn |
+| Business reject | hết hàng | Phát failure event |
+| Bug | exception | Alert, sửa, replay |
+
+```text
+order-events -> retry-1m -> retry-10m -> order-events-dlt
+```
+
+DLT cần owner, alert, retention, lý do lỗi, metadata gốc và công cụ replay; nó không phải thùng rác.
+
+#### 6. Schema evolution
+
+Đổi `amount` từ number thành object có thể phá consumer cũ. Quy tắc thường dùng:
+
+- Thêm field optional.
+- Không đổi type/semantic field cũ.
+- Không xóa field khi consumer còn dùng.
+- Breaking change cần version/topic mới.
+- Schema Registry và CI kiểm tra compatibility.
+
+#### 7. Observability
+
+```text
+correlationId=checkout-7f3c
+  -> OrderCreated E100
+  -> InventoryReserved E110
+  -> PaymentFailed E120
+  -> InventoryReleased E130
+  -> OrderCancelled E140
+```
+
+Cần `eventId`, `correlationId`, `causationId`, event type/version/producer/time; theo dõi produce rate, consume rate, latency, error, retry, consumer lag, DLT và event quá SLA.
+
+#### 8. Ownership, Security và Governance
+
+Domain tạo business fact nên sở hữu semantic và compatibility của event.
+
+- Không publish password, token, secret.
+- Chỉ gửi PII consumer thực sự cần.
+- Topic có ACL.
+- Mã hóa khi truyền/lưu.
+- Retention phù hợp mục đích và quy định.
+- Có chiến lược xóa/ẩn danh dữ liệu cá nhân.
+
+Immutable về kỹ thuật không có nghĩa được phép giữ PII mãi mãi.
+
+### Khi nào không nên dùng EDA?
+
+- Caller cần kết quả ngay: HTTP/gRPC tự nhiên hơn.
+- CRUD nhỏ, ít dependency: local transaction/background job có thể đủ.
+- Hai thay đổi trong cùng database cần atomic: dùng local transaction.
+- Team chưa có idempotency, schema governance, tracing và runbook.
+- Priority, per-message delay hoặc routing phức tạp là yêu cầu chính: task queue/message broker khác có thể phù hợp hơn.
+
+Kiến trúc thực tế thường hybrid:
+
+```text
+Synchronous:
+  - query
+  - validation tức thời
+  - command cần kết quả ngay
+
+Asynchronous:
+  - side effect
+  - fan-out
+  - workflow dài
+  - data integration
+  - streaming analytics
+```
+
+### Checklist trước khi chọn EDA
+
+1. Business fact nào thực sự là event?
+2. Domain nào sở hữu event?
+3. Consumer cần notification hay state đầy đủ?
+4. Eventual consistency tối đa bao lâu?
+5. Ordering cần theo order/customer/account hay toàn cục?
+6. Xử lý duplicate thế nào?
+7. DB change và publish đồng bộ bằng cách nào?
+8. Lỗi nào retry, lỗi nào vào DLT?
+9. Schema version và compatibility ra sao?
+10. Có cần replay, giữ event bao lâu?
+11. Replay có chạy lại email/payment không?
+12. Metric, trace, alert và runbook là gì?
+13. Event chứa PII nào và ai được đọc?
+14. Broker/consumer downtime nhiều giờ thì phục hồi thế nào?
+
+### Từ Event-Driven Architecture đến Kafka
+
+Sau khi hiểu EDA, câu hỏi là hạ tầng nào có thể vận chuyển và lưu event khi quy mô tăng:
+
+```text
+- Nhiều producer ghi liên tục
+- Nhiều ứng dụng đọc cùng event độc lập
+- Throughput cao
+- Lưu event bền vững
+- Consumer downtime rồi đọc tiếp
+- Replay dữ liệu cũ
+- Scale ngang và chịu lỗi
+- Giữ ordering theo entity
+```
+
+Kafka được thiết kế cho nhóm nhu cầu này.
+
+#### Ánh xạ EDA sang Kafka
+
+| Nhu cầu EDA | Kafka | Giải thích |
+| --- | --- | --- |
+| Application phát event | **Producer** | Ghi record vào Kafka |
+| Luồng event có tên | **Topic** | Nơi logic chứa dòng event |
+| Parallelism/ordering theo key | **Partition** | Topic chia thành ordered log |
+| Vị trí record | **Offset** | Số thứ tự trong partition |
+| Application đọc | **Consumer** | Fetch record |
+| Instance chia việc | **Consumer Group** | Partition được chia trong group |
+| Nhiều hệ thống đọc độc lập | **Nhiều group** | Mỗi group có offset riêng |
+| Lưu/replay | **Retention** | Giữ record theo time/size |
+| Chịu lỗi | **Replication** | Có bản sao trên broker khác |
+
+#### Topic là event stream có tên
+
+```text
+Topic: order-events
+OrderCreated -> InventoryReserved -> PaymentSucceeded -> OrderConfirmed -> ...
+```
+
+Topic là log nhận record liên tục, không phải queue xóa record ngay khi một consumer đọc.
+
+#### Partition tạo parallelism và ordering theo key
+
+```text
+order-events
+  Partition 0: order 100, 103, 106
+  Partition 1: order 101, 104, 107
+  Partition 2: order 102, 105, 108
+```
+
+Dùng `orderId` làm key giúp event cùng order vào cùng partition:
+
+```text
+key=9001: OrderCreated -> PaymentSucceeded -> OrderShipped
+```
+
+Kafka giữ order trong partition, không có total order giữa mọi partition. Đây là đánh đổi để scale.
+
+#### Consumer Group phân phối event
+
+Trong cùng group, instance chia partition:
+
+```text
+payment-service:
+P1 <- Partition 0
+P2 <- Partition 1
+P3 <- Partition 2
+```
+
+Ba partition và năm consumer nghĩa là hai consumer idle.
+
+Các group khác nhau đọc độc lập:
+
+```text
+order-events
+  ├-> payment-service group
+  ├-> inventory-service group
+  ├-> notification-service group
+  └-> analytics-service group
+```
+
+Payment đọc không làm Analytics mất event.
+
+#### Offset là bookmark
+
+```text
+offset    0    1    2    3
+record   [A]  [B]  [C]  [D]
+                    ^
+              group đã commit
+```
+
+Consumer restart đọc tiếp từ committed offset; reset offset cho phép replay nếu record còn retention.
+
+Offset không chứng minh external side effect đã hoàn tất. Consumer charge tiền rồi crash trước commit có thể đọc lại record; Payment vẫn phải idempotent.
+
+#### Retention tạo buffer và replay
+
+Kafka không xóa record chỉ vì đã consume:
+
+```text
+retention = 7 ngày
+Payment đã đọc     -> record vẫn còn
+Analytics đọc chậm -> đọc sau
+Consumer mới       -> replay lịch sử
+```
+
+Consumer lag quá retention có thể mất phần record cũ. Retention phải dựa trên downtime, replay, storage và compliance.
+
+#### Replication tạo khả năng chịu lỗi
+
+```text
+Partition 0:
+Leader   -> Broker 1
+Follower -> Broker 2
+Follower -> Broker 3
+```
+
+Leader lỗi thì replica đủ điều kiện có thể lên thay. Durability còn phụ thuộc replication factor, ISR, `acks`, `min.insync.replicas`.
+
+#### Order flow trên Kafka
+
+```text
+Order Service -> OrderCreated(key=9001) -> order-events
+                    ├-> inventory-service -> InventoryReserved
+                    └-> analytics-service -> dashboard
+
+InventoryReserved -> inventory-events
+                    -> payment-service -> PaymentSucceeded
+
+PaymentSucceeded -> payment-events
+                    ├-> order-service -> CONFIRMED
+                    └-> notification-service -> gửi thông báo
+```
+
+Thiết kế topic phải cân nhắc domain ownership, throughput, ordering, retention và ACL; không tạo tùy tiện một topic cho mọi event.
+
+#### Kafka giải quyết gì?
+
+- Lưu/phân phối event throughput cao.
+- Nhiều consumer group đọc độc lập.
+- Buffer backlog và theo dõi lag.
+- Scale bằng partition.
+- Replay bằng offset.
+- Chịu lỗi bằng replication.
+- CDC và stream processing.
+
+Kafka không tự giải quyết:
+
+- Event nào nên tồn tại và semantic.
+- Dual-write database–Kafka.
+- Consumer idempotency.
+- Saga compensation.
+- Schema governance.
+- Exactly-once với mọi external API/database.
+- Tracing, alert, security, business correctness.
+
+```text
+EDA trả lời:
+Hệ thống phối hợp bằng business event như thế nào?
+
+Kafka trả lời:
+Event được ghi, lưu, chia partition, phân phối,
+theo dõi offset và replay ở quy mô lớn thế nào?
+```
+
+Kafka là công cụ hiện thực một phần EDA, không phải bản thân kiến trúc. Phần `Kafka Concept` tiếp theo đi sâu vào producer, topic, partition, offset, consumer group, broker, replication và retention.
 
 ## Kafka Concept
 
@@ -481,23 +1388,14 @@ Partition log
 [record 0][record 1][record 2][record 3] ---> append record mới
 ```
 
-Vì sao ghi tuần tự lại nhanh?
+Sequential access có lợi vì:
 
-Giả sử Kafka cần ghi 1.000 record. Nếu mỗi record được ghi vào một vị trí rải rác, storage phải liên tục tìm và chuyển tới vị trí cần ghi. Đây là **random I/O**. Kafka chủ yếu nối record mới vào cuối log, nên dữ liệu được ghi thành một luồng liên tiếp:
+- Ít disk seek hơn, đặc biệt rõ trên HDD.
+- Các write nhỏ có thể được gom thành write lớn và liên tục.
+- Read thường đi tuần tự từ offset hiện tại của consumer.
+- OS có thể read-ahead và cache các page được truy cập gần đây.
 
-```text
-Random I/O:     ghi chỗ A -> tìm chỗ B -> tìm chỗ C -> ...
-Sequential I/O: [record 1][record 2][record 3]... -> ghi tiếp ở cuối
-```
-
-Cách ghi tuần tự có lợi vì:
-
-- **Ít disk seek**: với HDD, đầu đọc/ghi ít phải di chuyển giữa nhiều vị trí. SSD không có đầu đọc cơ học nhưng ghi/đọc theo block liên tục vẫn hiệu quả hơn nhiều thao tác nhỏ rời rạc.
-- **Ghi theo batch lớn**: nhiều record nhỏ được gom lại, nên Kafka thực hiện ít lần ghi và ít `system call` hơn. `System call` là mỗi lần application phải nhờ operating system thực hiện I/O; gọi quá nhiều lần sẽ tạo thêm overhead.
-- **Consumer cũng thường đọc tuần tự**: consumer đọc từ offset hiện tại rồi tiến về phía trước, nên storage không phải tìm record ở các vị trí ngẫu nhiên.
-- **OS có thể read-ahead**: khi thấy application đang đọc liên tiếp, operating system có thể đoán các block tiếp theo sẽ được dùng và nạp trước chúng vào page cache.
-
-Vì vậy, điểm chính không phải là “disk nhanh hơn RAM”, mà là Kafka dùng một **access pattern thân thiện với storage và operating system**: ghi nối đuôi, đọc liên tục và xử lý theo batch.
+SSD làm chênh lệch sequential/random I/O nhỏ hơn HDD, nhưng contiguous I/O, batching và ít system call vẫn có lợi. Không nên hiểu rằng disk luôn nhanh hơn RAM; ý đúng là **sequential disk access có thể rất hiệu quả**, còn random memory access có thể gặp cache miss và pattern truy cập kém.
 
 Chi tiết cách partition được chia thành segment nằm tại `Broker + Topic + Partitions + Segment + Offset`.
 
