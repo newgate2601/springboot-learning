@@ -461,7 +461,44 @@ Lợi ích:
 
 ### Quan hệ với Saga
 
-**Saga** là pattern quản lý một business transaction trải qua nhiều local transaction.
+**Saga** là pattern quản lý một **business transaction dài** bằng cách chia nó thành nhiều **local transaction** thuộc các service khác nhau. Mỗi local transaction commit trên database của chính service đó, sau đó phát event hoặc trả result để bước tiếp theo chạy.
+
+Ví dụ một checkout không thể dùng một transaction ACID duy nhất bao trùm Order, Inventory, Payment và Shipping:
+
+```text
+1. Order tạo đơn PENDING
+2. Inventory giữ hàng
+3. Payment thu tiền
+4. Shipping tạo vận đơn
+5. Order chuyển sang CONFIRMED
+```
+
+Nếu bước 3 hoặc bước 4 thất bại, hệ thống không thể rollback database của mọi service như một monolith transaction. Thay vào đó, Saga chạy **compensation**:
+
+```text
+PaymentFailed sau khi InventoryReserved
+  -> Inventory release hàng
+  -> Order chuyển CANCELLED
+
+ShipmentFailed sau khi PaymentSucceeded và InventoryReserved
+  -> Payment refund tiền
+  -> Inventory release hàng
+  -> Order chuyển CANCELLED hoặc MANUAL_REVIEW
+```
+
+Điểm quan trọng: compensation không phải rollback kỹ thuật. Nó là một nghiệp vụ mới, có audit riêng và có thể thất bại riêng. Ví dụ hoàn tiền có thể pending vì cổng thanh toán lỗi; lúc đó Order không nên giả vờ đã hủy xong mà nên ở trạng thái `CANCELLING`, `REFUND_PENDING` hoặc `MANUAL_REVIEW`.
+
+#### Vì sao cần Saga?
+
+Trong microservices, mỗi service thường sở hữu database riêng. Điều này giúp service độc lập deploy, scale và thay đổi schema, nhưng làm transaction xuyên service trở nên khó:
+
+- Không có một database transaction chung cho mọi service.
+- Network call có thể timeout trong khi service bên kia vẫn xử lý thành công.
+- Retry có thể tạo duplicate nếu không có idempotency.
+- Một bước đã commit không thể bị service khác âm thầm rollback.
+- Business vẫn cần một kết quả cuối cùng dễ hiểu với user.
+
+Saga giải quyết bằng cách chấp nhận **eventual consistency**: tại một thời điểm ngắn, các service có thể chưa đồng bộ hoàn toàn, nhưng workflow có quy tắc rõ để đi tới trạng thái cuối như `COMPLETED`, `CANCELLED`, `COMPENSATED` hoặc `MANUAL_REVIEW`.
 
 Saga có thể được triển khai bằng:
 
@@ -473,7 +510,236 @@ Orchestration-based Saga
   -> orchestrator gửi command và theo dõi result
 ```
 
-Saga không đồng nghĩa với orchestration. Điểm chung là không dùng một ACID transaction bao trùm mọi service; failure được xử lý bằng compensation.
+Saga không đồng nghĩa với orchestration. **Saga là pattern transaction**, còn **Choreography** và **Orchestration** là hai cách điều phối Saga. Điểm chung là không dùng một ACID transaction bao trùm mọi service; failure được xử lý bằng compensation.
+
+#### Choreography-based Saga
+
+Trong Choreography-based Saga, không có coordinator trung tâm. Mỗi participant nghe event, tự quyết định phản ứng và phát event tiếp theo.
+
+```text
+OrderCreated
+  -> Inventory giữ hàng
+  -> InventoryReserved
+  -> Payment thu tiền
+  -> PaymentSucceeded
+  -> Order xác nhận đơn
+```
+
+Khi lỗi:
+
+```text
+OrderCreated
+  -> InventoryReserved
+  -> PaymentFailed
+  -> Inventory nghe PaymentFailed và release hàng
+  -> Order nghe PaymentFailed/InventoryReleased và hủy đơn
+```
+
+Ưu điểm:
+
+- Service tự chủ, không cần một service trung tâm biết toàn bộ flow.
+- Dễ thêm side effect mới như Notification, Analytics, Loyalty bằng cách subscribe event.
+- Producer ít phải sửa khi có consumer mới.
+- Phù hợp với fan-out và reaction độc lập.
+
+Nhược điểm:
+
+- Flow bị phân tán qua nhiều subscription nên khó đọc nếu chỉ nhìn một service.
+- Dễ sinh dependency ẩn: Payment phụ thuộc event của Inventory, Order phụ thuộc event của Payment, nhưng không có nơi nào thể hiện toàn bộ state machine.
+- Timeout và compensation phức tạp hơn vì phải quyết định service nào sở hữu timer và service nào kết luận flow bị kẹt.
+- Dễ thành event spaghetti nếu event naming, ownership, correlation và transition không rõ.
+
+Use case phù hợp:
+
+- Quy trình ngắn, ít bước bắt buộc.
+- Các bước phản ứng tương đối độc lập.
+- Side effect không ảnh hưởng kết quả chính, ví dụ gửi email, cập nhật điểm thưởng, ghi analytics.
+- Hệ thống thường xuyên thêm downstream consumer mới.
+
+Không nên dùng mặc định khi:
+
+- Flow có nhiều nhánh business, nhiều deadline hoặc nhiều compensation phải chạy theo thứ tự.
+- Cần một màn hình vận hành đọc ngay Saga đang ở state nào.
+- Có manual review, retry policy phức tạp hoặc SLA nghiêm ngặt trên từng bước.
+
+#### Orchestration-based Saga
+
+Trong Orchestration-based Saga, một orchestrator lưu state của Saga và quyết định bước tiếp theo. Participant chỉ xử lý command thuộc domain của mình và trả result.
+
+```text
+OrderSagaOrchestrator
+  -> ReserveInventory
+  <- InventoryReserved
+  -> ChargePayment
+  <- PaymentSucceeded
+  -> CreateShipment
+  <- ShipmentCreated
+  -> MarkOrderConfirmed
+```
+
+Khi lỗi:
+
+```text
+OrderSagaOrchestrator
+  -> ReserveInventory
+  <- InventoryReserved
+  -> ChargePayment
+  <- PaymentSucceeded
+  -> CreateShipment
+  <- ShipmentFailed
+  -> RefundPayment
+  <- PaymentRefunded
+  -> ReleaseInventory
+  <- InventoryReleased
+  -> MarkOrderCancelled
+```
+
+Ưu điểm:
+
+- Dễ quan sát vì trạng thái workflow nằm ở một nơi.
+- Timeout, retry, deadline và compensation theo thứ tự dễ quản lý hơn.
+- Dễ thay đổi trình tự bước bắt buộc mà không bắt mọi participant biết nhau.
+- Phù hợp với critical path cần trạng thái rõ ràng.
+
+Nhược điểm:
+
+- Orchestrator có thể trở thành God Service nếu chứa domain logic thay vì chỉ điều phối.
+- Thêm một component phải vận hành, lưu state, scale và recover.
+- Nếu thiết kế command/result không idempotent, retry từ orchestrator có thể gây double charge, double refund hoặc release sai.
+- Side effect độc lập đưa hết vào orchestrator sẽ làm workflow phình to không cần thiết.
+
+Use case phù hợp:
+
+- Checkout, booking, onboarding, loan approval, KYC, payout hoặc các flow có nhiều bước bắt buộc.
+- Flow cần timeout rõ, ví dụ giữ vé 10 phút, thanh toán trong 15 phút, đối soát sau 1 giờ.
+- Compensation cần thứ tự, ví dụ hoàn tiền trước rồi mới hủy shipment, hoặc release inventory sau khi refund thành công.
+- Cần dashboard vận hành biết từng Saga đang `WAITING_PAYMENT`, `WAITING_SHIPMENT`, `COMPENSATING` hay `MANUAL_REVIEW`.
+
+Không nên dùng cho:
+
+- Reaction độc lập đơn giản như gửi notification sau `OrderConfirmed`.
+- Fan-out analytics hoặc data warehouse ingestion.
+- Flow quá nhỏ, nơi orchestrator làm tăng độ phức tạp nhiều hơn lợi ích.
+
+#### Saga và 2PC khác nhau thế nào?
+
+| Tiêu chí | Saga | 2PC / distributed transaction |
+| --- | --- | --- |
+| Cách đảm bảo | Chuỗi local transaction + compensation | Commit/rollback đồng thời qua nhiều resource |
+| Consistency | Eventual consistency | Stronger atomicity ở tầng transaction |
+| Khi lỗi sau khi đã commit | Chạy nghiệp vụ bù | Rollback nếu còn trong transaction |
+| Thời gian giữ lock | Ngắn, theo từng local transaction | Có thể dài và ảnh hưởng availability |
+| Phù hợp | Microservices, business workflow dài | Ít resource, hạ tầng hỗ trợ tốt, transaction ngắn |
+| Chi phí | Cần idempotency, state, retry, compensation | Coupling cao, khó scale, nhạy với network/participant failure |
+
+Trong hệ thống phân tán, Saga thường thực tế hơn 2PC vì không giữ lock dài và không yêu cầu mọi service/database tham gia cùng một transaction protocol. Đổi lại, developer phải thiết kế trạng thái trung gian và compensation rất rõ.
+
+#### Trạng thái Saga nên được mô hình hóa rõ
+
+Không nên chỉ có `SUCCESS` và `FAILED`. Một Saga production thường cần các trạng thái trung gian:
+
+```text
+PENDING
+INVENTORY_RESERVED
+PAYMENT_PENDING
+PAYMENT_SUCCEEDED
+SHIPMENT_PENDING
+COMPLETED
+CANCELLING
+COMPENSATING_PAYMENT
+COMPENSATING_INVENTORY
+COMPENSATED
+MANUAL_REVIEW
+```
+
+Các transition phải có luật rõ:
+
+```text
+PENDING -> INVENTORY_RESERVED -> PAYMENT_SUCCEEDED -> COMPLETED
+PENDING -> INVENTORY_REJECTED -> CANCELLED
+PAYMENT_SUCCEEDED -> SHIPMENT_FAILED -> COMPENSATING_PAYMENT
+COMPENSATING_PAYMENT -> PAYMENT_REFUNDED -> COMPENSATING_INVENTORY
+COMPENSATING_INVENTORY -> INVENTORY_RELEASED -> COMPENSATED
+```
+
+Điều này giúp xử lý duplicate và out-of-order message. Ví dụ nếu nhận lại `PaymentSucceeded` khi Saga đã `COMPLETED`, service có thể bỏ qua. Nếu nhận `PaymentSucceeded` khi Order đã `CANCELLED`, phải kiểm tra lại bằng idempotency key và có thể chuyển sang refund/manual review.
+
+#### Các yêu cầu bắt buộc khi thiết kế Saga
+
+- **Local transaction rõ ràng:** mỗi bước chỉ commit dữ liệu trong boundary của service đó.
+- **Idempotency:** retry command/event không làm lặp side effect như charge tiền hai lần.
+- **Correlation ID:** mọi message cùng Saga phải có cùng `correlationId` hoặc `sagaId`.
+- **Causation ID:** biết message hiện tại được tạo ra bởi message nào để trace và debug.
+- **Durable state:** trạng thái Saga hoặc trạng thái participant phải sống sót qua restart.
+- **Outbox:** cập nhật database và phát event/command phải tránh dual-write problem.
+- **Retry có kiểm soát:** retry với backoff, giới hạn, DLT và alert.
+- **Timeout không kết luận vội:** timeout nghĩa là chưa biết kết quả; với payment/shipping cần reconcile trước khi bù.
+- **Compensation idempotent:** refund, release inventory, cancel shipment đều phải chạy lại an toàn.
+- **Manual review:** luôn có đường xử lý khi tự động retry/compensation không thể kết luận.
+
+#### Ví dụ use case thực tế
+
+Checkout thương mại điện tử:
+
+```text
+CreateOrder
+ReserveInventory
+ChargePayment
+CreateShipment
+ConfirmOrder
+```
+
+Nếu payment thất bại thì release inventory. Nếu shipment thất bại sau khi payment thành công thì refund payment và release inventory.
+
+Booking vé:
+
+```text
+HoldSeat
+CreateBooking
+PayBooking
+IssueTicket
+```
+
+Ghế có deadline giữ chỗ. Nếu user không thanh toán kịp, Saga hủy booking và release seat. Nếu payment thành công nhưng issue ticket lỗi, cần retry issue ticket hoặc đưa vào manual review trước khi hoàn tiền, tùy business.
+
+Payout/withdrawal:
+
+```text
+CreateWithdrawalRequest
+ReserveBalance
+SendPayoutToBank
+MarkCompleted
+```
+
+Nếu bank timeout, không được retry mù quáng vì có thể chuyển tiền hai lần. Saga phải reconcile theo transaction reference trước khi quyết định retry, reverse hoặc manual review.
+
+#### Checklist chọn cách triển khai Saga
+
+Chọn Choreography-based Saga khi:
+
+- Flow ngắn và dễ nhìn bằng event map.
+- Mỗi service phản ứng độc lập.
+- Compensation ít, không cần thứ tự phức tạp.
+- Muốn thêm consumer mới mà ít sửa workflow chính.
+
+Chọn Orchestration-based Saga khi:
+
+- Flow dài, nhiều nhánh hoặc nhiều bước bắt buộc.
+- Cần state machine rõ và dashboard vận hành.
+- Có timeout, retry, compensation theo thứ tự.
+- Cần kiểm soát SLA và manual review.
+
+Kết hợp cả hai khi:
+
+```text
+Critical path đặt hàng
+  -> Orchestration-based Saga
+
+Sau khi OrderConfirmed
+  -> Choreography cho Notification, Analytics, Loyalty
+```
+
+Đây thường là cách cân bằng nhất: phần quyết định tiền, hàng, vận đơn có điều phối rõ; phần side effect vẫn mở rộng tự nhiên bằng event.
 
 ### Event và Command trong hai mô hình
 
@@ -533,73 +799,312 @@ Choreography cần event map và trace tốt hơn vì không có state trung tâ
 
 ### Cách lựa chọn từng bước
 
-Đặt các câu hỏi sau:
+Không nên chọn Choreography hay Orchestration chỉ vì một mô hình nghe hiện đại hơn. Cách chọn đúng là nhìn vào **tính chất của từng business flow**: flow đó có bao nhiêu bước bắt buộc, lỗi phải bù thế nào, có cần một nơi nhìn thấy tiến độ không, và các reaction phía sau có thật sự ảnh hưởng tới kết quả chính không.
 
-1. Flow có bao nhiêu bước bắt buộc?
-2. Có nhiều nhánh hoặc điều kiện business không?
-3. Có deadline dài hạn không?
-4. Một bước lỗi có cần bù các bước trước không?
-5. Có cần biết chính xác flow đang ở đâu không?
-6. Có manual review không?
-7. Reaction có độc lập với kết quả chính không?
-8. Thêm consumer mới có thường xuyên không?
+#### 1. Flow có bao nhiêu bước bắt buộc?
 
-Gợi ý:
+Nếu flow chỉ có một event chính rồi nhiều service phản ứng độc lập, Choreography thường tự nhiên hơn.
 
 ```text
-Reaction độc lập, fan-out
-  -> ưu tiên Choreography
-
-Flow bắt buộc, dài, nhiều nhánh/timeout/compensation
-  -> cân nhắc Orchestration
-
-Critical path phức tạp + nhiều side effect độc lập
-  -> kết hợp cả hai
+OrderConfirmed
+  -> Notification gửi email
+  -> Analytics ghi dữ liệu
+  -> Loyalty cộng điểm
+  -> Recommendation cập nhật gợi ý
 ```
 
-### Checklist thiết kế Choreography
+Trong ví dụ này, Notification lỗi không làm đơn hàng thất bại. Analytics chậm không cần chặn user. Loyalty có thể retry sau. Các service này chỉ cần biết “đơn đã được xác nhận”, không cần điều khiển thứ tự của nhau. Dùng orchestrator để gọi từng side effect sẽ làm workflow chính phình to và tạo coupling không cần thiết.
 
-- Event có business meaning rõ không?
-- Event owner là team/domain nào?
-- Consumer nào nghe từng event?
-- Có event cycle không?
-- Ai sở hữu timeout?
-- Failure event là gì?
-- Compensation do service nào kích hoạt?
-- Làm sao biết flow bị kẹt?
-- Có `correlationId` và tracing không?
-- Consumer có idempotent không?
-- Schema thay đổi được kiểm soát không?
-- Replay có chạy lại side effect không?
-
-### Checklist thiết kế Orchestration
-
-- State machine có được vẽ rõ không?
-- Mỗi state chờ message nào?
-- Deadline của từng bước là gì?
-- Command có idempotency key không?
-- State và command publication có atomic không?
-- Duplicate/out-of-order được xử lý thế nào?
-- Compensation theo thứ tự nào?
-- Compensation thất bại thì retry/manual review ra sao?
-- Orchestrator restart có resume được không?
-- Nhiều instance update cùng Saga được bảo vệ thế nào?
-- Workflow version mới xử lý instance cũ ra sao?
-- Orchestrator có lấn sang domain logic không?
-- Side effect độc lập có thể chuyển sang choreography không?
-
-### Kết luận ngắn
+Nếu flow có nhiều bước bắt buộc, bước sau phụ thuộc kết quả bước trước, Orchestration thường rõ hơn.
 
 ```text
-Choreography:
-“Có việc X đã xảy ra; service nào quan tâm thì tự phản ứng.”
+Checkout:
+1. ReserveInventory
+2. ChargePayment
+3. CreateShipment
+4. ConfirmOrder
+```
 
-Orchestration:
+Ở đây Payment chỉ được charge sau khi giữ hàng thành công. Shipping chỉ tạo vận đơn sau khi thanh toán thành công. Order chỉ được confirmed khi các bước chính đã xong. Đây không còn là nhiều reaction độc lập; nó là một chuỗi quyết định có thứ tự.
+
+#### 2. Có nhiều nhánh hoặc điều kiện business không?
+
+Flow càng nhiều nhánh, Choreography càng khó đọc vì logic nằm rải rác ở nhiều consumer.
+
+Ví dụ checkout có các luật:
+
+```text
+Nếu hàng có sẵn
+  -> reserve inventory
+
+Nếu hàng preorder
+  -> tạo preorder, chưa charge full amount
+
+Nếu payment bằng COD
+  -> bỏ qua online charge, tạo shipment
+
+Nếu payment bằng credit card
+  -> authorize trước, capture sau
+
+Nếu khách VIP
+  -> cho phép backorder
+
+Nếu đơn giá trị cao
+  -> fraud check trước shipment
+```
+
+Với Choreography, mỗi service nghe event và tự suy luận bước tiếp theo. Sau một thời gian, muốn trả lời “đơn này vì sao đi nhánh COD mà không đi nhánh credit card?” phải đọc nhiều service và nhiều subscription. Với Orchestration, các nhánh này nằm trong state machine/workflow nên dễ review hơn.
+
+Choreography vẫn dùng được nếu nhánh ít và event có meaning rõ:
+
+```text
+PaymentSucceeded
+  -> Order confirm
+  -> Notification gửi receipt
+
+PaymentFailed
+  -> Order cancel
+  -> Inventory release hàng
+```
+
+Nhưng khi rule bắt đầu giống một cây quyết định dài, orchestrator giúp tránh việc business flow bị “ẩn” trong nhiều consumer.
+
+#### 3. Có deadline dài hạn không?
+
+Deadline là dấu hiệu mạnh nên cân nhắc Orchestration, vì cần một nơi lưu “đang chờ gì” và “quá hạn thì làm gì”.
+
+Ví dụ booking vé:
+
+```text
+SeatHeld lúc 10:00
+Payment phải hoàn tất trước 10:15
+
+Nếu 10:15 chưa có PaymentSucceeded:
+  -> CancelBooking
+  -> ReleaseSeat
+```
+
+Nếu dùng Choreography, phải quyết định service nào giữ timer. Order giữ? Booking giữ? Payment giữ? Một scheduler riêng nghe event? Cách nào cũng được, nhưng phải rất rõ ownership. Nếu không rõ, hệ thống dễ gặp lỗi kiểu ghế bị giữ mãi vì không service nào chịu trách nhiệm timeout.
+
+Với Orchestration, Saga state có thể ghi:
+
+```text
+sagaId: booking-9001
+state: WAITING_PAYMENT
+deadline: 2026-08-29T10:15:00Z
+onTimeout: CancelBooking + ReleaseSeat
+```
+
+Khi orchestrator restart, nó đọc lại state và tiếp tục xử lý các Saga quá hạn. Đây là lý do các flow có timeout dài, giữ resource hoặc cần SLA thường hợp với Orchestration.
+
+#### 4. Một bước lỗi có cần bù các bước trước không?
+
+Nếu lỗi chỉ làm dừng bước hiện tại, Choreography có thể đủ. Nhưng nếu lỗi bước sau buộc phải bù nhiều bước trước, cần nhìn kỹ.
+
+Ví dụ:
+
+```text
+InventoryReserved
+PaymentSucceeded
+ShipmentFailed
+```
+
+Sau `ShipmentFailed`, hệ thống có thể cần:
+
+```text
+1. RefundPayment
+2. ReleaseInventory
+3. MarkOrderCancelled
+4. NotifyCustomer
+```
+
+Nếu thứ tự bù không quan trọng, Choreography ổn:
+
+```text
+ShipmentFailed
+  -> Payment refund
+  -> Inventory release
+  -> Order chờ đủ PaymentRefunded và InventoryReleased
+```
+
+Nếu thứ tự bù quan trọng, Orchestration rõ hơn:
+
+```text
+ShipmentFailed
+  -> RefundPayment
+  <- PaymentRefunded
+  -> ReleaseInventory
+  <- InventoryReleased
+  -> CancelOrder
+```
+
+Lý do là orchestrator biết chính xác bước nào đã thành công và chỉ bù những bước đó. Nếu Payment chưa thành công thì không refund. Nếu Inventory chưa reserve thì không release. Điều này giảm lỗi compensation chạy sai trạng thái.
+
+#### 5. Có cần biết chính xác flow đang ở đâu không?
+
+Nếu đội vận hành cần mở dashboard và thấy ngay từng đơn đang kẹt ở đâu, Orchestration có lợi thế lớn.
+
+Ví dụ trạng thái Saga:
+
+```text
+order-1001: WAITING_PAYMENT, retry=1, deadline=10:15
+order-1002: COMPENSATING_PAYMENT, refundRequestId=R88
+order-1003: MANUAL_REVIEW, reason=BANK_TIMEOUT_UNKNOWN
+```
+
+Với Choreography, vẫn quan sát được nhưng thường phải dựng từ event log, trace và state của nhiều service:
+
+```text
+OrderCreated -> InventoryReserved -> PaymentRequested
+Không thấy PaymentSucceeded hoặc PaymentFailed sau 15 phút
+```
+
+Điều này không sai, nhưng chi phí observability cao hơn. Choreography cần event map, correlation ID, trace, consumer lag, DLT và dashboard tổng hợp tốt. Orchestration cần dashboard Saga state và alert cho state bị kẹt. Nói ngắn: Choreography phân tán trách nhiệm nên phải đầu tư trace; Orchestration tập trung state nên dễ hỏi “đang ở đâu?” hơn.
+
+#### 6. Có manual review không?
+
+Manual review là dấu hiệu flow đã vượt khỏi happy path đơn giản.
+
+Ví dụ payout:
+
+```text
+ReserveBalance
+SendPayoutToBank
+Bank timeout
+```
+
+Timeout với ngân hàng không có nghĩa là chuyển tiền thất bại. Có thể ngân hàng đã nhận request, xử lý thành công, nhưng response bị mất. Nếu retry ngay, user có thể nhận tiền hai lần. Nếu reverse ngay, có thể reverse nhầm một giao dịch đang thành công.
+
+Flow an toàn hơn:
+
+```text
+BankTimeout
+  -> ReconcileByTransactionReference
+  -> nếu bank confirmed: MarkCompleted
+  -> nếu bank rejected: ReleaseBalance
+  -> nếu bank unknown quá lâu: MANUAL_REVIEW
+```
+
+Orchestration phù hợp vì có nơi lưu trạng thái `WAITING_RECONCILIATION` hoặc `MANUAL_REVIEW`. Choreography vẫn làm được, nhưng cần một service sở hữu rõ việc reconcile và kết luận cuối cùng.
+
+#### 7. Reaction có độc lập với kết quả chính không?
+
+Đây là câu hỏi quan trọng để tránh đưa quá nhiều thứ vào orchestrator.
+
+Ví dụ sau khi đơn hàng confirmed:
+
+```text
+OrderConfirmed
+  -> gửi email
+  -> gửi push notification
+  -> ghi analytics
+  -> cập nhật search index
+  -> cộng loyalty point
+```
+
+Nếu email lỗi, đơn hàng vẫn confirmed. Nếu analytics delay, user không cần chờ. Những việc này nên là Choreography vì chúng là side effect độc lập. Producer chỉ phát `OrderConfirmed`; service nào quan tâm thì tự xử lý.
+
+Ngược lại, nếu một reaction quyết định trạng thái chính, nó không còn là side effect:
+
+```text
+FraudCheckPassed
+  -> mới được capture payment
+
+FraudCheckRejected
+  -> hủy order và release inventory
+```
+
+Fraud check ảnh hưởng trực tiếp tới flow checkout, nên thường thuộc critical path. Critical path dài và có điều kiện như vậy nên được orchestration hoặc ít nhất phải có owner state rất rõ.
+
+#### 8. Thêm consumer mới có thường xuyên không?
+
+Nếu yêu cầu thường xuyên là “khi X xảy ra, thêm một service nữa xử lý”, Choreography giúp mở rộng tốt.
+
+Ví dụ ban đầu:
+
+```text
+OrderConfirmed
+  -> Notification
+```
+
+Sau đó thêm:
+
+```text
+OrderConfirmed
+  -> Notification
+  -> Analytics
+  -> Loyalty
+  -> CRM
+  -> Data Warehouse
+```
+
+Order Service không cần biết tất cả consumer này. Nó chỉ phát event có contract ổn định. Đây là lợi thế lớn của event-driven architecture.
+
+Nhưng nếu “thêm consumer” thực chất là thêm một bước bắt buộc vào flow, cần cẩn thận.
+
+```text
+Trước đây:
+ReserveInventory -> ChargePayment -> ConfirmOrder
+
+Sau này:
+ReserveInventory -> FraudCheck -> ChargePayment -> ConfirmOrder
+```
+
+`FraudCheck` không phải consumer phụ; nó thay đổi thứ tự nghiệp vụ. Nếu dùng Choreography, phải sửa nhiều subscription và đảm bảo Payment không chạy trước khi Fraud passed. Với Orchestration, thay đổi này thường là sửa state machine rõ ràng hơn.
+
+#### Gợi ý quyết định nhanh
+
+```text
+Reaction độc lập, fan-out, thêm consumer thường xuyên
+  -> ưu tiên Choreography
+
+Flow bắt buộc, dài, nhiều nhánh, có timeout hoặc compensation
+  -> cân nhắc Orchestration
+
+Critical path phức tạp nhưng có nhiều side effect độc lập
+  -> Orchestration cho critical path
+  -> Choreography cho side effect
+```
+
+Ví dụ kết hợp:
+
+```text
+Checkout critical path:
+OrderSagaOrchestrator
+  -> ReserveInventory
+  -> FraudCheck
+  -> ChargePayment
+  -> CreateShipment
+  -> ConfirmOrder
+
+Sau khi OrderConfirmed:
+OrderConfirmed
+  -> Notification
+  -> Analytics
+  -> Loyalty
+  -> Data Warehouse
+```
+
+#### Cách hiểu ngắn nhưng đầy đủ
+
+Choreography giống câu:
+
+```text
+“Có việc X đã xảy ra; service nào quan tâm thì tự phản ứng.”
+```
+
+Ví dụ `OrderConfirmed` là một sự thật nghiệp vụ đã xảy ra. Notification nghe để gửi email. Analytics nghe để ghi dữ liệu. Loyalty nghe để cộng điểm. Order Service không ra lệnh trực tiếp cho từng service, cũng không cần biết sau này sẽ có thêm CRM hay Data Warehouse. Vì vậy Choreography tối ưu cho autonomy, fan-out và reaction độc lập.
+
+Orchestration giống câu:
+
+```text
 “Workflow đang ở bước X; service Y hãy làm việc Z,
 sau đó trả kết quả để tôi quyết định bước tiếp theo.”
 ```
 
-Choreography tối ưu cho autonomy, fan-out và reaction độc lập. Orchestration tối ưu cho visibility, trình tự bắt buộc, timeout và compensation. Một hệ thống tốt không cố dùng duy nhất một mô hình; nó chọn mô hình theo tính chất của từng business flow.
+Ví dụ Order Saga đang ở `WAITING_PAYMENT`, orchestrator gửi `ChargePayment` cho Payment Service. Nếu nhận `PaymentSucceeded`, nó gửi tiếp `CreateShipment`. Nếu nhận `PaymentFailed`, nó gửi `ReleaseInventory` rồi hủy đơn. Participant không cần biết toàn bộ flow; orchestrator giữ state và quyết định bước kế tiếp. Vì vậy Orchestration tối ưu cho visibility, trình tự bắt buộc, timeout và compensation.
+
+Một hệ thống tốt không cố dùng duy nhất một mô hình cho mọi thứ. Nó chọn theo từng phần của business flow: phần quyết định tiền, hàng, booking, payout thường cần state rõ và bù lỗi cẩn thận; phần notification, analytics, cache invalidation, search indexing thường nên phản ứng tự do qua event.
 
 ### Các kiểu sử dụng event
 
@@ -644,13 +1149,15 @@ Consumer không phải gọi lại Order Service, có thể xử lý khi produce
 
 #### 3. Event Sourcing
 
-CRUD thường chỉ giữ state cuối:
+CRUD bình thường lưu **kết quả cuối cùng**.
 
 ```text
 account.balance = 800.000
 ```
 
-Event Sourcing giữ chuỗi event tạo nên state:
+Nhìn vào đây chỉ biết tài khoản còn 800.000, nhưng không biết vì sao. Có thể trước đó user nạp tiền, rút tiền, được hoàn tiền hoặc bị trừ phí.
+
+Event Sourcing lưu **những việc đã xảy ra**, rồi tính state hiện tại từ các event đó.
 
 ```text
 AccountOpened(0)
@@ -660,11 +1167,164 @@ MoneyWithdrawn(-200.000)
 Balance = 800.000
 ```
 
-Ưu điểm: audit trail, biết nguyên nhân thay đổi, dựng projection mới, xem state quá khứ.
+Ý tưởng rất đơn giản:
 
-Chi phí: event cũ phải đọc được lâu dài; replay có thể chậm nên cần snapshot; side effect không được chạy lại; sửa event sai và xóa PII khó.
+```text
+State hiện tại = kết quả cộng dồn các event đã xảy ra
+```
 
-> Kafka có log và replay nhưng không tự biến application thành Event Sourcing. Đây là quyết định thiết kế domain và cách dựng state.
+Ví dụ khi user muốn rút 200.000:
+
+```text
+1. Load các event của account
+2. Tính ra balance hiện tại = 800.000
+3. Kiểm tra 800.000 có đủ rút 200.000 không
+4. Nếu đủ, append event MoneyWithdrawn(-200.000)
+5. Balance mới = 600.000
+```
+
+Điểm khác biệt là app không ghi kiểu:
+
+```text
+UPDATE account SET balance = 600.000
+```
+
+Mà ghi:
+
+```text
+MoneyWithdrawn(-200.000)
+```
+
+Rồi từ lịch sử đó suy ra balance mới.
+
+##### Vì sao cách này hữu ích?
+
+Vì event cho biết **lý do state thay đổi**.
+
+```text
+CRUD:
+balance = 600.000
+
+Event Sourcing:
+MoneyDeposited(+1.000.000)
+MoneyWithdrawn(-200.000)
+MoneyWithdrawn(-200.000)
+=> balance = 600.000
+```
+
+Với CRUD, chỉ nhìn state cuối. Với Event Sourcing, đọc được cả câu chuyện: tài khoản từng nạp bao nhiêu, rút mấy lần, lúc nào thay đổi.
+
+Ví dụ order:
+
+```text
+OrderCreated
+InventoryReserved
+PaymentSucceeded
+OrderConfirmed
+```
+
+Nếu order bị hủy:
+
+```text
+OrderCreated
+InventoryReserved
+PaymentFailed
+InventoryReleased
+OrderCancelled
+```
+
+Nhìn chuỗi event là biết order hủy vì payment fail, và inventory đã được release. Nếu chỉ nhìn `order.status = CANCELLED`, ta mất nhiều ngữ cảnh hơn.
+
+##### Projection là gì?
+
+Nếu mỗi lần mở màn hình số dư đều replay toàn bộ event từ đầu thì chậm. Vì vậy thường tạo thêm **projection** hoặc **read model**: một bản dữ liệu đã được tính sẵn để phục vụ query nhanh.
+
+Cách triển khai ở mức concept:
+
+1. **Event store** lưu lịch sử event gốc, ví dụ tài khoản đã nạp tiền, rút tiền, hoàn tiền.
+2. Một thành phần gọi là **projector** hoặc **projection consumer** đọc các event này theo thứ tự.
+3. Projector cập nhật một bảng/view đọc nhanh, ví dụ bảng số dư hiện tại của từng tài khoản.
+4. Màn hình/API đọc từ projection thay vì replay event từ đầu.
+5. Projection lưu lại đã xử lý tới event nào để khi restart có thể chạy tiếp, không xử lý lại sai.
+
+Ví dụ dễ hiểu: event log lưu toàn bộ lịch sử giao dịch như `MoneyDeposited`, `MoneyWithdrawn`, `MoneyRefunded`. Projection lưu sẵn số dư hiện tại đã tính từ các event đó. Khi user mở app, hệ thống đọc ngay số dư từ projection. Khi có giao dịch mới, projector đọc event mới và cập nhật lại số dư trong projection.
+
+Event log vẫn là nguồn chính. Projection chỉ là bản phụ để đọc nhanh. Nếu projection bị sai hoặc mất, có thể xóa projection rồi replay event từ đầu để dựng lại.
+
+Một event log có thể tạo nhiều projection khác nhau. Cùng lịch sử giao dịch tài khoản có thể tạo bảng số dư hiện tại, sao kê giao dịch, báo cáo dòng tiền hoặc view phục vụ fraud/risk. Mỗi projection phục vụ một kiểu đọc khác nhau, nhưng đều lấy dữ liệu từ cùng một lịch sử event.
+
+Điểm cần cẩn thận: projector phải xử lý event theo cách idempotent. Nếu cùng một event bị đọc lại sau retry hoặc restart, projection không được cộng tiền hai lần. Thường projection sẽ lưu `eventId`, `sequence` hoặc vị trí đã xử lý để biết event nào đã apply rồi.
+
+##### Snapshot là gì?
+
+Nếu một tài khoản có quá nhiều event, replay từ đầu sẽ chậm. Snapshot là bản chụp state tại một thời điểm để replay nhanh hơn.
+
+```text
+Snapshot ở event số 10.000:
+balance = 20.000.000
+
+Sau đó chỉ cần replay event 10.001 trở đi
+```
+
+Snapshot giống cache/checkpoint. Nó không thay thế event gốc.
+
+##### Ưu điểm
+
+- Có lịch sử đầy đủ, rất tốt cho audit.
+- Biết vì sao state hiện tại có giá trị như vậy.
+- Có thể dựng lại state ở quá khứ.
+- Có thể replay event để tạo projection/báo cáo mới.
+- Phù hợp với nghiệp vụ tiền, order, booking, workflow nhiều trạng thái.
+
+##### Nhược điểm và chi phí
+
+- Phức tạp hơn CRUD nhiều.
+- Event đã lưu rồi thì khó sửa, vì nó là lịch sử.
+- Replay nhiều event có thể chậm, nên cần snapshot/projection.
+- Schema event phải giữ tương thích lâu dài.
+- Không được replay side effect bừa bãi. Replay để dựng view thì được, nhưng không được gửi email hoặc charge tiền lại.
+- Dữ liệu nhạy cảm/PII phải thiết kế cẩn thận vì event log thường sống rất lâu.
+
+##### Khi nào nên dùng?
+
+Nên dùng khi lịch sử là phần quan trọng của nghiệp vụ:
+
+- Ví, tài khoản, ledger, giao dịch tiền.
+- Order/booking có nhiều bước và compensation.
+- Hệ thống cần audit mạnh.
+- Cần biết state tại một thời điểm trong quá khứ.
+- Cần tạo nhiều read model từ cùng một lịch sử event.
+
+Không nên dùng mặc định cho CRUD đơn giản:
+
+```text
+Product name/description
+User profile
+CMS article
+Setting/config đơn giản
+```
+
+Các dữ liệu này thường chỉ cần state hiện tại, audit log đơn giản hoặc version history là đủ.
+
+##### Kafka có phải Event Sourcing không?
+
+Không. Kafka có log và replay, nhưng chỉ dùng Kafka không có nghĩa là Event Sourcing.
+
+Không phải Event Sourcing:
+
+```text
+Update database trước
+Sau đó publish event lên Kafka
+```
+
+Event Sourcing đúng nghĩa:
+
+```text
+Append event trước
+State/read model được dựng từ event
+```
+
+Tóm lại: Event Sourcing là cách lưu dữ liệu bằng lịch sử event. Nó rất mạnh khi cần audit và replay, nhưng không nên dùng cho mọi thứ vì làm hệ thống phức tạp hơn CRUD.
 
 #### 4. CQRS và Materialized View
 
@@ -688,107 +1348,6 @@ Consumer tạo **materialized view** đã join/tính sẵn để query nhanh. Đ
 ```
 
 Trong 250 ms, write model và read model khác nhau. Hệ thống phải xác định độ trễ chấp nhận được.
-
-### Use case thực tế: quy trình đặt hàng
-
-#### Bước 1. Tạo order
-
-```text
-Client -> POST /orders
-Order Service:
-  1. validate
-  2. tính tổng tiền
-  3. lưu order=PENDING
-  4. publish OrderCreated
-  5. trả orderId=9001
-```
-
-#### Bước 2. Giữ hàng
-
-```text
-Đủ hàng:
-InventoryReserved(orderId=9001, reservationId=R500)
-
-Thiếu hàng:
-InventoryRejected(orderId=9001, reason=OUT_OF_STOCK)
-```
-
-Reservation cần deadline, ví dụ 15 phút, vì không thể giữ hàng mãi khi khách chưa thanh toán.
-
-#### Bước 3. Thanh toán
-
-```text
-InventoryReserved
-  -> ChargePayment(9001, 1.250.000)
-      -> PaymentSucceeded
-      hoặc PaymentFailed
-```
-
-Payment phải idempotent để retry không charge hai lần.
-
-#### Bước 4. Hoàn tất hoặc compensation
-
-Thành công:
-
-```text
-InventoryReserved + PaymentSucceeded
-  -> OrderConfirmed
-  -> CreateShipment
-  -> ShipmentCreated
-```
-
-Thanh toán thất bại:
-
-```text
-InventoryReserved + PaymentFailed
-  -> ReleaseInventory
-  -> InventoryReleased
-  -> OrderCancelled
-```
-
-Đã thanh toán nhưng không giữ được hàng:
-
-```text
-PaymentSucceeded + InventoryRejected
-  -> RefundPayment
-  -> PaymentRefunded
-  -> OrderCancelled
-```
-
-Đây là **Saga**: business transaction lớn được chia thành local transaction. Khi bước sau thất bại, hệ thống chạy **compensation**.
-
-Compensation không phải rollback tuyệt đối:
-
-- Refund là transaction mới, không xóa payment cũ.
-- Release inventory là state change mới.
-- Email đã gửi không thể thực sự thu hồi.
-- Compensation cũng có thể thất bại và cần retry/manual review.
-
-#### Bước 5. Fan-out
-
-```text
-OrderConfirmed
-  ├-> Notification gửi email/push
-  ├-> Loyalty cộng điểm
-  ├-> Analytics cập nhật doanh thu
-  ├-> Recommendation học sở thích
-  └-> Data Platform ghi Warehouse
-```
-
-Mỗi consumer độc lập. Notification lỗi không làm Analytics dừng.
-
-#### Trạng thái user nhìn thấy
-
-| Trạng thái | Ý nghĩa |
-| --- | --- |
-| `PENDING` | Đã nhận đơn, đang xử lý |
-| `RESERVING_INVENTORY` | Đang giữ hàng |
-| `PAYMENT_PROCESSING` | Đang thanh toán |
-| `CONFIRMED` | Đơn được chấp nhận |
-| `CANCELLED` | Đơn thất bại/đã hoàn tác |
-| `MANUAL_REVIEW` | Cần nhân viên xử lý |
-
-Không nên trả “thành công” khi mới nhận event. Có thể trả `202 Accepted` hoặc order `PENDING`, rồi client polling/WebSocket/SSE để nhận kết quả cuối.
 
 ### Những use case phù hợp với EDA
 
@@ -1050,316 +1609,77 @@ Kafka được thiết kế cho nhóm nhu cầu này.
 | Lưu/replay | **Retention** | Giữ record theo time/size |
 | Chịu lỗi | **Replication** | Có bản sao trên broker khác |
 
-#### Topic là event stream có tên
-
-```text
-Topic: order-events
-OrderCreated -> InventoryReserved -> PaymentSucceeded -> OrderConfirmed -> ...
-```
-
-Topic là log nhận record liên tục, không phải queue xóa record ngay khi một consumer đọc.
-
-#### Partition tạo parallelism và ordering theo key
-
-```text
-order-events
-  Partition 0: order 100, 103, 106
-  Partition 1: order 101, 104, 107
-  Partition 2: order 102, 105, 108
-```
-
-Dùng `orderId` làm key giúp event cùng order vào cùng partition:
-
-```text
-key=9001: OrderCreated -> PaymentSucceeded -> OrderShipped
-```
-
-Kafka giữ order trong partition, không có total order giữa mọi partition. Đây là đánh đổi để scale.
-
-#### Consumer Group phân phối event
-
-Trong cùng group, instance chia partition:
-
-```text
-payment-service:
-P1 <- Partition 0
-P2 <- Partition 1
-P3 <- Partition 2
-```
-
-Ba partition và năm consumer nghĩa là hai consumer idle.
-
-Các group khác nhau đọc độc lập:
-
-```text
-order-events
-  ├-> payment-service group
-  ├-> inventory-service group
-  ├-> notification-service group
-  └-> analytics-service group
-```
-
-Payment đọc không làm Analytics mất event.
-
-#### Offset là bookmark
-
-```text
-offset    0    1    2    3
-record   [A]  [B]  [C]  [D]
-                    ^
-              group đã commit
-```
-
-Consumer restart đọc tiếp từ committed offset; reset offset cho phép replay nếu record còn retention.
-
-Offset không chứng minh external side effect đã hoàn tất. Consumer charge tiền rồi crash trước commit có thể đọc lại record; Payment vẫn phải idempotent.
-
-#### Retention tạo buffer và replay
-
-Kafka không xóa record chỉ vì đã consume:
-
-```text
-retention = 7 ngày
-Payment đã đọc     -> record vẫn còn
-Analytics đọc chậm -> đọc sau
-Consumer mới       -> replay lịch sử
-```
-
-Consumer lag quá retention có thể mất phần record cũ. Retention phải dựa trên downtime, replay, storage và compliance.
-
-#### Replication tạo khả năng chịu lỗi
-
-```text
-Partition 0:
-Leader   -> Broker 1
-Follower -> Broker 2
-Follower -> Broker 3
-```
-
-Leader lỗi thì replica đủ điều kiện có thể lên thay. Durability còn phụ thuộc replication factor, ISR, `acks`, `min.insync.replicas`.
-
-#### Order flow trên Kafka
-
-```text
-Order Service -> OrderCreated(key=9001) -> order-events
-                    ├-> inventory-service -> InventoryReserved
-                    └-> analytics-service -> dashboard
-
-InventoryReserved -> inventory-events
-                    -> payment-service -> PaymentSucceeded
-
-PaymentSucceeded -> payment-events
-                    ├-> order-service -> CONFIRMED
-                    └-> notification-service -> gửi thông báo
-```
-
-Thiết kế topic phải cân nhắc domain ownership, throughput, ordering, retention và ACL; không tạo tùy tiện một topic cho mọi event.
-
-#### Kafka giải quyết gì?
-
-- Lưu/phân phối event throughput cao.
-- Nhiều consumer group đọc độc lập.
-- Buffer backlog và theo dõi lag.
-- Scale bằng partition.
-- Replay bằng offset.
-- Chịu lỗi bằng replication.
-- CDC và stream processing.
-
-Kafka không tự giải quyết:
-
-- Event nào nên tồn tại và semantic.
-- Dual-write database–Kafka.
-- Consumer idempotency.
-- Saga compensation.
-- Schema governance.
-- Exactly-once với mọi external API/database.
-- Tracing, alert, security, business correctness.
-
-```text
-EDA trả lời:
-Hệ thống phối hợp bằng business event như thế nào?
-
-Kafka trả lời:
-Event được ghi, lưu, chia partition, phân phối,
-theo dõi offset và replay ở quy mô lớn thế nào?
-```
-
-Kafka là công cụ hiện thực một phần EDA, không phải bản thân kiến trúc. Phần `Kafka Concept` tiếp theo đi sâu vào producer, topic, partition, offset, consumer group, broker, replication và retention.
-
 ## Kafka Concept
 
-🙂 Apache Kafka là một **distributed event streaming platform**. Nói ngắn gọn, Kafka cho phép nhiều hệ thống **publish, lưu trữ, đọc và xử lý một dòng event liên tục** với throughput cao, có thể scale ngang và chịu lỗi.
+🙂 Apache Kafka là một **distributed event streaming platform**. Nói dễ hiểu: Kafka là hạ tầng trung gian để nhiều hệ thống có thể **ghi event**, **lưu event**, rồi **đọc event** theo nhu cầu riêng.
 
-Kafka kết hợp ba khả năng chính:
+Kafka không chỉ chuyển message từ A sang B. Kafka giữ event trong một khoảng thời gian theo cấu hình, nên consumer có thể đọc ngay, đọc chậm hơn producer, hoặc đọc lại dữ liệu cũ nếu record vẫn còn trong retention.
 
-1. **Publish/subscribe event**: producer ghi event, consumer đăng ký đọc event.
-2. **Lưu event bền vững**: event được giữ trong topic theo retention policy, không bị xóa chỉ vì một consumer đã đọc xong.
-3. **Xử lý event stream**: application có thể filter, join, aggregate, enrich hoặc phản ứng với event khi nó xuất hiện.
-
-```text
-Event sources              Kafka                         Event consumers
-Order Service  ─┐      ┌─ orders ────────────────┐   ┌─ Payment Service
-Payment DB/CDC ─┼────> │  partitioned event log  │ ─>├─ Fraud Detection
-Mobile App     ─┘      └─────────────────────────┘   ├─ Data Warehouse
-                                                    └─ Realtime Dashboard
-```
-
-Điểm cốt lõi là producer và consumer **không cần biết trực tiếp về nhau**. `Order Service` chỉ publish `OrderCreated`; Payment, Fraud, Analytics hoặc một consumer được thêm sau này có thể đọc event theo nhu cầu riêng.
+Ví dụ: Order Service ghi event `OrderCreated` vào Kafka. Payment Service đọc để xử lý thanh toán. Analytics Service đọc để làm báo cáo. Notification Service đọc để gửi thông báo. Các consumer này không lấy mất event của nhau, vì mỗi nhóm consumer có vị trí đọc riêng.
 
 ### “Stream” có nghĩa là gì?
 
-**Stream** là một dòng event xuất hiện nối tiếp theo thời gian. Khác với một dataset hữu hạn đã có sẵn, stream thường không có điểm kết thúc rõ ràng: khi hệ thống còn hoạt động thì event mới vẫn tiếp tục được sinh ra.
+**Stream** là dòng event xuất hiện liên tục theo thời gian. Khi hệ thống còn chạy thì event mới vẫn tiếp tục sinh ra.
 
-```text
-thời gian ---------------------------------------------------------->
+Ví dụ: user click sản phẩm, tạo order, thanh toán thành công, tài xế gửi vị trí, database có thay đổi mới. Mỗi việc như vậy có thể trở thành một event trong stream.
 
-OrderCreated -> PaymentSucceeded -> OrderPacked -> OrderShipped -> ...
-```
-
-Ví dụ:
-
-- Mỗi lần user click sản phẩm tạo một event trong click stream.
-- Mỗi lần tài xế gửi vị trí tạo một event trong location stream.
-- Mỗi thay đổi `INSERT/UPDATE/DELETE` trong database có thể trở thành một event trong CDC stream.
-- Mỗi order mới hoặc lần đổi trạng thái order tạo event trong order stream.
-
-Trong Kafka, stream không phải một object đơn lẻ nằm trọn trong memory. Nó là cách nhìn logic về chuỗi record được ghi liên tục vào topic. Topic có thể có nhiều partition nên Kafka chỉ đảm bảo thứ tự record trong từng partition, không có một thứ tự toàn cục cho toàn bộ stream.
-
-Cần phân biệt:
-
-- **Event stream**: dòng event liên tục, ví dụ các event trong topic `order-events`.
-- **Event streaming**: toàn bộ việc capture, lưu trữ, vận chuyển và cung cấp dòng event cho các hệ thống khác.
-- **Stream processing**: đọc dòng event và xử lý liên tục như filter, enrich, join, aggregate hoặc phát sinh event mới.
-
-```text
-Event stream đầu vào
-  -> Stream processing
-  -> Event stream đầu ra
-
-orders.raw
-  -> validate + enrich + aggregate
-  -> orders.cleaned / sales-per-minute
-```
-
-Kafka được gọi là **event streaming platform** vì nó không chỉ chuyển message: Kafka còn lưu dòng event để consumer có thể xử lý ngay khi event xuất hiện hoặc đọc lại dữ liệu cũ còn trong retention. Chi tiết cách xử lý stream được trình bày tại mục `Stream Processing - Event Driven Architecture`; phần này chỉ giải thích ý nghĩa của chữ “stream”.
+Kafka gọi là event streaming platform vì nó không chỉ nhận event tại một thời điểm, mà còn lưu và phân phối cả dòng event liên tục đó cho nhiều hệ thống đọc.
 
 ### Mental model tổng quan
 
-Có thể hình dung Kafka như một **distributed append-only log**:
+Các khái niệm chính:
 
-```text
-Producer -> Topic -> Partitioned log -> Consumer group
-```
+- **Producer**: ứng dụng ghi event vào Kafka.
+- **Record/event**: dữ liệu được ghi vào Kafka, thường mô tả một việc đã xảy ra.
+- **Topic**: luồng event có tên, ví dụ `order-events` hoặc `payment-events`.
+- **Partition**: phần chia nhỏ của topic để Kafka xử lý song song và giữ thứ tự theo một key.
+- **Offset**: vị trí của một record trong partition.
+- **Consumer**: ứng dụng đọc event từ Kafka.
+- **Consumer group**: nhiều instance cùng chia nhau việc đọc topic.
+- **Broker**: server Kafka lưu dữ liệu.
+- **Replication**: tạo bản sao dữ liệu trên nhiều broker để chịu lỗi.
+- **Retention**: chính sách giữ record trong bao lâu hoặc giữ tối đa bao nhiêu dung lượng.
 
-- **Event/record**: ghi lại sự thật rằng một việc đã xảy ra, ví dụ `OrderCreated`, `PaymentSucceeded`, `ProductStockChanged`.
-- **Producer**: application ghi event vào Kafka.
-- **Topic**: dòng event có tên, ví dụ `order-events`.
-- **Partition**: chia topic thành nhiều ordered log để lưu và xử lý song song.
-- **Offset**: vị trí của record trong một partition.
-- **Consumer/consumer group**: application đọc event; nhiều instance trong cùng group chia nhau các partition để scale.
-- **Broker/replica**: broker lưu partition; replica cung cấp khả năng chịu lỗi khi broker gặp sự cố.
-
-Mục này chỉ cung cấp mental model. Các cơ chế được giải thích chi tiết ở phần sau:
-
-| Muốn tìm hiểu | Đọc mục |
-| --- | --- |
-| Broker, topic, partition, segment, offset, ordering và event key | `Broker + Topic + Partitions + Segment + Offset` |
-| Cấu trúc event/message/record/data | `Event / Message / Record / Data` |
-| Producer, serializer, partition strategy, ACK, retry, idempotence, compression | `Producer` |
-| Consumer group, commit offset, rebalance, offset reset và consumer thread | `Consumer` |
-| At-most-once, at-least-once và exactly-once | `Kafka Delivery Semantics` |
-| Leader, follower, ISR và replication | `Kafka Replica` |
-| Retention, segment deletion và log compaction | `Log Retention + Cleanup Policy` |
-| Vì sao Kafka có throughput cao | `Why Kafka Fast?` |
-| So sánh với message broker truyền thống | `RabbitMQ vs Kafka` |
-
-> Lưu ý: partition là **ordered log ở góc nhìn logic**, không nên hiểu đơn giản là đúng một file vật lý. Trên disk, một partition gồm nhiều segment; xem chi tiết tại `Broker + Topic + Partitions + Segment + Offset`.
+Ví dụ ngắn: topic `order-events` có các event về order. Payment Service đọc để thanh toán. Analytics Service đọc để thống kê. Nếu Analytics dừng một lúc, Payment vẫn chạy bình thường. Khi Analytics chạy lại, nó đọc tiếp từ vị trí cũ nếu dữ liệu còn được Kafka giữ.
 
 ### Log-based khác queue truyền thống ở điểm nào?
 
-Với queue truyền thống, message thường được broker theo dõi theo vòng đời giao nhận và được loại khỏi queue sau khi consumer xử lý/ACK theo cơ chế của broker. Với Kafka, record được giữ độc lập với việc đã có consumer đọc hay chưa; mỗi consumer group theo dõi vị trí đọc của riêng mình.
+Với nhiều queue truyền thống, message thường biến mất khỏi queue sau khi được xử lý. Với Kafka, record không biến mất chỉ vì một consumer đã đọc. Record được giữ theo retention.
 
-Điều này đem lại bốn đặc tính quan trọng:
+Điều này tạo ra khác biệt lớn:
 
-- **Replay**: có thể đọc lại event còn trong retention để sửa bug, rebuild projection/search index hoặc backfill pipeline.
-- **Fan-out**: nhiều consumer group đọc cùng topic độc lập; Payment đọc không làm Analytics mất event.
-- **Decoupling**: producer không phải gọi trực tiếp mọi downstream; từng consumer có thể deploy và scale riêng.
-- **Buffering**: consumer có thể xử lý chậm hơn producer trong một khoảng thời gian vì event đã được lưu trong Kafka.
+- Nhiều consumer group có thể đọc cùng một topic độc lập.
+- Consumer đọc chậm có thể xử lý backlog sau.
+- Có thể replay event cũ để dựng lại projection, search index hoặc báo cáo.
+- Producer không cần biết có bao nhiêu hệ thống phía sau đang đọc event.
 
-Kafka không làm slow consumer biến mất. Nếu consumer lag quá lâu và record đã hết retention, phần dữ liệu đó có thể bị xóa trước khi consumer đọc tới. Cơ chế offset và retention được giải thích ở các mục `Consumer` và `Log Retention + Cleanup Policy`.
+Nhưng Kafka không giữ dữ liệu mãi mãi nếu retention không cấu hình như vậy. Nếu consumer dừng quá lâu và dữ liệu cũ đã bị xóa, consumer có thể không đọc lại được phần đã mất.
 
-### Ví dụ thực tế: order flow
+### Kafka phù hợp khi nào?
 
-```text
-Order Service
-  -> publish OrderCreated(key=orderId:9001)
-  -> Kafka topic: order-events
-       -> Payment Service
-       -> Fraud Service
-       -> Notification Service
-       -> Analytics Service
-```
+- Một event cần nhiều hệ thống độc lập cùng đọc.
+- Lượng event lớn và cần throughput cao.
+- Consumer có thể chậm hoặc downtime tạm thời rồi đọc tiếp.
+- Cần replay dữ liệu cũ để rebuild view, backfill hoặc phân tích.
+- Cần xử lý stream gần realtime như tracking, analytics, CDC, monitoring, fraud detection.
 
-Nếu Analytics ngừng 30 phút, Payment vẫn có thể tiếp tục hoạt động. Khi Analytics chạy lại, nó đọc tiếp từ vị trí đã commit nếu dữ liệu vẫn còn trong retention. Nếu thêm Recommendation Service sau này, service mới chỉ cần subscribe topic; không phải sửa flow chính của Order Service.
+Ví dụ: hệ thống thương mại điện tử phát event `OrderConfirmed`. Payment, Notification, Analytics, Warehouse và Loyalty có thể đọc cùng event đó cho mục đích riêng.
 
-Dùng `orderId` làm key thường giúp các event của cùng order đi vào cùng partition:
+### Kafka không phù hợp khi nào?
 
-```text
-OrderCreated -> PaymentSucceeded -> OrderPacked -> OrderShipped
-```
-
-Nhờ vậy có thể giữ thứ tự theo từng order. Kafka không đảm bảo total order giữa mọi partition. Cách chọn key và ảnh hưởng tới ordering được trình bày tại `Producer Message Key`, `Producer Partition Strategy` và `Event Key`.
-
-### Kafka phù hợp với use case nào?
-
-- Event-driven microservices và tích hợp bất đồng bộ giữa nhiều hệ thống.
-- CDC: đưa thay đổi từ database thành event stream.
-- Realtime analytics, monitoring và dashboard.
-- Log, metric và user activity tracking tập trung.
-- Fraud detection, recommendation, notification và IoT telemetry.
-- Streaming ETL/ELT và đồng bộ dữ liệu sang Data Lake, Warehouse hoặc Elasticsearch.
-- Event Sourcing khi application được thiết kế theo mô hình đó ngay từ đầu.
-
-Hai ví dụ quen thuộc:
-
-- Hệ thống xem phim có thể publish `MovieWatched`, `MoviePaused`, `SearchPerformed` để pipeline recommendation cập nhật gợi ý gần realtime.
-- Hệ thống gọi xe có thể stream vị trí tài xế, trạng thái chuyến đi và payment event cho tracking, pricing, fraud và analytics.
-
-Các ví dụ này mô tả kiểu bài toán Kafka phù hợp, không có nghĩa Kafka tự thực hiện thuật toán recommendation, tìm đường hoặc tính giá. Business logic vẫn nằm ở stream processor hoặc service phía consumer.
-
-### Kafka không tự giải quyết điều gì?
-
-- Kafka không thay thế relational database cho CRUD, truy vấn ad-hoc, join tùy ý hoặc transaction business thông thường.
-- Kafka không tự đảm bảo end-to-end exactly-once với mọi database/API bên ngoài; xem `Kafka Delivery Semantics`.
-- Kafka không tự tạo schema/data contract đúng hoặc ngăn producer phát event sai business.
-- Kafka không phải lựa chọn tự nhiên nhất cho mọi task queue cần priority, per-message delay, complex routing hoặc request/reply đơn giản.
-- Kafka không tự đem lại Event Sourcing. Event Sourcing là cách thiết kế domain; Kafka chỉ có thể là một thành phần của kiến trúc đó.
-- Kafka không nên được coi là backup duy nhất của database nếu retention/compaction không giữ đủ dữ liệu để phục hồi.
+- Chỉ cần gọi request-response và cần kết quả ngay.
+- Chỉ cần chạy job đơn giản, cần priority, delay từng message hoặc routing phức tạp.
+- Dữ liệu chủ yếu là CRUD/query linh hoạt như database quan hệ.
+- Hệ thống chưa có idempotency, schema contract, monitoring và retry rõ ràng.
+- Team nghĩ Kafka sẽ tự giải quyết distributed transaction, Saga hoặc exactly-once với mọi hệ thống bên ngoài.
 
 ### Đánh đổi cần nhớ
 
-- Lưu record sau khi consume giúp replay và fan-out nhưng tốn storage, replication traffic và chi phí vận hành.
-- Partition giúp scale nhưng đổi lại chỉ có ordering trong partition; chọn sai key có thể gây hot partition hoặc sai thứ tự theo entity.
-- Consumer linh hoạt về vị trí đọc nhưng application phải xử lý duplicate, retry, rebalance, poison message và consumer lag.
-- Decoupling giúp hệ thống dễ mở rộng nhưng tăng eventual consistency và làm tracing/debug phức tạp hơn synchronous call.
-- Production cần theo dõi broker health, disk, under-replicated partition, throughput, consumer lag và schema compatibility.
-
-Chi tiết của từng đánh đổi được khai thác tại các mục kỹ thuật tương ứng ở phía dưới; `Kafka Concept` chỉ đóng vai trò bản đồ tổng quan.
-
-### Tư duy chọn nhanh
-
-- Cần một event được nhiều hệ thống độc lập đọc: Kafka phù hợp.
-- Cần throughput cao, lưu event và replay: Kafka phù hợp.
-- Chỉ cần giao một job đơn giản cho một worker, trong khi routing/delay/priority quan trọng hơn replay: nên đánh giá message broker/task queue khác.
-- Cần request-response tức thời và caller phải nhận kết quả ngay: HTTP/gRPC thường tự nhiên hơn; Kafka có thể xử lý các side effect bất đồng bộ.
-- Chưa có retention, data contract và idempotency rõ ràng: chưa nên đưa pipeline lên production chỉ vì đã có Kafka.
-
-### Đánh giá lại ghi chú cũ
-
-- Đúng: Kafka là log-based event streaming platform; partition là ordered append-only log ở góc nhìn logic; offset cho phép consumer theo dõi vị trí và replay; nhiều consumer group có thể đọc độc lập.
-- Cần sửa: partition không chỉ là một file vật lý mà gồm nhiều segment; Kafka chỉ đảm bảo ordering trong partition; slow consumer vẫn có nguy cơ mất dữ liệu đã hết retention.
-- Cần bỏ cách nói tuyệt đối: sequential disk I/O có lợi cho throughput nhưng không nên khẳng định chung rằng nó “nhanh hơn random write trong RAM hàng nghìn lần”. Các yếu tố hiệu năng được phân tích riêng tại `Why Kafka Fast?`.
-- Cần nói cẩn trọng hơn: replay có thể rebuild projection/search index hoặc state nếu giữ đủ event và transform deterministic; nó không mặc nhiên phục hồi được database hay biến hệ thống thành Event Sourcing.
+- Lưu event để replay được thì tốn storage và chi phí vận hành.
+- Partition giúp scale nhưng ordering chỉ chắc trong từng partition.
+- Consumer có thể đọc lại nên phải xử lý duplicate/idempotency.
+- Bất đồng bộ giúp decouple nhưng làm hệ thống eventual consistency và khó trace hơn.
+- Kafka mạnh về vận chuyển/lưu event; business correctness vẫn do application thiết kế.
 
 ## Why is Kafka fast?
 
@@ -1380,24 +1700,20 @@ Các yếu tố chính:
 
 ### 1. Append-only log và sequential I/O
 
-Record mới được append vào cuối active segment của partition. Kafka không phải tìm một vị trí ngẫu nhiên trên disk cho từng record giống workload random update.
+Kafka ghi record mới bằng cách **thêm vào cuối log** của partition. Nó không update record cũ tại nhiều vị trí khác nhau như một database thường làm.
 
-```text
-Partition log
+Ví dụ topic order có nhiều event mới: `OrderCreated`, `PaymentSucceeded`, `OrderShipped`. Kafka chỉ cần ghi tiếp các event mới vào cuối partition. Cách ghi này đơn giản và đều đặn hơn so với việc phải tìm đúng row cũ rồi update tại nhiều vị trí trên disk.
 
-[record 0][record 1][record 2][record 3] ---> append record mới
-```
+Vì ghi và đọc chủ yếu đi theo thứ tự, Kafka tận dụng tốt sequential I/O. Trên disk, đọc/ghi tuần tự thường hiệu quả hơn đọc/ghi rải rác vì hệ thống phải di chuyển và tìm vị trí ít hơn. Ngay cả với SSD, ghi theo luồng lớn và đều vẫn có lợi vì giảm overhead và dễ batch hơn.
 
-Sequential access có lợi vì:
+Lợi ích chính:
 
-- Ít disk seek hơn, đặc biệt rõ trên HDD.
-- Các write nhỏ có thể được gom thành write lớn và liên tục.
-- Read thường đi tuần tự từ offset hiện tại của consumer.
-- OS có thể read-ahead và cache các page được truy cập gần đây.
+- Ghi nhanh hơn vì chủ yếu append vào cuối.
+- Dễ gom nhiều record nhỏ thành một lần ghi lớn.
+- Consumer thường đọc tiếp từ vị trí đang đọc, nên pattern đọc cũng tuần tự.
+- Hệ điều hành dễ cache và đọc trước dữ liệu gần vị trí hiện tại.
 
-SSD làm chênh lệch sequential/random I/O nhỏ hơn HDD, nhưng contiguous I/O, batching và ít system call vẫn có lợi. Không nên hiểu rằng disk luôn nhanh hơn RAM; ý đúng là **sequential disk access có thể rất hiệu quả**, còn random memory access có thể gặp cache miss và pattern truy cập kém.
-
-Chi tiết cách partition được chia thành segment nằm tại `Broker + Topic + Partitions + Segment + Offset`.
+Điểm cần nhớ: ý này không có nghĩa disk nhanh hơn RAM. Ý đúng là Kafka tránh kiểu ghi rải rác, tận dụng pattern đọc/ghi tuần tự để đạt throughput cao.
 
 ### 2. Kafka tận dụng OS page cache
 
@@ -1469,24 +1785,13 @@ Tác dụng:
 
 ### 4. Compression theo batch
 
-Các event cùng loại thường lặp lại field name và nhiều giá trị:
+Kafka nén dữ liệu theo **record batch**. Producer thường gom nhiều record lại trước khi gửi, sau đó nén cả batch bằng codec như `gzip`, `snappy`, `lz4` hoặc `zstd`.
 
-```json
-{"eventType":"UserClicked","userId":1001,"productId":501}
-{"eventType":"UserClicked","userId":1001,"productId":502}
-{"eventType":"UserClicked","userId":1002,"productId":501}
-```
+Nén theo batch thường hiệu quả hơn nén từng record riêng lẻ, vì codec có nhiều dữ liệu hơn để tìm phần lặp. Ví dụ nhiều event click, order hoặc log thường có format gần giống nhau; khi gom lại thành batch, dữ liệu có nhiều pattern lặp nên nén tốt hơn.
 
-Nén từng record riêng lẻ không tận dụng tốt phần dữ liệu lặp. Kafka nén **record batch**, giúp compression ratio tốt hơn:
+Kafka không cần hiểu nội dung event là JSON, Avro hay Protobuf. Với Kafka, record là dữ liệu dạng bytes; phần nén do codec xử lý trên bytes của cả batch.
 
-```text
-Record batch
-  -> compress một lần
-  -> gửi qua network
-  -> lưu trong Kafka log ở dạng compressed
-  -> truyền batch compressed cho consumer
-  -> consumer decompress
-```
+Record batch được gửi qua network, lưu trên broker và replicate ở dạng compressed khi cấu hình phù hợp. Consumer decompress khi đọc để application xử lý payload.
 
 Lợi ích:
 
@@ -1501,7 +1806,15 @@ Lợi ích:
 - Batch nhỏ thường nén kém hiệu quả.
 - Chọn thuật toán phụ thuộc ưu tiên CPU, ratio, throughput và compatibility.
 
-Kafka hỗ trợ các codec như `gzip`, `snappy`, `lz4`, `zstd`. Cấu hình và cách chọn được trình bày chi tiết tại `Producer Compression`.
+Kafka hỗ trợ các codec như `gzip`, `snappy`, `lz4`, `zstd`. Cách chọn thường gặp:
+
+- **`lz4`**: lựa chọn phổ biến khi cần throughput cao và latency thấp. Nén/giải nén nhanh, ratio khá tốt, hợp với event realtime, log, tracking, order event.
+- **`zstd`**: hợp khi muốn nén tốt hơn để giảm network/storage, nhưng vẫn giữ hiệu năng tốt. Phù hợp với payload lớn, traffic nhiều, hoặc chi phí băng thông/storage quan trọng.
+- **`snappy`**: ưu tiên nhẹ CPU và tốc độ, nhưng ratio thường không tốt bằng `zstd`/`gzip`. Dùng khi hệ thống đã dùng sẵn Snappy hoặc workload cần nén nhanh hơn là nén sâu.
+- **`gzip`**: ratio tốt nhưng tốn CPU và chậm hơn, thường không phải lựa chọn mặc định cho pipeline realtime throughput cao. Hợp hơn với dữ liệu cần nén mạnh và latency không quá nhạy.
+- **`none`**: dùng khi payload rất nhỏ, dữ liệu đã được nén sẵn, CPU đang là bottleneck, hoặc môi trường dev/test chưa cần tối ưu network/storage.
+
+Quy tắc nhanh: bắt đầu với `lz4` nếu ưu tiên tốc độ, thử `zstd` nếu muốn giảm dung lượng nhiều hơn, tránh chọn `gzip` cho realtime path nếu chưa benchmark.
 
 ### 5. Zero-copy giảm việc copy dữ liệu qua user space
 
@@ -1571,7 +1884,7 @@ Cách chọn key, số partition và ảnh hưởng tới ordering được trì
 
 ### 7. Consumer pull và fetch theo batch
 
-Kafka consumer chủ động gửi fetch request và chỉ rõ offset muốn đọc. Broker trả về một vùng record liên tiếp, thay vì phải push và theo dõi trạng thái giao nhận của từng record cho từng consumer.
+Kafka consumer chủ động gửi fetch request và chỉ rõ offset muốn đọc. Broker trả về một vùng record liên tiếp. Broker vẫn lưu offset commit của Consumer Group trong `__consumer_offsets`, nhưng không phải lưu trạng thái giao nhận riêng cho từng record của từng consumer.
 
 ```text
 Consumer: cho tôi dữ liệu từ offset 500, tối đa theo fetch config
@@ -1665,18 +1978,79 @@ Kafka nhanh ở data plane không có nghĩa toàn bộ pipeline nhanh. Nếu co
 
 ## RabbitMQ vs Kafka
 
-- Model: Push Model (RabbitMQ - Broker đẩy tin): Ngay khi có tin nhắn mới, Broker sẽ chủ động "nhồi" tin nhắn đó xuống Consumer, **Độ trễ cực thấp:** Tin nhắn được chuyển đi ngay lập tức khi vừa đến Broker + **Tiết kiệm tài nguyên Consumer:** Consumer không phải tốn công "hỏi" xem có tin mới hay chưa + **Dễ gây "ngợp" (Overwhelmed):** Nếu Consumer xử lý chậm mà Broker cứ đẩy dồn dập, Consumer có thể bị treo hoặc tràn bộ nhớ. (Để khắc phục, RabbitMQ dùng cơ chế `Quality of Service - QoS` để giới hạn số tin nhắn chưa Ack) >< Pull Model (Kafka - Consumer kéo tin): Consumer tự quyết định khi nào nó sẵn sàng để lấy dữ liệu từ Broker, **Tự chủ về tốc độ (Flow Control):** Consumer xử lý theo khả năng của mình. Nếu hệ thống đang quá tải, nó có thể chậm lại mà không sợ bị Broker ép chết + **Batching (Gộp tin):** Consumer có thể kéo một lúc hàng ngàn tin nhắn để xử lý đồng loạt, giúp tối ưu hóa hiệu suất mạng và I/O + **Độ trễ nhất định:** Nếu Consumer không kiểm tra thường xuyên, tin nhắn sẽ nằm chờ ở Broker lâu hơn một chút.
-- Throughput: **RabbitMQ:** Coi Queue là một cấu trúc dữ liệu phức tạp trong bộ nhớ (In-memory). Khi tin nhắn được gửi đi và Ack, nó phải cập nhật trạng thái liên tục. Việc quản lý trạng thái của từng tin nhắn riêng lẻ tốn rất nhiều CPU >< **Kafka:** Sử dụng cơ chế **Sequential Log (Ghi nhật ký tuần tự)**. Dữ liệu chỉ được ghi nối đuôi vào cuối file trên đĩa cứng. Việc ghi tuần tự nhanh hơn rất nhiều so với ghi ngẫu nhiên. Ngoài ra, Kafka dùng kỹ thuật **Zero-copy**, cho phép dữ liệu đi thẳng từ đĩa cứng ra card mạng mà không cần đi qua CPU của ứng dụng + vẫn có độ trễ do phải ghi disk.
-- Scalability: RabbitMQ (Dọc - Vertical): Một Queue trong RabbitMQ về cơ bản là đơn luồng (Single-threaded) trên một Node để đảm bảo thứ tự tin nhắn. Nếu bạn muốn xử lý nhiều tin hơn, bạn cần CPU mạnh hơn trên chính Node đó. Việc chia nhỏ một Queue ra nhiều Server rất phức tạp >< Kafka (Ngang - Horizontal) nhờ Partition: Một Topic trong Kafka được chia thành nhiều Partition + Mỗi Partition có thể nằm trên một Server (Broker) khác nhau.
-- Persistence: RabbitMQ được thiết kế để chuyển tiếp tin nhắn, không phải để lưu trữ lâu dài, khi tin nhắn đến, nó được đưa vào một cấu trúc hàng đợi (Queue) trong bộ nhớ (RAM). Nếu cấu hình "persistent", nó sẽ được ghi xuống đĩa cứng + Broker phải theo dõi sát sao trạng thái của từng tin nhắn (Đang chờ, Đã gửi, Đã nhận Ack) + Ngay khi Consumer xác nhận đã xử lý xong (`Acknowledgment`), tin nhắn đó sẽ bị xóa hoàn toàn khỏi hàng đợi để giải phóng tài nguyên >< Kafka coi dữ liệu là một chuỗi các sự kiện (Events) không thể thay đổi, được ghi tuần tự vào các file log trên đĩa, tin nhắn (Message) được ghi nối đuôi vào cuối một Partition. Nó không bị xóa đi sau khi Consumer đọc xong + Thay vì Broker phải nhớ Consumer đã đọc đến đâu, chính Consumer sẽ giữ một "dấu trang" gọi là Offset + Dữ liệu được giữ lại dựa trên cấu hình (ví dụ: giữ trong 7 ngày hoặc giữ đến khi đạt 100GB). Sau thời gian đó, Kafka mới tự động xóa các đoạn log cũ → Bạn có thể yêu cầu Consumer đọc lại dữ liệu từ 3 ngày trước nếu gặp sự cố. Điều này là không thể với RabbitMQ + Hiệu suất của Kafka không phụ thuộc vào việc bạn lưu 1GB hay 1TB dữ liệu, vì việc ghi chỉ là ghi nối đuôi (Sequential I/O).
-- Routing: là điểm mà RabbitMQ tỏa sáng rực rỡ hơn hẳn so với Kafka.
-- RabbitMQ: "Bộ định tuyến" thông minh, Producer không gửi tin nhắn trực tiếp vào Queue. Thay vào đó, nó gửi vào một **Exchange**. Exchange này đóng vai trò như một cảnh sát giao thông, nhìn vào "nhãn" (Routing Key) của tin nhắn để quyết định đẩy nó vào đâu.
+RabbitMQ và Kafka đều giúp các hệ thống giao tiếp bất đồng bộ, nhưng chúng tối ưu cho hai kiểu bài toán khác nhau.
 
-![Kafka image 5](images/kafka-image-05.png)
+- **RabbitMQ** giống message broker truyền thống hơn: nhận message, route message vào queue, đẩy message cho consumer xử lý, consumer xử lý xong thì ack.
+- **Kafka** giống event log hơn: producer ghi record vào topic, Kafka giữ record theo retention, consumer group tự đọc theo offset của mình.
 
-- Apache Kafka: Định tuyến đơn giản (Key-based): Kafka không có khái niệm Exchange. Khả năng định tuyến của nó thô sơ hơn và tập trung vào việc phân chia dữ liệu (Partitioning).
+| Tiêu chí | RabbitMQ | Kafka |
+| --- | --- | --- |
+| Mục tiêu chính | Giao message/job tới consumer | Lưu và phân phối dòng event |
+| Cách consumer nhận dữ liệu | Broker thường đẩy message tới consumer | Consumer chủ động kéo dữ liệu |
+| Sau khi consume | Message thường được xóa sau ack | Record vẫn còn đến khi hết retention |
+| Nhiều hệ thống cùng đọc | Cần thiết kế exchange/queue phù hợp | Nhiều consumer group đọc độc lập tự nhiên |
+| Replay dữ liệu cũ | Không phải thế mạnh chính | Là use case rất mạnh nếu còn retention |
+| Routing | Rất mạnh với exchange/routing key | Đơn giản hơn, chủ yếu theo topic/key/partition |
+| Scale throughput | Scale theo queue/consumer, có giới hạn theo kiểu queue | Scale mạnh bằng partition và consumer group |
+| Use case hợp | Task queue, routing phức tạp, command/job | Event stream, analytics, CDC, log, fan-out, replay |
 
-![Kafka image 6](images/kafka-image-06.png)
+### 1. Push và pull model
+
+RabbitMQ thường theo hướng **push**: broker gửi message xuống consumer khi có message mới. Consumer ack sau khi xử lý xong. Nếu consumer xử lý chậm, RabbitMQ có cơ chế QoS/prefetch để giới hạn số message đang giao nhưng chưa ack.
+
+Kafka theo hướng **pull**: consumer chủ động hỏi broker để lấy thêm record. Consumer có thể lấy theo batch và tự điều chỉnh tốc độ đọc theo khả năng xử lý.
+
+Ví dụ: service gửi email xử lý từng job nhỏ có thể hợp với RabbitMQ. Pipeline analytics đọc hàng nghìn event mỗi lần để aggregate thường hợp với Kafka hơn.
+
+### 2. Throughput
+
+RabbitMQ phải quản lý trạng thái message theo vòng đời queue: message đang chờ, đã giao cho consumer, đã ack hay cần redeliver. Cách này rất hợp với job/message cần xử lý riêng lẻ, nhưng broker phải theo dõi nhiều trạng thái hơn.
+
+Kafka tối ưu cho throughput lớn bằng cách ghi record nối tiếp vào log, đọc theo offset, batch dữ liệu, nén theo batch và chia topic thành nhiều partition. Kafka ít quản lý trạng thái giao nhận riêng cho từng consumer trên broker hơn; consumer group theo dõi vị trí đọc của mình bằng offset.
+
+Ví dụ: xử lý vài nghìn background job có retry/routing rõ ràng có thể dùng RabbitMQ tốt. Lưu hàng trăm nghìn click event mỗi giây cho nhiều pipeline đọc song song thường hợp Kafka hơn.
+
+### 3. Scalability
+
+RabbitMQ scale tốt bằng nhiều queue, nhiều consumer, cluster và cơ chế routing. Tuy nhiên một queue cụ thể vẫn có giới hạn riêng, nhất là khi cần giữ ordering hoặc có nhiều message chưa ack.
+
+Kafka scale bằng **partition**. Một topic có thể chia thành nhiều partition, các partition nằm trên nhiều broker, và nhiều consumer trong cùng group chia nhau đọc partition. Càng nhiều partition hợp lý, Kafka càng có nhiều đơn vị để xử lý song song.
+
+Ví dụ: nếu cần giữ thứ tự theo từng order, Kafka có thể dùng `orderId` làm key để event của cùng order đi cùng partition. Các order khác nhau vẫn có thể xử lý song song trên partition khác.
+
+### 4. Persistence và replay
+
+RabbitMQ chủ yếu tối ưu cho việc giao message tới consumer. Khi consumer ack, message thường được loại khỏi queue. RabbitMQ có persistent message, nhưng mục tiêu chính vẫn không phải giữ lịch sử event lâu dài để nhiều hệ thống replay.
+
+Kafka giữ record theo retention, độc lập với việc consumer đã đọc hay chưa. Payment Service đọc xong không làm Analytics mất record. Nếu Analytics dừng một lúc, nó có thể đọc tiếp từ offset cũ khi chạy lại, miễn record vẫn còn trong retention.
+
+Ví dụ: nếu cần rebuild search index từ event `ProductUpdated` trong 3 ngày gần nhất, Kafka phù hợp hơn. Nếu chỉ cần giao job “resize ảnh này” cho một worker xử lý xong rồi bỏ, RabbitMQ thường đơn giản hơn.
+
+### 5. Routing
+
+RabbitMQ mạnh về routing. Producer gửi message vào exchange, exchange dựa trên routing key, pattern hoặc rule để đưa message vào queue phù hợp. Điều này hợp với hệ thống cần định tuyến message linh hoạt.
+
+Kafka routing đơn giản hơn. Producer ghi vào topic; nếu topic có nhiều partition thì key quyết định record vào partition nào. Kafka không có exchange routing phong phú như RabbitMQ. Thế mạnh của Kafka nằm ở event stream, lưu trữ, replay và consumer group độc lập.
+
+Ví dụ: nếu message `payment.failed.vip.eu` cần route tới nhiều queue theo rule khác nhau, RabbitMQ rất hợp. Nếu mọi service quan tâm tới `payment-events` tự đọc và xử lý theo nhu cầu riêng, Kafka hợp hơn.
+
+### Chọn nhanh
+
+Chọn RabbitMQ khi:
+
+- Cần task queue/job queue đơn giản.
+- Cần routing linh hoạt, priority, delay, retry theo message.
+- Message xử lý xong thì không cần giữ lại lâu.
+- Mỗi message thường chỉ cần một nhóm worker xử lý.
+
+Chọn Kafka khi:
+
+- Cần nhiều hệ thống đọc cùng một event độc lập.
+- Cần throughput cao và xử lý theo batch.
+- Cần lưu event trong một khoảng thời gian để replay.
+- Cần stream processing, CDC, analytics, audit pipeline hoặc event-driven fan-out.
+
+Tóm lại: RabbitMQ mạnh ở **giao và route message để xử lý công việc**. Kafka mạnh ở **lưu và phân phối dòng event cho nhiều hệ thống đọc độc lập**.
 
 ## Broker + Topic + Partitions + Segment + Offset
 
@@ -1690,82 +2064,888 @@ Kafka nhanh ở data plane không có nghĩa toàn bộ pipeline nhanh. Nếu co
 
 ![Kafka image 8](images/kafka-image-08.png)
 
-Broker thực chất là một tiến trình (process) chạy trên một máy chủ vật lý hoặc máy chủ ảo, một hệ thống Kafka thường bao gồm nhiều Broker kết hợp lại với nhau để tạo thành một Kafka Cluster + các messages sẽ được lưu trữ trong các Partitions của Broker dưới dạng bytes trong disk của Broker.
+### Broker
 
-- Mỗi Broker trong Cluster sẽ có 1 id giá trị số khác nhau để phân biệt các Broker.
-- Mỗi Broker có khả năng lưu trữ nhiều Partition.
-- Mặc dù Broker lưu trữ dữ liệu, nhưng nó không theo dõi việc Consumer đã đọc đến đâu (việc này do Consumer hoặc Metadata quản lý), giúp nó giữ được hiệu năng cực cao.
-- Chịu trách nhiệm nhận tin nhắn từ Producer, lưu trữ chúng xuống đĩa cứng và trả lại cho Consumer khi được yêu cầu + Quản lý partition, mỗi Topic trong Kafka được chia nhỏ thành các Partition, các Partition này sẽ được phân tán (distributed) đều trên các Broker trong Cluster.
-- Trong một cụm (Cluster), sẽ có một Broker được bầu làm Controller. Broker này có quyền lực cao nhất: nó theo dõi trạng thái của các Broker khác, quản lý việc bầu chọn Leader cho các Partition và đảm bảo sự cân bằng trong hệ thống.
+Broker là một tiến trình Kafka chạy trên máy chủ vật lý, máy ảo hoặc container. Một hệ thống Kafka production thường có nhiều Broker kết hợp lại thành một **Kafka Cluster**.
+
+Broker chịu trách nhiệm chính cho các việc sau:
+
+- Nhận message từ Producer.
+- Lưu message xuống disk theo từng Partition.
+- Trả dữ liệu cho Consumer khi Consumer gửi request đọc.
+- Quản lý các Partition đang nằm trên Broker đó.
+- Phối hợp với Broker khác để replication, leader election và cân bằng dữ liệu trong Cluster.
+
+Mỗi Broker trong Cluster có một **broker id** riêng để phân biệt với các Broker khác.
+
+Ví dụ:
+
+```text
+Kafka Cluster
+- Broker 1
+- Broker 2
+- Broker 3
+```
+
+Nếu Topic `order-events` có 3 Partition, Kafka có thể phân tán các Partition lên nhiều Broker:
+
+```text
+order-events / Partition 0 -> Broker 1
+order-events / Partition 1 -> Broker 2
+order-events / Partition 2 -> Broker 3
+```
+
+Cách phân tán này giúp dữ liệu không bị dồn vào một máy duy nhất. Khi tải tăng, hệ thống có thể scale bằng cách thêm Broker và phân bổ thêm Partition.
+
+Broker lưu message và Kafka cũng lưu offset của Consumer Group trong Topic nội bộ `__consumer_offsets`. Tuy nhiên, Kafka không lưu trạng thái theo kiểu "message này đã được Consumer A xử lý chưa" cho từng message riêng lẻ. Thay vào đó, Kafka chỉ lưu vị trí đã đọc tới đâu theo **Consumer Group + Topic + Partition**.
+
+```text
+Topic: order-events
+Partition 0 có các message:
+offset 0, 1, 2, 3, 4, 5, 6, 7
+
+Consumer Group: order-service
+Đã xử lý xong tới offset 4
+
+Kafka lưu offset đã commit:
+group = order-service
+topic = order-events
+partition = 0
+committed_offset = 5
+```
+
+Nghĩa là lần sau `order-service` đọc tiếp từ offset `5`. Kafka không cần lưu từng dòng kiểu `message 0 đã ack chưa`, `message 1 đã ack chưa`, `message 2 đã ack chưa` cho từng Consumer.
+
+Điểm này giúp Kafka có hiệu năng tốt hơn vì metadata cần quản lý nhỏ hơn nhiều. Broker vẫn lưu offset, nhưng offset là một con số đại diện cho vị trí đọc của một Consumer Group trên một Partition, không phải trạng thái giao nhận riêng của từng message.
+
+Trong Kafka dùng **KRaft**, metadata của Cluster được quản lý bởi một nhóm controller gọi là **controller quorum**. Tại một thời điểm sẽ có một controller đang active để điều phối metadata.
+
+Controller chịu trách nhiệm:
+
+- Theo dõi Broker nào còn hoạt động, Broker nào bị lỗi.
+- Điều phối leader election cho Partition.
+- Cập nhật metadata của Cluster.
+- Quản lý thay đổi như tạo Topic, xóa Topic, thay đổi Partition hoặc Replica assignment.
+
+Nếu Broker đang giữ Leader của một Partition bị lỗi, active controller sẽ chọn một Replica phù hợp để làm Leader mới.
+
+Nếu chính active controller bị lỗi, controller quorum sẽ bầu một active controller mới từ các controller node còn sống. Trong thời gian chuyển active controller, các thao tác liên quan tới metadata như leader election, tạo/xóa Topic hoặc cập nhật metadata cho client có thể chậm lại trong thời gian ngắn. Tuy nhiên, Kafka không phụ thuộc vĩnh viễn vào một controller cố định.
+
+Tóm gọn:
+
+```text
+Partition Leader lỗi
+  -> active controller chọn Leader mới cho Partition
+
+Active controller lỗi
+  -> controller quorum bầu active controller mới
+```
 
 ![Kafka image 9](images/kafka-image-09.png)
 
-- Kafka có tính năng tốt là khi bất kỳ Producer, Consumer nào mà connect được với 1 Broker trong Cluster thì sẽ biết cách connect tới toàn bộ Cluster này → chỉ cần connect với 1 Broker thì Client sẽ tự động biết cách connect với các Broker khác
+Producer hoặc Consumer không cần biết toàn bộ chi tiết Cluster ngay từ đầu. Chỉ cần kết nối được tới một Broker trong danh sách bootstrap server, client có thể lấy metadata để biết Topic có những Partition nào, Partition nào đang do Broker nào làm Leader, sau đó kết nối tới Broker cần thiết.
+
+Ví dụ:
+
+```text
+Client connect Broker 1
+  -> lấy metadata Cluster
+  -> biết Partition 2 của order-events đang có Leader ở Broker 3
+  -> gửi request đọc/ghi tới Broker 3 khi cần
+```
 
 ![Kafka image 10](images/kafka-image-10.png)
 
-Topic sử dụng để lưu trữ, tổ chức các events, là 1 datastream (đại diện cho luồng dữ liệu giúp duy trì thứ tự message).
+### Topic
 
-- Topic khá giống với database table, các events như là các row trong table này vậy nhưng không có query mà sử dụng thông qua Producer, Consumer + cũng không có constraint.
-- Topic có thể handle nhiều loại message type như là: JSON, Avro, text files, binary,...
-- Các events có chung mục đích sẽ được đặt trong cùng 1 Topic: giả sử Topic “user” sẽ chỉ có thông tin events của user; Topic “payment” sẽ chỉ có thông tin events của payment thôi
-- 1 Topic chứa 1 tập các Partitions (tuy nhiên các Partition này phải chung mục đích của Topic đã phân tách ra chúng) + mỗi Partitions chứa các events và mỗi khi events tới nó sẽ được add vào cuối danh sách của Partition (tức là các events sẽ order theo time)
-- Các events sau khi add vào Topic sẽ không thể thay đổi được
-- 1 Topic có thể có 0,1,n Consumers read events/ Publishers write events từ Topic đó
+Topic là nơi Kafka dùng để phân loại và lưu trữ message/event theo mục đích sử dụng. Producer ghi message vào Topic, Consumer đọc message từ Topic.
 
-=> Scalable vì 1 application server có thể read/ write data từ nhiều Topics khác nhau tại 1 thời điểm + việc ta thêm Topic mới không ảnh hưởng tới các Topic cũ
+Ví dụ thực tế:
 
-Partition tức là 1 phần của 1 Topic sau khi nó được chia nhỏ ra + partitions này có thể đặt trên các Brokers riêng biệt trong hệ thống Kafka cluster nhưng nó vẫn chung mục đích với Topic gốc, chỉ là nhân bản ra để xử lý đồng thời → sẽ giảm thời gian handle đi thay vì xử lý các events trên 1 node, việc handle events sẽ diễn ra trên nhiều Brokers/ nodes, làm hệ thống dễ scale hơn, performance cũng sẽ tốt hơn.
+```text
+Topic: user-events
+- user_registered
+- user_logged_in
+- user_updated_profile
 
-- Mặc định thì 1 Topic được tạo mà không chỉ định rõ số lượng Partition thì Topic đó chỉ gồm 1 Partition.
-- Partition ra đời để giải quyết hạn chế tính chất của Topic là: 1 Topic chỉ nằm trên 1 Broker/ node nên sẽ làm giảm khả năng scale của cả hệ thống, việc process trên 1 Topic lúc này chỉ xảy ra trên 1 node nên sẽ gây quá tải => nhờ đó mà ta có thể write, read, process trên nhiều node, giúp các process này xảy ra nhanh hơn.
-- Thông thường nếu message không có key, các events sẽ được phân phối đều giữa tất cả các Partitions (tức mỗi Partitions sẽ nhận được 1 phần data đồng đều)
-- Tuy nhiên giữa nhiều Partition như thế này, chắc chắn không đảm bảo được thứ tự read của Consumer tới toàn bộ Partition + tuy nhiên với 1 Partition thì vẫn luôn đảm bảo thứ tự read.
-- Việc xóa Partition là không thể, không ổn do khi được add thì các events đã tới và việc xóa sẽ làm mất events.
+Topic: payment-events
+- payment_created
+- payment_success
+- payment_failed
+```
 
-Leader Partition tức là trong hệ thống Partition cần được replica, sẽ có 1 Partition làm Leader, nhận mọi request từ Producer và Consumer, sau đó đồng bộ tới các Slave Partition khác.
+Không nên trộn nhiều loại dữ liệu không liên quan vào cùng một Topic. Nếu `user-events`, `payment-events`, `order-events` bị gom chung vào một Topic, Consumer sẽ phải tự lọc nhiều dữ liệu không cần thiết và contract của Topic khó quản lý hơn.
+
+Topic có một số đặc điểm quan trọng:
+
+- Topic chứa một hoặc nhiều Partition.
+- Message mới được ghi thêm vào log, không update trực tiếp message cũ.
+- Message trong Kafka là bytes, payload có thể là JSON, Avro, Protobuf, text hoặc binary.
+- Một Topic có thể có nhiều Producer ghi vào và nhiều Consumer Group đọc ra.
+- Consumer đọc xong không làm message biến mất ngay; message được giữ theo retention/cleanup policy.
+
+Topic có thể hơi giống database table ở chỗ đều chứa nhiều record, nhưng không nên hiểu Topic là database table.
+
+| Điểm so sánh | Database table | Kafka Topic |
+| --- | --- | --- |
+| Mục tiêu chính | Lưu trạng thái hiện tại và hỗ trợ query | Lưu dòng event/message |
+| Cách đọc | Query linh hoạt bằng SQL hoặc API | Consumer đọc theo offset |
+| Constraint | Có thể có primary key, foreign key, unique | Không có constraint kiểu database |
+| Update dữ liệu | Có thể update/delete row | Chủ yếu append message mới |
+| Use case | Tra cứu trạng thái hiện tại | Truyền event, stream processing, replay |
+
+Ví dụ database phù hợp cho câu hỏi:
+
+```sql
+SELECT * FROM users WHERE id = 10;
+```
+
+Kafka Topic phù hợp cho luồng xử lý:
+
+```text
+User đăng ký thành công
+  -> Producer gửi user_registered vào user-events
+  -> Email Service đọc để gửi email
+  -> Analytics Service đọc để ghi nhận signup
+  -> Recommendation Service đọc để khởi tạo profile
+```
+
+### Partition
+
+Partition là phần nhỏ hơn của một Topic. Một Topic có thể có một hoặc nhiều Partition. Mỗi Partition là một log có thứ tự riêng; message mới được append vào cuối Partition.
+
+Nếu Topic chỉ có một Partition:
+
+```text
+Topic: order-events
+Partition 0
+```
+
+Toàn bộ message của Topic nằm trong một Partition. Cách này đơn giản, giữ thứ tự dễ hơn, nhưng khả năng xử lý song song bị giới hạn.
+
+Nếu Topic có nhiều Partition:
+
+```text
+Topic: order-events
+Partition 0
+Partition 1
+Partition 2
+```
+
+Kafka có thể đặt các Partition này trên nhiều Broker khác nhau:
+
+```text
+Partition 0 -> Broker 1
+Partition 1 -> Broker 2
+Partition 2 -> Broker 3
+```
+
+Partition giúp Kafka:
+
+- Tăng throughput đọc/ghi.
+- Cho phép nhiều Consumer trong cùng Consumer Group xử lý song song.
+- Phân tán dữ liệu trên nhiều Broker.
+- Giảm tải cho từng Broker riêng lẻ.
+- Scale tốt hơn khi lượng event tăng.
+
+Ví dụ hệ thống thương mại điện tử có Topic `order-events`. Nếu mỗi ngày chỉ có vài nghìn đơn hàng, 1 Partition có thể đủ. Nếu mỗi phút có hàng chục nghìn đơn hàng, Topic nên có nhiều Partition để nhiều Consumer xử lý song song:
+
+```text
+Consumer Group: order-service
+
+Consumer 1 đọc Partition 0
+Consumer 2 đọc Partition 1
+Consumer 3 đọc Partition 2
+```
+
+Kafka chỉ đảm bảo thứ tự message **bên trong cùng một Partition**. Kafka không đảm bảo thứ tự tuyệt đối trên toàn Topic nếu Topic có nhiều Partition.
+
+```text
+Partition 0:
+event A -> event B -> event C
+
+Partition 1:
+event X -> event Y -> event Z
+```
+
+Trong từng Partition, thứ tự được giữ. Nhưng giữa Partition 0 và Partition 1, Kafka không đảm bảo event nào được xử lý trước trên toàn hệ thống.
+
+Vì vậy, nếu cần giữ đúng thứ tự cho một đối tượng cụ thể, nên dùng message key phù hợp. Ví dụ với payment, dùng `paymentId` làm key để các event của cùng một payment đi vào cùng một Partition:
+
+```text
+payment_created
+payment_processing
+payment_success
+```
+
+Nếu cả ba event đều có key `paymentId = 1001`, cùng serializer, cùng partitioner và số lượng Partition không đổi, Kafka sẽ đưa chúng vào cùng một Partition, nên Consumer có thể đọc theo đúng thứ tự của payment đó.
+
+Lưu ý: có thể tăng số lượng Partition của Topic, nhưng không thể giảm số lượng Partition theo cách đơn giản. Lý do là message cũ đã nằm trong các Partition hiện tại; nếu giảm Partition thì Kafka phải quyết định di chuyển hoặc gộp dữ liệu cũ sang Partition khác, việc này có thể làm phức tạp offset, ordering, replica và dữ liệu đã lưu trên disk. Thực tế nếu muốn giảm Partition, thường phải tạo Topic mới với số Partition ít hơn rồi migrate dữ liệu/application sang Topic mới.
+
+Việc tăng Partition cũng cần cẩn thận vì nó có thể làm thay đổi cách key được phân bổ cho **message mới**. Với Producer mặc định, nếu message có key, Kafka thường chọn Partition theo công thức gần như sau:
+
+```text
+partition = hash(serialized_key) % number_of_partitions
+```
+
+Trong Java Kafka Producer mặc định, thuật toán hash thường dùng là **Murmur2** trên key sau khi serialize sang bytes. Sau đó kết quả hash được đưa về số dương và chia lấy dư theo số lượng Partition.
+
+Ví dụ cùng một key `orderId = 1001` có hash giả sử là `7`:
+
+```text
+Khi Topic có 3 Partition:
+partition = 7 % 3 = 1
+-> orderId = 1001 đi vào Partition 1
+
+Sau khi tăng Topic lên 5 Partition:
+partition = 7 % 5 = 2
+-> message mới của orderId = 1001 có thể đi vào Partition 2
+```
+
+Message cũ không tự động chuyển Partition. Nếu trước khi tăng Partition, các event của `orderId = 1001` đang nằm ở Partition 1, thì chúng vẫn nằm ở Partition 1. Nhưng message mới có cùng key sau khi tăng Partition có thể đi sang Partition khác vì `number_of_partitions` đã đổi.
+
+Điều này có nghĩa là Kafka không đảm bảo cùng một key sẽ mãi mãi vào đúng Partition cũ nếu số lượng Partition thay đổi. Kafka chỉ đảm bảo các message có cùng key được tính vào cùng một Partition khi số lượng Partition và partitioner không đổi.
+
+Nếu hệ thống bắt buộc giữ ordering tuyệt đối theo key trong thời gian dài, cần thiết kế số Partition cẩn thận trước production. Một số cách xử lý thường gặp:
+
+- Chọn số Partition đủ lớn ngay từ đầu để ít phải tăng sau này.
+- Tránh tăng Partition cho Topic đang cần strict ordering theo key.
+- Nếu cần thay đổi lớn, tạo Topic mới với số Partition mới rồi migrate có kiểm soát.
+- Dùng custom partitioner nếu cần quy tắc phân bổ key đặc biệt, nhưng phải tự chịu trách nhiệm về phân phối tải và compatibility.
+
+### Leader Partition
+
+Khi một Partition có nhiều Replica, Kafka sẽ chọn một Replica làm **Leader**. Producer và Consumer mặc định làm việc với Leader của Partition đó. Các Replica còn lại là **Follower**, nhận dữ liệu replicate từ Leader.
 
 ![Kafka image 11](images/kafka-image-11.png)
 
-- Tuy nhiên từ Kafka >= 2, có 1 chức năng là Kafka Consumer Replica Fetching cho phép Consumer read được bất kỳ Partition nào, miễn là tốc độ xử lý cao (do là vấn đề địa lý, network).
+Ví dụ:
+
+```text
+Topic: order-events
+Partition 0
+
+Leader   -> Broker 1
+Follower -> Broker 2
+Follower -> Broker 3
+```
+
+Producer ghi message vào Leader. Leader sau đó replicate dữ liệu sang Follower. Nếu Broker 1 bị lỗi, Kafka có thể chọn một Follower đủ điều kiện làm Leader mới.
+
+#### Leader chết trước khi replicate thì có mất message không?
+
+Có thể mất message nếu message mới chỉ được ghi ở Leader nhưng chưa được replicate sang Replica đủ điều kiện, sau đó Leader chết.
+
+Ví dụ:
+
+```text
+replication-factor = 3
+
+Broker 1: Leader
+Broker 2: Follower
+Broker 3: Follower
+
+Producer gửi message M1
+Broker 1 ghi M1
+Broker 1 chết trước khi Broker 2/Broker 3 kịp nhận M1
+Broker 2 được bầu làm Leader mới
+-> M1 không có trên Leader mới
+-> M1 bị mất
+```
+
+Khả năng này phụ thuộc nhiều vào cấu hình Producer và Broker.
+
+Với `acks=0`, Producer không chờ Broker xác nhận. Nếu request thất bại hoặc Leader chết trước khi ghi/replicate, Producer có thể không biết message đã mất.
+
+Với `acks=1`, Producer chỉ cần Leader ghi xong là nhận ACK thành công. Nếu Leader chết sau khi ACK nhưng trước khi Follower replicate, message vẫn có thể mất khi Leader mới không có message đó.
+
+Với `acks=all`, Producer chỉ nhận ACK khi Leader và đủ số Replica trong ISR đã ghi message theo cấu hình `min.insync.replicas`. Cách này giảm rủi ro mất message nhiều hơn, nhưng latency ghi sẽ cao hơn.
+
+Ví dụ cấu hình thường dùng cho dữ liệu quan trọng:
+
+```properties
+replication.factor=3
+min.insync.replicas=2
+acks=all
+enable.idempotence=true
+```
+
+Ý nghĩa:
+
+- `replication.factor=3`: mỗi Partition có 3 Replica.
+- `min.insync.replicas=2`: ít nhất 2 Replica trong ISR phải ghi được message.
+- `acks=all`: Producer chỉ nhận thành công khi điều kiện ISR được đáp ứng.
+- `enable.idempotence=true`: Producer retry an toàn hơn, giảm duplicate do retry.
+
+Nếu chỉ còn 1 Replica trong ISR mà `min.insync.replicas=2`, Kafka sẽ từ chối ghi thay vì nhận message trong trạng thái không đủ an toàn. Đây là đánh đổi: hệ thống có thể báo lỗi ghi tạm thời, nhưng tránh nhận thành công một message có rủi ro mất cao.
+
+Cần tránh bật **unclean leader election** cho Topic quan trọng. Nếu Kafka cho phép bầu một Replica không nằm trong ISR làm Leader, hệ thống có thể phục hồi availability nhanh hơn nhưng có nguy cơ mất các message mà Replica đó chưa kịp đồng bộ.
+
+Tóm gọn:
+
+```text
+acks=0
+  -> nhanh nhất, rủi ro mất message cao nhất
+
+acks=1
+  -> Leader ghi xong là thành công, vẫn có thể mất nếu Leader chết trước khi replicate
+
+acks=all + min.insync.replicas phù hợp
+  -> an toàn hơn, đổi lại ghi chậm hơn và có thể từ chối ghi khi ISR không đủ
+```
+
+#### Nếu Consumer đọc từ Follower thì offset quản lý thế nào?
+
+Từ Kafka 2.4, tính năng **fetch from follower** cho phép Consumer đọc từ Replica gần hơn về mặt địa lý trong một số mô hình triển khai multi-region. Tuy nhiên, offset vẫn là offset logic của **Partition**, không phải offset riêng của từng Replica.
+
+Các Replica của cùng một Partition lưu cùng một log và cùng hệ offset cho các record đã replicate.
+
+```text
+Partition 0
+
+Leader log:
+offset 0, 1, 2, 3, 4
+
+Follower log:
+offset 0, 1, 2, 3, 4
+```
+
+Consumer đọc từ Leader hay Follower thì vẫn đọc theo offset của `Partition 0`. Điểm dễ nhầm là: Consumer không phải cứ đọc một batch data là lại đi hỏi Broker chứa `__consumer_offsets`.
+
+Luồng đọc data và luồng commit offset là hai việc khác nhau:
+
+```text
+Fetch data:
+Consumer -> Leader hoặc Follower gần hơn
+          -> nhận nhiều record theo batch
+
+Commit offset:
+Consumer -> Group Coordinator
+          -> Kafka ghi offset vào topic nội bộ __consumer_offsets
+```
+
+Offset commit vẫn được lưu theo:
+
+```text
+Consumer Group + Topic + Partition
+```
+
+Ví dụ:
+
+```text
+group = order-service
+topic = order-events
+partition = 0
+committed_offset = 5
+```
+
+Kafka không lưu kiểu:
+
+```text
+Consumer này đọc tới offset 5 trên Leader
+Consumer này đọc tới offset 5 trên Follower
+```
+
+Nó chỉ lưu rằng Consumer Group `order-service` đã xử lý tới vị trí nào của `order-events / Partition 0`. Việc record được fetch từ Replica nào là chi tiết phục vụ tối ưu network/latency, không làm thay đổi ý nghĩa offset.
+
+Vì vậy, đọc từ Follower vẫn có lợi trong multi-region. Data fetch thường là phần nặng vì có thể trả về rất nhiều record và payload lớn. Offset commit chỉ là metadata nhỏ, thường được commit theo batch hoặc theo interval, không phải commit sau từng record trong hầu hết ứng dụng.
+
+Ví dụ:
+
+```text
+Consumer ở Singapore
+Leader ở US
+Follower ở Singapore
+
+Fetch data lớn:
+Consumer -> Follower Singapore
+
+Commit offset nhỏ:
+Consumer -> Group Coordinator
+```
+
+Nếu mỗi batch fetch có vài MB data, còn offset commit chỉ là một bản ghi metadata nhỏ, thì việc fetch từ Follower gần hơn vẫn giảm đáng kể network latency và cross-region bandwidth cho đường đọc data.
+
+Follower cũng không nên trả dữ liệu vượt quá phần đã được xem là an toàn của Partition. Nếu Follower đang lag, Consumer có thể đọc chậm hơn hoặc phải fetch từ Replica khác, nhưng offset commit của Consumer Group vẫn không đổi mô hình.
 
 ### Event Key
 
-- Khi có 1 event được send tới Topic, bản thân là nó được append vào một trong các partition của Topic thay vì toàn bộ partition + nếu events same key thì chúng sẽ được bắn tới cùng 1 partition + Kafka cũng đảm bảo rằng Consumer đã subscribe partition nào thì sẽ chỉ đọc được những events ở partition ấy và đọc các events theo đúng thứ tự chúng được write
-- Để đảm bảo thêm tính fault-tolerant, mỗi Topic cần replicated để khi có hỏng 1 Topic, vẫn còn những nơi khác xử lý.
+Event key là giá trị Producer gửi kèm message để Kafka quyết định message nên đi vào Partition nào. Nếu các message có cùng key, cùng partitioner và số lượng Partition không đổi, chúng thường được đưa vào cùng một Partition.
+
+Ví dụ:
+
+```text
+key = orderId
+
+orderId = 1001 -> Partition 1
+orderId = 1001 -> Partition 1
+orderId = 2002 -> Partition 2
+```
+
+Cách chọn key ảnh hưởng trực tiếp tới ordering và phân phối tải.
+
+Kafka chọn Partition theo các trường hợp chính:
+
+- Nếu Producer chỉ định trực tiếp `partition`, Kafka dùng Partition đó.
+- Nếu không chỉ định `partition` nhưng có key, Producer hash key rồi chia theo số lượng Partition.
+- Nếu key là `null`, Producer dùng chiến lược mặc định cho message không key, thường là sticky partitioner ở các version Kafka mới để gom batch tốt hơn.
+
+Vì key được hash sau khi serialize, cùng một giá trị logic nhưng serializer khác nhau có thể tạo bytes khác nhau và dẫn tới Partition khác nhau. Ví dụ key `123` serialize bằng Integer Serializer sẽ khác key `"123"` serialize bằng String Serializer.
+
+Key tốt khi:
+
+- Có ý nghĩa business rõ ràng.
+- Cần giữ thứ tự theo entity, ví dụ `orderId`, `paymentId`, `userId`.
+- Có độ phân tán đủ tốt để tránh một Partition nhận quá nhiều message.
+
+Key không tốt khi:
+
+- Quá ít giá trị khác nhau, ví dụ chỉ dùng `country = VN` trong hệ thống mà gần như toàn bộ traffic ở Việt Nam.
+- Không liên quan tới yêu cầu ordering.
+- Là giá trị dễ bị lệch tải, khiến một Partition quá nóng còn các Partition khác ít dữ liệu.
+
+Ví dụ lỗi thiết kế:
+
+```text
+Topic: order-events
+Key: country
+
+90% message có country = VN
+  -> nhiều message dồn vào cùng một Partition
+```
+
+Tốt hơn có thể dùng:
+
+```text
+Key: orderId
+```
+
+Khi đó các event của cùng một order vẫn giữ được thứ tự, đồng thời nhiều order khác nhau có thể được phân tán tốt hơn.
 
 ### Segment
 
-- 1 Partition có nhiều Segment (được biểu diễn bằng 1 file) + Mặc dù về mặt logic, một Partition là một file log dài vô tận, nhưng thực tế hệ điều hành không thể quản lý một file lớn đến hàng Terabyte một cách hiệu quả. Do đó, Kafka chia nhỏ một Partition thành các Segment.
+Segment là phần nhỏ hơn của một Partition log. Về mặt logic, một Partition là một log dài, message mới cứ được append vào cuối. Nhưng nếu Kafka lưu cả Partition vào một file duy nhất rất lớn thì sẽ khó quản lý, khó xóa dữ liệu cũ và khó tìm vị trí cần đọc. Vì vậy Kafka chia log của mỗi Partition thành nhiều **Segment**.
 
-![Kafka image 12](images/kafka-image-12.png)
+Ví dụ một Partition được chia thành nhiều Segment:
 
-- Segment cuối cùng là Segment đang được hoạt động, hiện đang được ghi vào nên Offset cuối cùng của nó vẫn chưa được xác định
-- Ta có thể config size tối đa cho 1 Segment thông qua config log.segment.bytes, và mặc định của nó là 1 Gb + nếu vượt quá 1Gb thì Segment sẽ bị đóng và 1 Segment mới được tạo ra
-- Ta có thể config thời gian tạo 1 Segment mới ngay cả khi chưa vượt quá size tối đa của nó thông qua config log.segment.ms + mặc định sẽ là 1 tuần + khi apply thì nó sẽ tính mốc thời gian từ thời gian của offset cuối cùng thuộc Segment để quyết định thời gian clean Segment
-- Dựa vào Retention Policy (chính sách lưu trữ), Segment cũ sẽ bị xóa nếu vượt quá thời gian lưu trữ (log retention period) hoặc kích thước lưu trữ tối đa (log retention size)
-- Dọn dẹp dữ liệu (Data Retention): Đây là lý do chính. Kafka không xóa từng tin nhắn riêng lẻ vì quá tốn kém hiệu năng. Thay vào đó, nó xóa nguyên một Segment cũ khi Segment đó vượt quá thời gian lưu trữ hoặc kích thước cho phép + Hiệu năng: Làm việc với các file có kích thước vừa phải giúp hệ điều hành quản lý bộ nhớ đệm (Page Cache) tốt hơn và việc tìm kiếm dữ liệu qua Index nhanh hơn + An toàn: Nếu một file log bị hỏng, nó chỉ ảnh hưởng đến một Segment nhỏ thay vì làm hỏng toàn bộ dữ liệu của cả một Partition.
+```text
+Partition 0
+
+Segment 0: offset 0    -> 934
+Segment 1: offset 935  -> 1567
+Segment 2: offset 1568 -> 2895
+Segment 3: offset 2896 -> đang ghi tiếp
+```
+
+Segment cuối cùng là **active segment**. Đây là segment đang nhận message mới. Các segment trước đó đã được đóng lại, thường chỉ còn phục vụ đọc, retention hoặc compaction.
+
+Một segment trên disk thường đi kèm nhiều file liên quan, ví dụ:
+
+```text
+00000000000000000000.log        chứa record thật
+00000000000000000000.index      index từ offset -> vị trí byte trong file .log
+00000000000000000000.timeindex  index từ timestamp -> offset gần tương ứng
+```
+
+Tên file segment thường bắt đầu bằng **base offset**, tức offset đầu tiên trong segment đó.
+
+Ví dụ:
+
+```text
+00000000000000000935.log
+```
+
+File này là segment bắt đầu từ offset `935`.
+
+#### Vì sao Kafka cần Segment?
+
+Segment giúp Kafka xử lý log lớn hiệu quả hơn:
+
+- Dễ xóa dữ liệu cũ theo retention vì Kafka có thể xóa cả segment cũ thay vì xóa từng message.
+- Dễ tìm message theo offset nhờ index.
+- File nhỏ hơn giúp hệ điều hành quản lý disk/page cache tốt hơn.
+- Nếu một segment bị lỗi, phạm vi ảnh hưởng nhỏ hơn so với một file log cực lớn.
+- Rolling segment giúp Kafka không phải mở rộng mãi một file duy nhất.
+
+#### Kafka tìm message theo offset như thế nào?
+
+Giả sử Consumer yêu cầu:
+
+```text
+Cho tôi đọc từ offset 5000 của Partition 0
+```
+
+Kafka xử lý gần như sau:
+
+```text
+1. Tìm segment chứa offset 5000
+   Ví dụ segment có base offset 4096.
+
+2. Dùng file index của segment đó để tìm vị trí byte gần offset 5000 trong file .log.
+
+3. Đọc từ vị trí byte đó trong file .log.
+
+4. Trả record cho Consumer theo batch.
+```
+
+Kafka không cần scan từ offset `0` tới `5000`. Đây là lý do index quan trọng.
+
+#### Khi nào Kafka tạo Segment mới?
+
+Kafka tạo segment mới khi segment hiện tại đạt điều kiện rolling, thường do size hoặc thời gian.
+
+Cấu hình thường gặp:
+
+```properties
+log.segment.bytes=1073741824
+log.segment.ms=604800000
+```
+
+Ý nghĩa:
+
+- `log.segment.bytes`: kích thước tối đa của một segment, mặc định thường là `1GB`.
+- `log.segment.ms`: thời gian tối đa trước khi Kafka roll sang segment mới, kể cả khi chưa đủ size.
+
+Ví dụ:
+
+```text
+Segment hiện tại đạt 1GB
+-> Kafka đóng segment cũ
+-> Kafka tạo active segment mới
+-> message mới được ghi vào active segment mới
+```
+
+#### Segment và Retention
+
+Kafka thường xóa dữ liệu cũ theo đơn vị Segment, không xóa từng message riêng lẻ.
+
+Ví dụ cấu hình:
+
+```properties
+log.retention.hours=168
+```
+
+Nghĩa là dữ liệu được giữ khoảng 7 ngày. Khi một segment đủ cũ theo retention, Kafka có thể xóa segment đó.
+
+Điểm cần lưu ý: Kafka thường xóa theo **cả Segment**, không xóa chính xác từng message riêng lẻ.
+
+Ví dụ:
+
+```text
+Retention = 7 ngày
+
+Segment A chứa:
+- message 1: đã 8 ngày tuổi
+- message 2: đã 6 ngày tuổi
+```
+
+Kafka có thể chưa xóa `message 1` ngay, vì nó đang nằm chung Segment với dữ liệu chưa đủ cũ. Khi cả Segment đủ điều kiện theo retention, Kafka mới xóa Segment đó.
+
+Nói ngắn gọn: retention là cơ chế dọn dữ liệu theo Segment, nên thời điểm xóa thực tế có thể lệch một chút so với tuổi của từng message.
+
+#### Ưu điểm và nhược điểm của Segment
+
+Ưu điểm:
+
+- Tối ưu cleanup dữ liệu cũ.
+- Tìm kiếm theo offset nhanh hơn nhờ index.
+- Dễ quản lý file log lớn.
+- Phù hợp với append-only log và sequential I/O.
+
+Nhược điểm:
+
+- Segment quá nhỏ có thể tạo nhiều file, tăng overhead quản lý file/index.
+- Segment quá lớn có thể làm cleanup chậm hơn vì Kafka xóa theo cả segment.
+- Cấu hình segment ảnh hưởng tới retention, compaction và hiệu năng disk.
+
+Use case cần chú ý:
+
+- Topic log traffic lớn nên tránh segment quá nhỏ vì sẽ tạo quá nhiều file.
+- Topic cần cleanup nhanh hơn có thể cần segment nhỏ hơn, nhưng phải cân bằng overhead.
+- Topic dùng compact policy cần theo dõi thêm chi phí log compaction.
 
 ### Offset
 
-![Kafka image 13](images/kafka-image-13.png)
+Offset là số thứ tự của record bên trong một Partition. Mỗi Partition có hệ offset riêng, bắt đầu từ `0` và tăng dần khi có record mới được append.
 
-- Mỗi Partition có 1 tập offset riêng + offset không thể thay đổi, luôn giữ giá trị cố định.
-- Offset bắt đầu từ 0 với mỗi Partition và tăng dần lên theo số lượng message nạp vào, đại diện cho vị trí của 1 message trong 1 Partition.
-- Sử dụng Offset với mục đích chính là giúp Consumer theo dõi vị trí đọc bằng cách đánh dấu Offset đã đọc (vị trí đã đọc rồi) để đảm bảo không tiêu thụ 1 message 2 lần.
+Ví dụ:
 
-![Kafka image 14](images/kafka-image-14.png)
+```text
+Topic: order-events
 
-![Kafka image 15](images/kafka-image-15.png)
+Partition 0:
+offset 0, 1, 2, 3, 4, 5, 6
+
+Partition 1:
+offset 0, 1, 2, 3
+
+Partition 2:
+offset 0, 1, 2, 3, 4
+```
+
+Offset chỉ có ý nghĩa trong phạm vi một Partition. Không nên so sánh `Partition 0 / offset 5` với `Partition 1 / offset 5` để kết luận record nào mới hơn trên toàn Topic.
+
+#### Offset của record và committed offset của Consumer
+
+Cần phân biệt hai khái niệm:
+
+- **Record offset:** vị trí cố định của một record trong Partition.
+- **Committed offset:** vị trí Consumer Group đã xác nhận xử lý tới đâu.
+
+Record offset không thay đổi sau khi record được ghi vào Kafka.
+
+Ví dụ:
+
+```text
+Partition 0:
+offset 0: OrderCreated
+offset 1: PaymentStarted
+offset 2: PaymentSucceeded
+```
+
+`PaymentSucceeded` nằm ở offset `2` thì offset đó là cố định trong Partition.
+
+Committed offset thường được hiểu là **offset tiếp theo Consumer Group sẽ đọc**, không phải offset cuối cùng đã đọc.
+
+Ví dụ:
+
+```text
+Consumer Group: order-service
+
+Đã xử lý xong record ở offset 0, 1, 2, 3, 4
+Committed offset = 5
+
+Khi chạy lại:
+Consumer đọc tiếp từ offset 5
+```
+
+Kafka lưu committed offset vào Topic nội bộ `__consumer_offsets`.
+
+```text
+group = order-service
+topic = order-events
+partition = 0
+committed_offset = 5
+```
+
+#### Offset giúp Consumer đọc lại dữ liệu như thế nào?
+
+Consumer có thể đọc từ offset đã commit, hoặc reset offset theo cấu hình/policy.
+
+Ví dụ Consumer crash:
+
+```text
+Consumer đọc offset 5, 6, 7
+Xử lý xong offset 5, 6
+Crash trước khi commit offset 7
+
+Lần chạy lại:
+Consumer đọc lại từ offset đã commit gần nhất
+```
+
+Nếu commit sau khi xử lý thành công, hệ thống có thể xử lý trùng một số message khi crash xảy ra trước commit. Đây là lý do Consumer logic nên idempotent.
+
+#### Offset có đảm bảo không xử lý trùng không?
+
+Không hoàn toàn. Offset giúp Consumer biết nên đọc tiếp từ đâu, nhưng việc có xử lý trùng hay mất message phụ thuộc vào thời điểm commit offset so với thời điểm xử lý business logic.
+
+Nếu commit offset **trước khi xử lý**:
+
+```text
+Consumer đọc offset 10
+Commit offset 11
+Crash trước khi lưu DB
+-> chạy lại từ offset 11
+-> offset 10 bị bỏ qua
+-> có thể mất xử lý business
+```
+
+Nếu commit offset **sau khi xử lý**:
+
+```text
+Consumer đọc offset 10
+Lưu DB thành công
+Crash trước khi commit offset 11
+-> chạy lại vẫn đọc offset 10
+-> có thể xử lý lại offset 10
+```
+
+Vì vậy pattern an toàn phổ biến là:
+
+```text
+Đọc message
+Xử lý business logic theo cách idempotent
+Commit offset sau khi xử lý thành công
+```
+
+#### Offset và retention
+
+Offset không có nghĩa là message tồn tại mãi. Nếu message cũ bị xóa do retention, Consumer không thể đọc lại offset đó nữa.
+
+Ví dụ:
+
+```text
+Topic giữ dữ liệu 7 ngày
+Consumer dừng 10 ngày
+Các segment cũ đã bị xóa
+Consumer quay lại offset cũ
+-> offset đó không còn dữ liệu
+```
+
+Khi offset đã commit trỏ tới dữ liệu không còn tồn tại, Consumer sẽ cần quyết định đọc tiếp từ đâu.
+
+#### `auto.offset.reset` dùng khi nào?
+
+`auto.offset.reset` không chỉ dùng khi message cũ bị xóa do retention. Cấu hình này được dùng khi Consumer Group **không có committed offset hợp lệ** cho Partition cần đọc.
+
+Các trường hợp thường gặp:
+
+- Consumer Group mới, chưa từng commit offset.
+- Offset đã commit quá cũ và dữ liệu tương ứng đã bị xóa do retention.
+- Offset đã commit không còn hợp lệ, ví dụ Topic bị xóa rồi tạo lại hoặc dữ liệu bị truncate trong một số tình huống đặc biệt.
+
+Khi đó Kafka xử lý theo `auto.offset.reset`:
+
+- `earliest`: đọc từ offset sớm nhất còn tồn tại.
+- `latest`: đọc từ cuối log, chỉ nhận message mới.
+- `none`: báo lỗi nếu không tìm được offset hợp lệ.
+
+Ví dụ Consumer Group mới:
+
+```text
+Topic đã có offset 0 -> 100
+Consumer Group mới chưa có committed offset
+
+auto.offset.reset=earliest
+-> đọc từ offset 0
+
+auto.offset.reset=latest
+-> bắt đầu ở cuối log, chờ message mới sau offset 100
+```
+
+#### Offset, Consumer Group và Partition assignment
+
+Offset được lưu theo Consumer Group, Topic và Partition. Nếu có nhiều Consumer trong cùng một Group, mỗi Partition tại một thời điểm thường được assign cho một Consumer trong Group.
+
+Ví dụ:
+
+```text
+Topic: order-events
+Partitions: 3
+Consumer Group: order-service
+
+Consumer A -> Partition 0
+Consumer B -> Partition 1
+Consumer C -> Partition 2
+```
+
+Nếu Consumer B bị crash, Kafka rebalance:
+
+```text
+Consumer A -> Partition 0, Partition 1
+Consumer C -> Partition 2
+```
+
+Consumer A đọc `Partition 1` từ committed offset của Group `order-service`. Offset không thuộc riêng Consumer B; nó thuộc Consumer Group trên Partition đó.
+
+#### Tóm tắt Offset
+
+- Offset là vị trí của record trong một Partition.
+- Offset chỉ có ý nghĩa trong phạm vi Partition, không phải toàn Topic.
+- Record offset là cố định sau khi ghi.
+- Committed offset là vị trí Consumer Group sẽ đọc tiếp.
+- Commit offset quá sớm có thể mất xử lý.
+- Commit offset sau xử lý có thể xử lý trùng khi crash.
+- Consumer nên xử lý idempotent để an toàn với retry/replay.
 
 ### Event / Message / Record / Data
 
-- Với context của Apache Kafka hay là Event-Driven Architecture thì event nghĩa là có 1 sự thay đổi liên quan tới data và nó sẽ cần các bên khác xử lý khi data này có sự thay đổi = something happened
+Trong Kafka, các từ **event**, **message**, **record** và **data** thường được dùng gần nhau. Phần này chỉ tập trung phân biệt thuật ngữ; các ý về Topic, Partition, Offset, retention và Consumer Group đã được giải thích ở các mục riêng phía trên.
 
-![Kafka image 16](images/kafka-image-16.png)
+#### Event
 
-- Event có key, value, timestamp, optional metadata headers
-- Các Events trong Kafka không bị xóa sau khi sử dụng + ta có thể config thời gian sống của các events một cách độc lập với từng Topics/ sẽ xóa nếu vượt quá size của Partition + performance của Kafka không ảnh hưởng bởi số lượng events đang có trong Topic nên việc lưu data trong thời gian dài là ổn.
+Event là một sự việc đã xảy ra trong hệ thống. Tên event nên mô tả kết quả đã xảy ra, thường dùng dạng quá khứ.
+
+Ví dụ:
+
+```text
+UserRegistered
+OrderCreated
+PaymentSucceeded
+InventoryReserved
+```
+
+Phân biệt nhanh với command:
+
+```text
+PaymentSucceeded -> event, vì thanh toán đã thành công
+ChargePayment    -> command, vì đây là yêu cầu thực hiện thanh toán
+```
+
+#### Message / Record
+
+Trong Kafka, **record** là đơn vị dữ liệu Kafka lưu trong Topic Partition. Nhiều tài liệu và developer cũng gọi record là **message**. Trong phần lớn ngữ cảnh Kafka, `message` và `record` có thể hiểu gần như cùng một thứ.
+
+Một Kafka record thường có các phần quan trọng:
+
+```text
+key       -> key của record, có thể dùng để chọn Partition
+value     -> nội dung chính
+timestamp -> thời điểm record được tạo hoặc ghi vào Kafka
+headers   -> metadata phụ
+```
+
+Ví dụ từ ảnh cũ chuyển sang text:
+
+```text
+Event key:       Alice
+Event value:     Made a payment of $200 to Bob
+Event timestamp: Jun. 25, 2020 at 2:06 p.m.
+```
+
+Ví dụ record thực tế hơn:
+
+```text
+key:       paymentId=pay-9001
+value:     {"eventType":"PaymentSucceeded","paymentId":"pay-9001","amount":200}
+timestamp: 2026-08-30T10:15:00Z
+headers:   correlationId=checkout-abc-123, schemaVersion=1
+```
+
+#### Data / Payload
+
+Data hoặc payload thường là phần nội dung nghiệp vụ nằm trong `value` của record. Đây là phần Consumer đọc để xử lý business.
+
+Ví dụ:
+
+```json
+{
+  "paymentId": "pay-9001",
+  "orderId": "ord-7001",
+  "amount": 200,
+  "currency": "USD"
+}
+```
+
+Kafka không hiểu sâu ý nghĩa nghiệp vụ của payload. Với Kafka, `key` và `value` là bytes sau khi serialize. Application quyết định bytes đó đại diện cho JSON, Avro, Protobuf, String hay binary.
+
+#### Phân biệt nhanh
+
+| Khái niệm | Nghĩa chính | Ví dụ |
+| --- | --- | --- |
+| Event | Sự việc đã xảy ra trong business | `PaymentSucceeded` |
+| Message | Cách gọi phổ biến khi nói dữ liệu được gửi qua Kafka | message gửi vào `payment-events` |
+| Record | Cách gọi chính xác hơn trong Kafka API | `ProducerRecord`, `ConsumerRecord` |
+| Data/Payload | Nội dung nghiệp vụ trong record value | `paymentId`, `orderId`, `amount` |
+
+Nói ngắn gọn:
+
+```text
+Business tạo ra event.
+Producer đóng event thành Kafka record/message.
+Kafka lưu record vào Topic Partition.
+Consumer đọc record và xử lý data trong value.
+```
 
 ## Producer
 
@@ -1787,8 +2967,9 @@ Nói về message trong Kafka, mỗi message sẽ có 3 thành phần chính g�
 
 ![Kafka image 18](images/kafka-image-18.png)
 
-- Key của message có thể null được, nếu null thì sẽ sử dụng Round robin.
-- Các message mà same key sẽ được đặt chung vào 1 Partition dựa vào thuật toán hashing đơn giản murmur 2 algorithm: partition = hash(key) % số lượng partition => nếu hashing mà dữ liệu cùng key sẽ luôn nằm trên cùng 1 partition trừ khi số lượng partition thay đổi.
+- Key của message có thể `null`. Nếu key là `null`, Producer sẽ dùng strategy dành cho message không key, ví dụ sticky partitioner ở các version Kafka mới hoặc round-robin ở một số version/cấu hình cũ.
+- Nếu có key, Java Kafka Producer mặc định thường dùng Murmur2 để hash key sau khi key đã được serialize sang bytes, rồi chọn Partition theo công thức `partition = positive(hash(serialized_key)) % số lượng partition`.
+- Khi cùng key, cùng serializer, cùng partitioner và số lượng Partition không đổi, message sẽ đi vào cùng một Partition. Nếu số lượng Partition thay đổi, cùng key đó có thể được tính ra Partition khác cho các message mới.
 
 ### Kafka Message Serializer
 
@@ -1800,44 +2981,336 @@ Ví dụ: Tôi khi send message từ Producer có key-value là 123-helloworld n
 
 ### Producer Partition Strategy
 
-#### Round-Robin Partition Strategy
+Producer Partition Strategy là cách Producer quyết định record sẽ được gửi vào Partition nào của Topic.
 
-![Kafka image 20](images/kafka-image-20.png)
+Thứ tự ưu tiên cơ bản:
 
-- Round-robin apply với message không có key/ dev lựa chọn rõ ràng strategy này với project + mỗi message sẽ được nạp vào 1 request và send tới 1 Partition cụ thể (1 message/ 1 request)
-- Round-robin bỏ qua Hash function bất kể có giá trị key message hay không -> Strategy này phù hợp khi workload hầu hết tập trung vào 1 hash key value của message -> dẫn tới Kafka chỉ work trong 1 Partition duy nhất -> dẫn tới chỉ work trong 1 Consumer duy nhất (trong cùng 1 Consumer Group) + nếu khác group thì lại chỉ work trong các Consumers được assign với Partition đó
+```text
+1. Nếu record chỉ định trực tiếp partition
+   -> gửi vào partition đó.
 
-#### Default Partition Strategy
+2. Nếu không chỉ định partition nhưng có key
+   -> hash key để chọn partition.
 
-- Nếu key null, messages được gửi theo thuật toán Round Robin/ Sticky tùy theo version. (Mặc định với Kafka, từ version <= 2.3, sử dụng Round-robin, và từ version >= 2.4 sử dụng Sticky partition)
-- Nếu có key, Kafka sẽ hash key này và dựa vào hash key value này.
+3. Nếu không chỉ định partition và key = null
+   -> dùng strategy mặc định cho record không key.
+```
+
+Điểm quan trọng: Partition được chọn ở phía Producer, không phải Topic tự quyết định. Broker nhận request ghi vào Partition Leader tương ứng.
+
+#### Trường hợp chỉ định partition trực tiếp
+
+Producer có thể chỉ định thẳng Partition khi tạo record.
+
+Ví dụ:
+
+```java
+new ProducerRecord<>("order-events", 2, "order-1001", payload);
+```
+
+Ý nghĩa:
+
+```text
+topic = order-events
+partition = 2
+key = order-1001
+value = payload
+```
+
+Khi đã chỉ định trực tiếp `partition = 2`, Producer sẽ gửi record vào Partition 2. Key lúc này vẫn có thể được lưu trong record, nhưng không còn được dùng để chọn Partition.
+
+Ưu điểm:
+
+- Kiểm soát tuyệt đối record đi vào Partition nào.
+- Hữu ích cho một số case đặc biệt, ví dụ routing theo rule riêng đã tính sẵn.
+
+Nhược điểm:
+
+- Application phải tự biết Topic có bao nhiêu Partition.
+- Dễ làm lệch tải nếu chọn Partition không đều.
+- Khi tăng số Partition, logic trong application có thể phải sửa.
+- Thường không nên dùng mặc định trong business code phổ thông.
+
+#### Trường hợp có key
+
+Nếu record không chỉ định Partition nhưng có key, Java Kafka Producer mặc định sẽ chọn Partition dựa trên hash của key.
+
+Mô hình đơn giản:
+
+```text
+partition = positive(hash(serialized_key)) % number_of_partitions
+```
+
+Với Java Kafka Producer, thuật toán hash truyền thống cho key là Murmur2 trên key sau khi serialize thành bytes.
+
+Ví dụ:
 
 ![Kafka image 21](images/kafka-image-21.png)
 
-=> Tức là nếu cùng 1 message key, message sẽ nằm trên cùng 1 partition >< nếu số lượng partition thay đổi thì nếu trùng message key với các message mà trước khi bị thay đổi thì có thể bị nằm trên 1 partition khác.
+```text
+Topic order-events có 3 Partition: 0, 1, 2
 
-#### Why Sticky Partition Strategy?
+key = order-1001
+hash(key) = 7
 
-- Nếu mà send nhiều messages tới cùng 1 Partitions thì ta có thể sử dụng Batching để send các messages này tới Topic cùng 1 thời điểm + rõ ràng là các Batch mà gửi 1 số lượng messages nhỏ (tức sẽ cần nhiều requests, queue hơn để handle -> sẽ gây latency cao hơn) thì nó sẽ không tối ưu bằng việc Batch gửi 1 số lượng lớn messages.
+partition = 7 % 3 = 1
+-> record đi vào Partition 1
+```
 
-batch.size tức là số lượng messages/ batch, khi đạt tới giới hạn này, ngay lập tức batching với số lượng messages này tới Topic
-linger.ms tức là thời gian batching diễn ra mà không cần lấp đầy batch.size
-=> tức là ngay sau khi đạt tới batch.size / linger.ms thời gian đã trôi qua thì sẽ ngay lập tức batching
+Cùng key sẽ đi vào cùng Partition khi các điều kiện sau không đổi:
 
-- Việc sử dụng linger.ms chấp nhận 1 lượng delay khá nhỏ, nhưng lại giúp giảm đáng kể latency của toàn bộ quá trình, tăng thông lượng do vì số lượng request ít hơn
-- Mặc định với Kafka, batch.size = 16.384 bytes ; linger.ms = 0ms
-- Việc linger.ms = 0 thì không phải là cứ lần nào generate ra message bởi Producer thì sẽ send 1 message đơn lẻ đó ngay lập tức đến Topic mà Producer cần 1 khoảng thời gian n (rất nhỏ) để xử lý và send các messages + trong n thời gian này thì nếu các messages được tạo ra để gửi đến cùng Partition thì chúng sẽ được nhóm vào chung 1 Batch và gửi đi trên 1 request + nhưng việc đặt như thế này thì thông thường Batch sẽ có ít messages do => linger.ms sẽ không ngăn chặn Batching
+- Cùng Topic.
+- Cùng số lượng Partition.
+- Cùng serializer cho key.
+- Cùng partitioner/logic chọn Partition.
 
-Sticky partition strategy sẽ giải quyết vấn đề bằng cách đặt ra 1 Batch + sau khi Batch đó lấp đầy bằng các messages thì sẽ Batching nó tới 1 Partition
+Ví dụ:
 
-- Điều này giúp hạn chế tình trạng 1 request 1 message mà sử dụng Batching với số lượng nhỏ messages.
-- Trong nhiều lần như vậy thì các Partitions sẽ không đồng đều về số lượng.
+```text
+orderId = 1001 -> Partition 1
+orderId = 1001 -> Partition 1
+orderId = 2002 -> Partition 2
+```
+
+Cách này phù hợp khi cần giữ thứ tự theo một entity cụ thể:
+
+- Event của cùng một `orderId`.
+- Event của cùng một `paymentId`.
+- Event của cùng một `userId`.
+
+Vì Kafka chỉ đảm bảo ordering trong một Partition, key giúp các event liên quan tới cùng một entity nằm chung Partition.
+
+Nhược điểm:
+
+- Nếu key phân phối không đều, một Partition có thể bị nóng.
+- Nếu tăng số Partition, message mới cùng key có thể đi sang Partition khác vì phép `% number_of_partitions` thay đổi.
+- Nếu đổi serializer của key, bytes sau serialize thay đổi, hash có thể thay đổi.
+
+Ví dụ hot partition:
+
+```text
+key = country
+
+90% traffic có country = VN
+-> nhiều record dồn vào cùng một Partition
+-> một Consumer xử lý Partition đó bị quá tải
+```
+
+Trong case này, key `orderId` hoặc `userId` có thể phân phối tốt hơn, tùy yêu cầu ordering.
+
+#### Trường hợp không có key
+
+Nếu record không chỉ định Partition và key là `null`, Producer không có căn cứ business để giữ ordering theo entity. Khi đó mục tiêu chính thường là:
+
+- phân phối record tương đối đều,
+- tạo batch đủ lớn,
+- giảm số request nhỏ,
+- tránh gửi quá nhiều vào Broker đang chậm.
+
+Ở các version Kafka hiện đại, default logic dùng cơ chế **sticky partitioning** cho record không key: Producer chọn một Partition và tiếp tục gom record vào batch của Partition đó; khi batch đạt ngưỡng hoặc được gửi, Producer mới chuyển sang Partition khác.
+
+Ví dụ:
+
+```text
+Topic có Partition 0, 1, 2
+
+Producer chọn sticky Partition 1
+record A -> Partition 1
+record B -> Partition 1
+record C -> Partition 1
+
+Batch của Partition 1 được gửi
+Producer chọn sticky Partition khác
+record D -> Partition 0
+record E -> Partition 0
+```
+
+Lý do Kafka làm vậy: batching hiệu quả hơn khi nhiều record đi vào cùng một Partition trong một khoảng ngắn. Nếu mỗi record không key cứ đổi Partition liên tục, Producer dễ tạo nhiều batch nhỏ, tăng request và overhead.
+
+#### Sticky partitioning khác round-robin thế nào?
+
+Round-robin chọn Partition luân phiên theo từng record.
+
+![Kafka image 20](images/kafka-image-20.png)
+
+```text
+record 1 -> Partition 0
+record 2 -> Partition 1
+record 3 -> Partition 2
+record 4 -> Partition 0
+record 5 -> Partition 1
+record 6 -> Partition 2
+```
+
+Sticky partitioning giữ một Partition trong một khoảng ngắn để gom batch.
 
 ![Kafka image 22](images/kafka-image-22.png)
 
-- Sticky partition strategy apply khi key message = null/ dev lựa chọn rõ ràng strategy này với project.
-- Nếu message có key, thì ta vẫn phải đảm bảo nó gửi tới đúng Partition, còn không có key thì nó sẽ chọn 1 Sticky Partition + việc pick Partition thường là round-robin giữa các Partition để đảm bảo cân bằng giữa các Partitions
-- Sticky khá giống với Round-robin, nhưng ưu điểm của nó là Batching 1 số lượng lớn cho 1 Partition + sau khi Batching xong nó sẽ chọn 1 Sticky Partition khác để Batching turn2 => nó sẽ giảm số lượng request + giảm switch Partition so với Round-robin
+```text
+record 1 -> Partition 0
+record 2 -> Partition 0
+record 3 -> Partition 0
+
+batch Partition 0 được gửi
+
+record 4 -> Partition 2
+record 5 -> Partition 2
+record 6 -> Partition 2
+```
+
+So sánh:
+
+| Tiêu chí | Round-robin | Sticky partitioning |
+| --- | --- | --- |
+| Cách chọn | Đổi Partition liên tục | Giữ một Partition cho tới khi batch đủ điều kiện gửi |
+| Batch | Dễ tạo nhiều batch nhỏ | Dễ tạo batch lớn hơn |
+| Throughput | Có thể kém hơn khi record nhỏ/nhiều Partition | Thường tốt hơn cho record không key |
+| Ordering theo key | Không phù hợp nếu bỏ qua key | Không áp dụng cho keyed record trong default logic |
+| Use case | Khi cố ý muốn phân phối đều từng record và chấp nhận mất ordering theo key | Default tốt cho record không key |
+
+Lưu ý: Round-robin partitioner nếu được cấu hình rõ có thể bỏ qua key và phân phối cả record có key theo vòng tròn. Cách này có thể giảm hot partition do một key quá lớn, nhưng đổi lại không còn đảm bảo event cùng key đi vào cùng Partition.
+
+#### Batch có làm đảo thứ tự message không?
+
+Consumer không đẩy batch vào Kafka; Producer mới là bên gửi batch. Kafka Producer gom record thành batch theo từng **Topic-Partition**.
+
+Có thể có trường hợp message sinh sau được ghi vào Kafka trước message sinh trước, nhưng cần xem chúng có cùng Partition và cùng Producer hay không.
+
+Nếu hai message nằm ở **hai Partition khác nhau**, Kafka không đảm bảo thứ tự giữa chúng:
+
+```text
+message A sinh trước -> Partition 0
+message B sinh sau   -> Partition 1
+
+Partition 1 ghi xong trước Partition 0
+-> Consumer có thể thấy B trước A nếu đọc nhiều Partition
+```
+
+Điều này bình thường vì Kafka chỉ đảm bảo ordering trong từng Partition.
+
+Nếu hai Producer khác nhau cùng gửi vào **một Partition**, thứ tự được tính theo thứ tự Broker append vào log, không phải theo thời điểm business event được tạo ra ở từng máy:
+
+```text
+Producer 1 tạo message A lúc 10:00:00
+Producer 2 tạo message B lúc 10:00:01
+
+Batch B tới Broker trước batch A
+-> Broker append B trước A
+```
+
+Nếu cùng một Producer gửi nhiều record vào cùng một Partition, Kafka Producer cố giữ thứ tự gửi trong Partition đó. Tuy nhiên, cần cấu hình retry/idempotence đúng. Với cấu hình hiện đại `enable.idempotence=true`, Producer an toàn hơn khi retry và tránh reorder do retry. Nếu tắt idempotence, bật retry và cho phép nhiều request in-flight, batch gửi sau có thể thành công trước batch gửi trước sau khi batch trước bị retry.
+
+Tóm gọn:
+
+```text
+Cùng Producer + cùng Partition + idempotence đúng
+  -> giữ thứ tự tốt nhất.
+
+Khác Partition
+  -> không có ordering toàn cục.
+
+Khác Producer
+  -> Broker ghi theo batch nào tới và được append trước.
+
+Retry không cấu hình cẩn thận
+  -> có thể gây reorder trong cùng Partition.
+```
+
+#### Default partitioning theo version
+
+Kafka partitioner có thay đổi qua các version, nên không nên học thuộc một câu kiểu "Kafka luôn round-robin nếu key null".
+
+Tóm tắt thực tế:
+
+| Version / cấu hình | Khi có key | Khi key null |
+| --- | --- | --- |
+| Kafka cũ trước sticky default | Hash key | Round-robin |
+| Kafka 2.4+ với default partitioner cũ | Hash key | Sticky partitioning |
+| Kafka 3.3+ | `DefaultPartitioner` và `UniformStickyPartitioner` bị deprecated | Nên dùng default logic thay vì set các class cũ |
+| Kafka 4.x | `partitioner.class` mặc định là `null`; default logic nằm trong Producer | Sticky/adaptive logic cho record không key |
+
+Với Kafka 4.x, docs chính thức mô tả:
+
+- Nếu `partitioner.class` không set, Producer dùng default partitioning logic.
+- Nếu có key và không chỉ định Partition, Producer chọn Partition dựa trên hash của key.
+- Nếu không có key và không chỉ định Partition, Producer chọn sticky Partition và đổi khi batch đạt ít nhất `batch.size`.
+- `partitioner.ignore.keys=false` theo mặc định, nghĩa là key vẫn được dùng để chọn Partition.
+- `partitioner.adaptive.partitioning.enable=true` theo mặc định, Producer có thể ưu tiên Partition nằm trên Broker xử lý nhanh hơn cho record không key.
+
+#### `partitioner.ignore.keys`
+
+`partitioner.ignore.keys` quyết định default logic có dùng key để chọn Partition hay không.
+
+```properties
+partitioner.ignore.keys=false
+```
+
+Đây là mặc định. Nếu record có key, Producer dùng hash của key để chọn Partition.
+
+```properties
+partitioner.ignore.keys=true
+```
+
+Producer không dùng key để chọn Partition, kể cả record có key. Khi đó record sẽ đi theo logic dành cho record không key.
+
+Use case có thể cân nhắc `partitioner.ignore.keys=true`:
+
+- Key vẫn cần lưu trong record để Consumer đọc, nhưng không cần ordering theo key.
+- Một vài key quá lớn gây hot partition.
+- Muốn phân phối tải đều hơn và chấp nhận event cùng key có thể nằm ở nhiều Partition.
+
+Không nên dùng khi:
+
+- Cần giữ thứ tự event theo `orderId`, `paymentId`, `userId`.
+- Consumer phụ thuộc vào giả định same key nằm cùng Partition.
+
+#### Adaptive partitioning
+
+Trong Kafka 3.3+ và 4.x, default logic có cấu hình:
+
+```properties
+partitioner.adaptive.partitioning.enable=true
+```
+
+Khi bật, Producer có thể gửi nhiều record không key hơn tới các Partition nằm trên Broker đang xử lý nhanh hơn. Mục tiêu là tránh dồn thêm tải vào Broker đang chậm.
+
+Ví dụ:
+
+```text
+Partition 0 Leader ở Broker A, Broker A đang chậm
+Partition 1 Leader ở Broker B, Broker B đang phản hồi nhanh
+Partition 2 Leader ở Broker C, Broker C đang phản hồi nhanh
+
+Producer có thể ưu tiên Partition 1 hoặc 2 cho record không key
+```
+
+Điểm cần hiểu: adaptive partitioning chủ yếu liên quan tới record không key hoặc trường hợp key bị ignore. Nếu record có key và `partitioner.ignore.keys=false`, Producer vẫn ưu tiên giữ rule hash key để đảm bảo same key vào cùng Partition.
+
+#### Custom partitioner
+
+Có thể tự viết custom partitioner bằng cách implement `org.apache.kafka.clients.producer.Partitioner`.
+
+Use case:
+
+- Muốn route một nhóm khách hàng VIP vào một nhóm Partition riêng.
+- Muốn tránh một số Partition tạm thời.
+- Muốn dùng thuật toán hash khác.
+- Muốn mapping key ổn định hơn khi thay đổi số Partition.
+
+Nhược điểm:
+
+- Dễ tạo lệch tải nếu thuật toán không tốt.
+- Phải tự kiểm thử ordering, compatibility và behavior khi tăng Partition.
+- Các cấu hình như `partitioner.ignore.keys` hoặc adaptive partitioning có thể không có tác dụng nếu dùng custom partitioner.
+- Khó vận hành hơn vì behavior không còn giống default Kafka.
+
+#### Những lỗi dễ viết sai
+
+- Sai: "Round-robin nghĩa là 1 message = 1 request". Đúng hơn: round-robin chọn Partition theo từng record, nhưng Producer vẫn có thể batch các record theo Partition trước khi gửi request.
+- Sai: "Kafka hiện đại luôn round-robin khi key null". Đúng hơn: Kafka 2.4+ dùng sticky cho record không key trong default logic; Kafka 4.x tiếp tục dùng default logic không-key theo hướng sticky/adaptive.
+- Sai: "Same key luôn luôn cùng Partition". Đúng hơn: same key cùng Partition khi số Partition, serializer và partitioner không đổi.
+- Sai: "Sticky luôn phân phối đều tuyệt đối". Đúng hơn: sticky tối ưu batch; phân phối dài hạn thường ổn hơn, nhưng vẫn có thể lệch trong ngắn hạn hoặc khi adaptive partitioning ưu tiên Broker nhanh hơn.
+- Sai: "Dùng round-robin để xử lý hot key mà vẫn giữ ordering theo key". Nếu round-robin bỏ qua key, event cùng key có thể vào nhiều Partition, nên ordering theo key không còn được đảm bảo.
 
 ### Producer ACK
 
@@ -1882,7 +3355,7 @@ Idempotent Producer sinh ra để giải quyết vấn đề duplicate message �
 
 - Từ Kafka 3.0 đổ lên thì mode này đặt là mặc định.
 - Mỗi lần send message, nó sẽ gửi kèm message sequence + producer id -> Partition sẽ lưu thông tin này lại -> giả sử truyền ACK lại nhưng Producer không nhận được thì nó send lại message cùng với message sequence + producer id cũ -> Partition nhận ra và không persist lại message này nhưng vẫn gửi ACK trở lại cho Producer để nó ngừng send lại (message sequence này bắt đầu từ 0, và message mới sẽ thêm 1 đơn vị).
-- Mỗi lần đồng bộ dữ liệu xuống Slave Partition, cũng sẽ copy giá trị message sequence + producer id để lỡ mà Lead Partition die thì khi nó lên làm Lead vẫn có dấu message này nên cũng không thể duplicate message được.
+- Khi dữ liệu được replicate sang Follower Replica, thông tin message sequence và producer id cũng được replicate theo. Nếu Leader cũ bị lỗi và một Follower đủ điều kiện trở thành Leader mới, Leader mới vẫn có thông tin để nhận ra message retry từ Producer và tránh ghi trùng.
 - Cũng có support transaction trong Kafka Producer, đặt transaction lên 1 method khiến: 1 là message có thể truyền hết đến các Broker hoặc không message nào được truyền tới.
 
 ### Producer Retry
@@ -1914,12 +3387,37 @@ Producer Message Compression tức trước khi send message tới Broker, Produ
 
 ## Consumer
 
-Consumer sử dụng để consume message từ Topic
+Consumer là application/client đọc record từ Kafka Topic để xử lý business logic.
 
 ![Kafka image 29](images/kafka-image-29.png)
 
-- Consumer sử dụng pull model, tức là Consumer chủ động request message từ Kafka Broker và nhận messages từ response thay vì Kafka Broker send message tới các Broker + nếu có message thì trả về luôn + nếu không có message thì chờ trong 1 khoảng thời gian cấu hình rồi mới phản hồi.
-- Việc read data từ Partition theo thứ tự Offset tăng dần
+#### Pull model có mạnh hơn push model không?
+
+Không nên nói pull model luôn mạnh hơn push model. Pull và push giải quyết bài toán khác nhau.
+
+Với **push model**, Broker chủ động đẩy message xuống Consumer. Cách này có thể có latency thấp vì có message là Broker gửi ngay. Nhưng Broker phải quan tâm nhiều hơn tới tốc độ từng Consumer. Nếu Consumer chậm, Broker cần cơ chế giới hạn như prefetch/QoS/backpressure để tránh đẩy quá nhiều.
+
+Với **pull model**, Consumer chủ động gọi `poll()`/fetch request để xin dữ liệu từ Broker. Consumer tự quyết định lúc nào đọc tiếp và đọc bao nhiêu tùy khả năng xử lý của nó.
+
+Kafka chọn pull model vì hợp với thiết kế log + offset:
+
+- Consumer đọc theo offset của từng Partition.
+- Consumer có thể fetch nhiều record theo batch.
+- Consumer chậm thì đọc chậm lại, dữ liệu vẫn nằm trong Kafka cho tới khi hết retention.
+- Consumer có thể đọc lại dữ liệu cũ nếu offset/retention cho phép.
+- Broker không phải đẩy từng message riêng lẻ tới từng Consumer.
+
+So sánh ngắn:
+
+| Tiêu chí | Push model | Pull model trong Kafka |
+| --- | --- | --- |
+| Ai chủ động | Broker đẩy message | Consumer chủ động fetch |
+| Khi Consumer chậm | Broker phải kiểm soát lượng message đang đẩy | Consumer tự giảm tốc độ poll |
+| Batch | Có thể có, tùy broker/client | Rất tự nhiên vì Consumer fetch theo batch |
+| Replay theo offset | Không phải thế mạnh chính của queue truyền thống | Là thế mạnh của Kafka |
+| Phù hợp | Task queue, routing, giao việc nhanh | Event log, throughput cao, replay, stream processing |
+
+Nói ngắn gọn: pull không phải lúc nào cũng tốt hơn push, nhưng pull rất hợp với Kafka vì Kafka lưu dữ liệu như log và Consumer đọc theo offset.
 
 Consumer Deserializer cũng tương tự như Producer Serializer nhưng khác ở chỗ là lúc nhận byte thì chuyển sang dạng object để Consumer có thể work được
 
@@ -2043,19 +3541,101 @@ auto.offset.reset.none tức nếu không tìm thấy last commit offset, sẽ t
 
 ### Consumer Internal Thread
 
-Consumer Group Coordinator là 1 thành phần nằm trong Group Consumer (1 Group Consumer sẽ có 1 Coordinator) với chức năng chính là kiểm tra trạng thái của các Consumer xem chúng có đang hoạt động hay không.
+Consumer Group Coordinator là Broker chịu trách nhiệm quản lý một Consumer Group: Consumer nào đang trong group, Consumer nào được assign Partition nào, và khi nào cần rebalance.
 
 ![Kafka image 45](images/kafka-image-45.png)
 
-Heartbeat mechanism tức Consumer sẽ định kỳ gửi 1 signal tới để xác nhận rằng nó đang còn sống.
+Kafka dùng cả **heartbeat** và **poll** vì chúng trả lời hai câu hỏi khác nhau.
 
-- heartbeat.interval.ms (default 3s) tức khoảng thời gian định kỳ gửi heartbeat. (truyền thống thì đặt = ⅓ session.timeout.ms)
-- session.timeout.ms (default 45s cho Kafka >= 3.0, trước là 10s) tức khoảng thời gian mà không nhận được heartbeat sẽ coi Consumer die.
+#### Heartbeat kiểm tra Consumer còn sống không
 
-Pool mechanism tức sẽ nhận ra do Consumer poll() tới để lấy message.
+Heartbeat là tín hiệu Consumer gửi định kỳ tới Group Coordinator để báo rằng process Consumer vẫn còn sống và vẫn kết nối được tới Kafka.
 
-- max.poll.interval.ms (default 5p) là khoảng thời gian giữa 2 lần poll() lớn hơn giá trị này thì sẽ coi như Consumer die. (quan trọng trong khuôn khổ dữ liệu lớn như Spark, nơi xử lý dữ liệu có thể tốn thời gian >< nếu ứng dụng nhanh thì có thể cài thời gian thấp đi)
-- max.poll.records (default 500) xác định số lượng message tối đa được lấy trong 1 poll()
+Các cấu hình liên quan:
+
+- `heartbeat.interval.ms`: khoảng thời gian giữa hai lần gửi heartbeat, thường nhỏ hơn `session.timeout.ms`.
+- `session.timeout.ms`: nếu Group Coordinator không nhận được heartbeat trong khoảng thời gian này, Consumer bị coi là đã chết hoặc mất kết nối.
+
+Ví dụ:
+
+```text
+heartbeat.interval.ms = 3s
+session.timeout.ms = 45s
+
+Consumer gửi heartbeat đều
+-> Coordinator biết Consumer còn sống
+
+Consumer crash hoặc mất network
+-> không còn heartbeat
+-> quá session.timeout.ms
+-> Coordinator loại Consumer khỏi group và rebalance
+```
+
+#### Poll kiểm tra Consumer còn xử lý được không
+
+`poll()` là lời gọi Consumer dùng để lấy record từ Kafka. Nhưng Kafka không chỉ quan tâm Consumer còn sống về mặt process; Kafka còn cần biết Consumer có đang xử lý dữ liệu kịp không.
+
+Một Consumer có thể vẫn gửi heartbeat đều, nhưng application thread bị kẹt xử lý một batch quá lâu:
+
+```text
+Consumer vẫn heartbeat
+-> process chưa chết
+
+Nhưng application xử lý batch mất 30 phút
+-> không gọi poll() tiếp
+-> Partition đang assign cho Consumer này bị giữ quá lâu
+-> các message mới ở Partition đó không được xử lý tiếp
+```
+
+Vì vậy Kafka có thêm `max.poll.interval.ms`. Nếu khoảng thời gian giữa hai lần gọi `poll()` vượt quá giá trị này, Kafka coi Consumer không còn xử lý dữ liệu đúng tiến độ và có thể loại nó khỏi group để rebalance Partition sang Consumer khác.
+
+Các cấu hình liên quan:
+
+- `max.poll.interval.ms`: thời gian tối đa giữa hai lần gọi `poll()` trước khi Consumer bị coi là xử lý quá chậm.
+- `max.poll.records`: số record tối đa trả về trong một lần `poll()`, giúp giới hạn kích thước batch để xử lý không quá lâu.
+
+#### Vì sao không dùng một cơ chế thôi?
+
+Nếu chỉ dùng heartbeat:
+
+```text
+Consumer còn process và vẫn gửi heartbeat
+nhưng code xử lý bị treo 30 phút
+-> Coordinator vẫn tưởng Consumer ổn
+-> Partition bị giữ, không Consumer khác xử lý thay
+```
+
+Nếu chỉ dùng poll:
+
+```text
+Consumer đang xử lý batch lớn hợp lệ trong vài chục giây
+-> chưa gọi poll() tiếp
+-> Coordinator có thể tưởng Consumer chết quá sớm
+```
+
+Vì vậy Kafka tách hai cơ chế:
+
+```text
+heartbeat
+  -> kiểm tra Consumer còn sống và còn kết nối không
+
+poll
+  -> kiểm tra application có quay lại lấy dữ liệu trong thời gian hợp lý không
+```
+
+Tóm gọn:
+
+```text
+session.timeout.ms
+  -> giới hạn thời gian mất heartbeat
+  -> phát hiện crash/network issue
+
+max.poll.interval.ms
+  -> giới hạn thời gian không gọi poll()
+  -> phát hiện xử lý quá chậm hoặc application bị kẹt
+```
+
+Nếu xử lý mỗi batch lâu, nên giảm `max.poll.records`, tối ưu business logic, hoặc đưa xử lý nặng sang worker riêng nhưng vẫn phải quản lý commit offset cẩn thận.
 
 Chưa đọc: [https://medium.com/apache-kafka-from-zero-to-hero/apache-kafka-guide-39-consumer-replica-fetch-and-rack-awareness-setup-c86004d4ab80](https://medium.com/apache-kafka-from-zero-to-hero/apache-kafka-guide-39-consumer-replica-fetch-and-rack-awareness-setup-c86004d4ab80)
 
@@ -2101,36 +3681,144 @@ At least once Đây là chế độ mặc định và an toàn nhất cho hầu 
 
 ## Kafka Replica
 
-Kafka Replica chính là "xương sống" giúp Kafka trở thành hệ thống chịu lỗi (fault-tolerant) cực kỳ mạnh mẽ mà các ông lớn công nghệ tin dùng.
+Kafka Replica là cơ chế tạo nhiều bản sao cho Partition để tăng khả năng chịu lỗi. Nếu một Broker gặp sự cố, Kafka vẫn có thể tiếp tục phục vụ dữ liệu từ Replica nằm trên Broker khác, miễn là cấu hình replication và ISR đủ an toàn.
 
-- Hãy tưởng tượng Kafka Replica giống như việc bạn có nhiều bản sao của một cuốn sổ ghi chép quan trọng đặt ở các tòa nhà khác nhau; nếu một tòa nhà cháy, bạn vẫn còn bản sao ở chỗ khác để tiếp tục công việc.
-- Trong Kafka, dữ liệu được chia thành các **Partition**. Mỗi Partition sẽ có nhiều bản sao (Replica) nằm trên các Broker khác nhau.
-- Mất dữ liệu (Data Loss): Nếu một Broker hỏng ổ cứng, dữ liệu vẫn còn ở các Broker khác + Ngừng hoạt động (Downtime): Nếu Broker chứa Leader bị sập, Kafka sẽ tự động bầu một Follower trong ISR lên làm Leader mới ngay lập tức. Hệ thống gần như không bị gián đoạn.
-- Replication là sự đánh đổi giữa Hiệu suất và Sự an toàn. Nếu bạn cần tốc độ bàn thờ và dữ liệu có mất một chút cũng không sao, bạn có thể giảm số lượng Replica. Nhưng với đa số hệ thống sản xuất (Production), con số `replication-factor = 3` là "tỉ lệ vàng".
+Trong Kafka, đơn vị được replicate là **Partition**, không phải toàn bộ Topic theo một khối duy nhất. Một Topic có nhiều Partition, mỗi Partition có thể có nhiều Replica đặt trên các Broker khác nhau.
 
-Replica Factor là hệ số replica, cho biết số lượng bản sao (tính cả bản gốc) của Partition
+Ví dụ:
+
+```text
+Topic: payment-events
+Partition 0 có replication-factor = 3
+
+Replica 1 -> Broker 1
+Replica 2 -> Broker 2
+Replica 3 -> Broker 3
+```
+
+**Replica Factor** là số lượng bản sao của mỗi Partition, tính cả bản Leader.
+
+```text
+replication-factor = 1
+  -> chỉ có 1 bản sao
+  -> Broker chứa Partition lỗi thì Partition đó không phục vụ được
+
+replication-factor = 3
+  -> có 3 bản sao
+  -> chịu lỗi tốt hơn nếu một Broker gặp sự cố
+```
+
+Trong môi trường local/dev chỉ có một Broker, `replication-factor = 1` là bình thường. Trong production, giá trị thường gặp là `3` vì cân bằng tốt giữa độ an toàn và chi phí tài nguyên.
 
 ![Kafka image 49](images/kafka-image-49.png)
 
-- Ở các example local, replica factor là 1 do chỉ có 1 triển khai duy nhất của Partition; tuy nhiên trên thực tế thì Kafka work trên 1 Cluster và replica factor sẽ >= 1, thường là 2, 3 và often sẽ là 3
-- Việc sử dụng Replica trong Kafka để đảm bảo rằng khi 1 Broker bị offline thì các Broker khác vẫn còn tồn tại để operation hệ thống
+Replication giúp Kafka giảm rủi ro mất dữ liệu và giảm downtime:
+
+- Nếu Broker chứa một Follower bị lỗi, Leader vẫn phục vụ đọc/ghi bình thường.
+- Nếu Broker chứa Leader bị lỗi, Kafka có thể bầu một Replica khác trong ISR làm Leader mới.
+- Nếu dữ liệu đã được replicate đủ theo cấu hình `acks` và `min.insync.replicas`, rủi ro mất dữ liệu sẽ thấp hơn.
+
+Replication cũng có chi phí:
+
+- Tốn thêm disk vì dữ liệu được lưu nhiều bản.
+- Tốn thêm network vì Leader phải gửi dữ liệu sang Follower.
+- Ghi dữ liệu có thể chậm hơn nếu Producer dùng `acks=all`.
+- Cần theo dõi các chỉ số như under-replicated partitions, ISR shrink/expand và broker disk usage.
 
 ![Kafka image 50](images/kafka-image-50.png)
 
-- Ở example bên trên có replica factor = 2 tức là sẽ có 1 bản sao cho tất cả các Partitions trong hệ thống, giả sử như Broker2 bị offline thì ta vẫn có thể operation vì vẫn đủ số lượng Partitions (do replica factor = 2, việc mất đi 1 Broker: 2-1 = 1 > 0 thì hệ thống vẫn work bình thường)
-- Lúc này thì TopicA Partition1 sẽ trở thành Partition Leader mới do Leader cũ đã bị offline
+Ví dụ `replication-factor = 2` nghĩa là mỗi Partition có 2 Replica. Nếu Broker đang chứa Leader bị lỗi, Kafka sẽ cố gắng chọn Replica còn lại làm Leader mới. Hệ thống vẫn có thể tiếp tục hoạt động nếu Replica còn lại đang đồng bộ đủ tốt và còn nằm trong ISR.
 
-Partition Leader là bản sao "đội trưởng". Mọi thao tác đọc (Read) và ghi (Write) từ phía Client mặc định đều đi qua Leader.
+### Partition Leader
+
+Mỗi Partition tại một thời điểm chỉ có một **Leader**. Producer ghi dữ liệu vào Leader, Consumer mặc định đọc dữ liệu từ Leader. Các Replica còn lại là Follower và sẽ fetch dữ liệu từ Leader để đồng bộ.
 
 ![Kafka image 51](images/kafka-image-51.png)
 
 ![Kafka image 52](images/kafka-image-52.png)
 
-- 1 Partition cụ thể chỉ có 1 Partition Leader
+Ví dụ:
 
-Partition Follower là các bản sao "thực tập sinh". Chúng không phục vụ Client mà chỉ có nhiệm vụ duy nhất: Copy dữ liệu từ Leader để giữ mình luôn cập nhật.
+```text
+Partition 0
+Leader   -> Broker 1
+Follower -> Broker 2
+Follower -> Broker 3
+```
 
-- In-sync replica (ISR) là nhóm các Follower đang đuổi kịp Leader một cách sát sao. Nếu một Follower bị chậm hoặc chết, nó sẽ bị đá ra khỏi ISR.
+Khi Producer gửi message vào Partition 0:
+
+```text
+Producer -> Broker 1 / Leader
+Leader ghi message vào log
+Follower fetch message từ Leader
+Consumer đọc từ Leader theo offset
+```
+
+Nếu Broker 1 lỗi:
+
+```text
+Broker 1 down
+Controller chọn Broker 2 hoặc Broker 3 làm Leader mới nếu đủ điều kiện
+Producer/Consumer cập nhật metadata và làm việc với Leader mới
+```
+
+### Partition Follower
+
+Follower là Replica không giữ vai trò Leader. Nhiệm vụ chính của Follower là đọc dữ liệu từ Leader và cập nhật log của mình để theo kịp Leader.
+
+Follower bình thường không nhận request ghi trực tiếp từ Producer. Với Consumer, cách hiểu cơ bản là đọc từ Leader; một số cấu hình mới có thể cho phép fetch từ Replica gần hơn để tối ưu độ trễ mạng trong triển khai nhiều vùng địa lý.
+
+### ISR
+
+**ISR** là viết tắt của **In-Sync Replicas**. Đây là danh sách các Replica đang đồng bộ tốt với Leader.
+
+Ví dụ:
+
+```text
+Partition 0
+Leader: Broker 1
+ISR: Broker 1, Broker 2, Broker 3
+```
+
+Nếu Broker 3 bị chậm hoặc mất kết nối, ISR có thể còn:
+
+```text
+ISR: Broker 1, Broker 2
+```
+
+Kafka ưu tiên chọn Leader mới từ ISR để giảm rủi ro mất dữ liệu. Nếu một Replica không theo kịp Leader trong thời gian cấu hình cho phép, nó sẽ bị loại khỏi ISR. Khi nó bắt kịp lại, nó có thể được đưa vào ISR trở lại.
+
+### Ưu điểm và nhược điểm của Replica
+
+Ưu điểm:
+
+- Tăng khả năng chịu lỗi khi Broker bị down.
+- Giảm rủi ro mất dữ liệu nếu Producer dùng cấu hình ghi an toàn.
+- Cho phép Kafka bầu Leader mới khi Broker cũ gặp sự cố.
+- Phù hợp với production workload cần độ bền dữ liệu cao.
+
+Nhược điểm:
+
+- Tốn thêm disk theo số lượng Replica.
+- Tăng traffic network giữa các Broker.
+- Có thể tăng latency ghi khi yêu cầu nhiều Replica xác nhận.
+- Vận hành phức tạp hơn vì phải theo dõi ISR, replication lag và phân bổ dữ liệu giữa Broker.
+
+Use case nên dùng `replication-factor = 3`:
+
+- Payment event.
+- Order event.
+- Audit log.
+- CDC event từ database.
+- Event dùng để rebuild projection/search index.
+
+Use case có thể dùng `replication-factor = 1`:
+
+- Môi trường local.
+- Test ngắn hạn.
+- Dữ liệu demo có thể tạo lại.
+- Pipeline thử nghiệm không yêu cầu độ bền dữ liệu.
 
 ## Log Retention + Cleanup Policy
 
