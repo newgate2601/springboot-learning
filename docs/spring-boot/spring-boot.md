@@ -59,6 +59,12 @@ Spring Boot không thay thế Spring Framework. Nó sử dụng Spring Framework
 
 Spring Boot là một công cụ thuộc hệ sinh thái Spring, giúp tạo và chạy ứng dụng Spring nhanh hơn. Spring Boot không thay thế Spring Framework. Nó sử dụng Spring Framework ở bên dưới, sau đó bổ sung các quy ước, cấu hình tự động và công cụ đóng gói để giảm lượng cấu hình thủ công.
 
+Ví dụ ngắn:
+
+- Thêm `spring-boot-starter-web` thì Spring Boot tự chuẩn bị Spring MVC, JSON converter và web server nhúng để chạy REST API.
+- Thêm `spring-boot-starter-data-jpa` và cấu hình database thì Spring Boot tự chuẩn bị nhiều phần liên quan đến JPA, datasource và transaction.
+- Có thể đóng gói ứng dụng thành file JAR rồi chạy bằng `java -jar`, không cần deploy thủ công lên server riêng trong nhiều trường hợp.
+
 Spring Boot thường được dùng để xây dựng:
 
 - REST API và backend cho web hoặc mobile;
@@ -128,7 +134,16 @@ Auto-configuration không có nghĩa Spring Boot đoán được mọi yêu cầ
 
 ### Embedded server
 
-Ứng dụng web Spring Boot thường chạy cùng một web server nhúng. Server được khởi động bên trong tiến trình của ứng dụng.
+Embedded server là web server được đóng gói và chạy ngay bên trong ứng dụng Spring Boot. Với ứng dụng web Java, web server là thành phần nhận HTTP request từ client, ví dụ browser, mobile app hoặc Postman, rồi chuyển request đó vào ứng dụng để xử lý.
+
+Trước đây, khi làm ứng dụng Java web, lập trình viên thường phải:
+
+- cài một server riêng như Tomcat;
+- đóng gói ứng dụng thành file WAR;
+- deploy file WAR đó vào Tomcat;
+- cấu hình Tomcat để chạy ứng dụng.
+
+Spring Boot làm cách này đơn giản hơn. Khi dùng starter web, ví dụ `spring-boot-starter-web`, Spring Boot thường đưa sẵn Tomcat nhúng vào project. Lúc chạy ứng dụng, Tomcat cũng được khởi động cùng ứng dụng, nên không cần cài Tomcat riêng trong nhiều trường hợp.
 
 Luồng chạy phổ biến:
 
@@ -140,7 +155,23 @@ java -jar application.jar
         -> ứng dụng bắt đầu nhận HTTP request
 ```
 
-Với cách này, ứng dụng có thể được đóng gói thành một file JAR và chạy trực tiếp. Không cần cài một application server riêng rồi deploy ứng dụng vào đó trong phần lớn trường hợp.
+Ví dụ, khi chạy một ứng dụng REST API bằng lệnh:
+
+```bash
+java -jar shop-api.jar
+```
+
+Spring Boot sẽ khởi động ứng dụng và web server nhúng. Nếu server chạy ở port `8080`, client có thể gọi API như:
+
+```text
+GET http://localhost:8080/products
+```
+
+Request này đi vào embedded server trước, sau đó được chuyển tới Spring MVC, rồi tới controller phù hợp, ví dụ `ProductController`.
+
+Nói ngắn gọn, thay vì “mang ứng dụng đi bỏ vào server”, Spring Boot thường “mang server đi cùng ứng dụng”. Nhờ vậy ứng dụng có thể được đóng gói thành một file JAR và chạy trực tiếp.
+
+Embedded server không có nghĩa là ứng dụng không cần server. Nó chỉ có nghĩa là server được nhúng trong ứng dụng, thay vì được cài và quản lý riêng bên ngoài.
 
 ### Externalized configuration
 
