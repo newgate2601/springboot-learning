@@ -465,6 +465,23 @@ Yêu cầu:
 - Pipeline phải pass trước khi merge.
 - CI dùng OIDC/role tạm thời nếu có thể.
 - Không lưu AWS access key dài hạn trong repo.
+- Nếu dùng GitLab CI với access key trong lab, lưu key trong **Settings -> CI/CD -> Variables**, không commit vào source code.
+
+GitLab CI variables tối thiểu cho pipeline push ECR:
+
+| Variable | Visibility | Protected | Ghi chú |
+|---|---|---|---|
+| `AWS_ACCESS_KEY_ID` | `Masked` | Bỏ tick nếu chạy branch `staging` chưa protected | Access key của IAM user dành cho CI. |
+| `AWS_SECRET_ACCESS_KEY` | `Masked` | Bỏ tick nếu chạy branch `staging` chưa protected | Secret key tương ứng. |
+| `AWS_SESSION_TOKEN` | `Masked` | Tùy trường hợp | Chỉ cần khi dùng temporary credentials. |
+
+Khi tạo AWS access key cho GitLab SaaS runner, chọn use case:
+
+```text
+Application running outside AWS
+```
+
+Nếu access key bị lộ qua ảnh, chat, log hoặc commit, phải deactivate/delete key đó và tạo key mới.
 
 Pipeline source:
 

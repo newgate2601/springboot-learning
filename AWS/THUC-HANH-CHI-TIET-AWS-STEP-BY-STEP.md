@@ -6498,6 +6498,74 @@ Tạo các biến:
 
 Không commit các giá trị này vào repo.
 
+##### 4.3.1. Setting từng field khi bấm Add variable
+
+Khi bấm **Add variable** trên GitLab, điền như sau cho từng biến AWS:
+
+| Field | Giá trị nên chọn | Ghi chú |
+|---|---|---|
+| `Type` | `Variable` | Dùng biến môi trường bình thường cho CI job. |
+| `Environments` | `All (default)` | Pipeline mọi environment đều đọc được. |
+| `Visibility` | `Masked` | Không in thẳng secret ra job log. |
+| `Protect variable` | Bỏ tick nếu branch `staging` chưa protected | Nếu bật mà branch không protected, job sẽ không thấy biến. |
+| `Expand variable reference` | Bỏ tick | Giá trị AWS secret nên được giữ nguyên raw string. |
+| `Key` | `AWS_ACCESS_KEY_ID` hoặc `AWS_SECRET_ACCESS_KEY` | Nhập đúng tên biến mà `.gitlab-ci.yml` đang dùng. |
+| `Value` | Giá trị lấy từ AWS IAM access key | Không paste vào code, commit, issue hoặc chat. |
+
+Với flow hiện tại đang chạy pipeline trên branch `staging`, nếu chưa cấu hình `staging` là protected branch thì phải **bỏ tick Protect variable** cho `AWS_ACCESS_KEY_ID` và `AWS_SECRET_ACCESS_KEY`.
+
+Sau này khi chuyển sang flow chuẩn hơn:
+
+- Protect branch `main`.
+- Chỉ cho merge qua Merge Request.
+- Bật `Protect variable`.
+- Chỉ pipeline trên protected branch/tag mới được quyền push image release lên ECR.
+
+##### 4.3.2. Lấy AWS access key ở đâu
+
+Trên AWS Console:
+
+```text
+IAM
+  -> Users
+  -> chọn IAM user dùng cho GitLab CI
+  -> Security credentials
+  -> Access keys
+  -> Create access key
+```
+
+Ở màn hình **Access key best practices & alternatives**, chọn:
+
+```text
+Application running outside AWS
+```
+
+Lý do: GitLab SaaS runner chạy bên ngoài AWS, nên nó cần credential để gọi AWS API và push image vào Amazon ECR.
+
+Ở bước description, đặt tên dễ nhận diện:
+
+```text
+gitlab-ci-ecr-push
+```
+
+Sau khi AWS tạo key, copy:
+
+| AWS hiển thị | GitLab variable |
+|---|---|
+| `Access key` hoặc `Access key ID` | `AWS_ACCESS_KEY_ID` |
+| `Secret access key` | `AWS_SECRET_ACCESS_KEY` |
+
+`Secret access key` chỉ hiện một lần. Nếu lỡ đóng màn hình mà chưa copy, không thể xem lại secret cũ; phải tạo key mới.
+
+Nếu access key hoặc secret key từng bị lộ qua ảnh chụp màn hình, chat, log hoặc commit:
+
+1. Vào lại IAM user.
+2. Deactivate hoặc delete access key đã lộ.
+3. Tạo access key mới.
+4. Cập nhật lại GitLab variables bằng key mới.
+
+Không dùng root access key cho GitLab CI.
+
 Với lab cá nhân, có thể dùng IAM user đã tạo ở bước 2.3 và lưu key trong GitLab CI variables. Với môi trường tốt hơn, nên dùng OIDC để GitLab nhận role tạm thời từ AWS thay vì access key dài hạn.
 
 Phải cấu hình biến cho cả 3 project:
