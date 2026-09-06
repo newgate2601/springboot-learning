@@ -14,7 +14,6 @@ Repositories mặc định:
 gateway
 uaa-service
 post-service
-service-registry
 ```
 
 Chạy:

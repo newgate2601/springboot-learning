@@ -5218,13 +5218,12 @@ Bước tiếp theo nên làm là chuẩn bị source control/CI bằng GitLab.c
 
 Mục tiêu là tạo lớp **container registry dùng chung** bằng Amazon Elastic Container Registry.
 
-Sau bước này, account lab có các ECR repository để lưu image của 4 service:
+Sau bước này, account lab có các ECR repository để lưu image của 3 service:
 
 ```text
 gateway
 uaa-service
 post-service
-service-registry
 ```
 
 ECR nằm trong phạm vi `shared-services` vì image không thuộc riêng một môi trường `dev`, `staging` hay `production`.
@@ -5285,7 +5284,6 @@ Thứ dùng để deploy phải là digest:
 gateway@sha256:...
 uaa-service@sha256:...
 post-service@sha256:...
-service-registry@sha256:...
 ```
 
 ### 3. Trước khi bắt đầu cần có gì
@@ -5723,11 +5721,6 @@ repositories = {
     scan_on_push         = true
     keep_last_images     = 20
   }
-  service-registry = {
-    image_tag_mutability = "IMMUTABLE"
-    scan_on_push         = true
-    keep_last_images     = 20
-  }
 }
 ```
 
@@ -5746,8 +5739,33 @@ Tên repository thực tế sẽ có dạng:
 newgate2601-shared-services/gateway
 newgate2601-shared-services/uaa-service
 newgate2601-shared-services/post-service
-newgate2601-shared-services/service-registry
 ```
+
+#### 4.7. Mốc dừng trước khi tự chạy Terraform
+
+Đến đây là kết thúc phần **chuẩn bị file/config** cho bước 3.6.
+
+Trạng thái mong đợi trên máy local:
+
+```text
+[x] Đã có terraform/modules/ecr/variables.tf
+[x] Đã có terraform/modules/ecr/main.tf
+[x] Đã có terraform/modules/ecr/outputs.tf
+[x] Đã có terraform/modules/ecr/README.md
+[x] Đã có terraform/environments/shared-services/ecr/backend.tf
+[x] Đã có terraform/environments/shared-services/ecr/versions.tf
+[x] Đã có terraform/environments/shared-services/ecr/providers.tf
+[x] Đã có terraform/environments/shared-services/ecr/variables.tf
+[x] Đã có terraform/environments/shared-services/ecr/locals.tf
+[x] Đã có terraform/environments/shared-services/ecr/main.tf
+[x] Đã có terraform/environments/shared-services/ecr/outputs.tf
+[x] Đã có terraform/environments/shared-services/ecr/terraform.tfvars.example
+[x] Đã có terraform/environments/shared-services/ecr/terraform.tfvars
+```
+
+Ở mốc này **chưa có ECR repository nào được tạo trên AWS** nếu chưa chạy Terraform.
+
+Các bước tiếp theo từ `terraform fmt`, `terraform init`, `terraform validate`, `terraform plan` tới `terraform apply` là phần tự chạy ở mục kiểm tra hoàn thành bên dưới.
 
 ### 5. File/config/lệnh liên quan
 
@@ -5902,10 +5920,10 @@ aws_ecr_repository
 aws_ecr_lifecycle_policy
 ```
 
-Với 4 repository, kết quả mong đợi:
+Với 3 repository, kết quả mong đợi:
 
 ```text
-Plan: 8 to add, 0 to change, 0 to destroy.
+Plan: 6 to add, 0 to change, 0 to destroy.
 ```
 
 Không apply nếu plan có:
@@ -5938,7 +5956,6 @@ Kết quả mong đợi có dạng:
 gateway      = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway"
 uaa-service  = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/uaa-service"
 post-service = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/post-service"
-service-registry = "150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/service-registry"
 ```
 
 Kiểm tra bằng AWS CLI:
@@ -5953,7 +5970,6 @@ Kết quả mong đợi:
 newgate2601-shared-services/gateway       IMMUTABLE  True
 newgate2601-shared-services/uaa-service   IMMUTABLE  True
 newgate2601-shared-services/post-service  IMMUTABLE  True
-newgate2601-shared-services/service-registry  IMMUTABLE  True
 ```
 
 Kiểm tra lifecycle policy:
@@ -6013,7 +6029,6 @@ Trạng thái sau khi hoàn thành:
 [x] Đã tạo ECR repository cho gateway
 [x] Đã tạo ECR repository cho uaa-service
 [x] Đã tạo ECR repository cho post-service
-[x] Đã tạo ECR repository cho service-registry
 [x] ECR repository bật immutable tag
 [x] ECR repository bật scan on push
 [x] ECR repository có lifecycle policy giữ 20 image mới nhất
@@ -6031,7 +6046,749 @@ shared-services/ecr
   -> gateway image
   -> uaa-service image
   -> post-service image
-  -> service-registry image
 ```
 
 Bước tiếp theo nên làm là chuẩn bị source control và CI SaaS để build image, login ECR, push image và ghi lại image digest cho GitOps.
+
+## Bước 3.7 - Chuẩn bị source control và CI SaaS build/push image
+
+### 1. Mục tiêu của bước này
+
+Mục tiêu là chuẩn bị repo ứng dụng để CI SaaS có thể:
+
+```text
+Pull/Merge Request
+  -> compile
+  -> test
+  -> package JAR
+
+Merge main/develop
+  -> build Docker image
+  -> push image vào Amazon ECR
+  -> xuất image digest để GitOps dùng ở bước sau
+```
+
+Ở bước này ta chuẩn bị file/config trong 3 source repo ứng dụng.
+
+Ba repo chuẩn của bài lab:
+
+```text
+https://gitlab.com/newgate2601/social-media-app-gateway
+https://gitlab.com/newgate2601/social-media-app-uaa
+https://gitlab.com/newgate2601/social-media-app-post
+```
+
+Mỗi repo cần có:
+
+```text
+Dockerfile
+.dockerignore
+.gitlab-ci.yml
+src/main/resources/application-k8s.yaml
+k8s/deployment.yaml
+```
+
+đủ để GitLab CI build Spring Boot app thành container image, push vào đúng ECR repository và chuẩn bị manifest Kubernetes cho bước EKS/GitOps sau.
+
+Ở bước này **chưa tạo EKS, chưa cài Argo CD và chưa deploy ứng dụng**.
+
+### 2. Vì sao cần làm bước này
+
+Sau bước 3.6, ECR là nơi lưu image. Nhưng ECR chỉ là registry, không tự build image.
+
+Cần CI SaaS để tự động hóa luồng:
+
+```text
+Developer push code
+  -> GitLab CI chạy test
+  -> GitLab CI build JAR
+  -> GitLab CI build Docker image
+  -> GitLab CI push image vào ECR
+  -> GitLab CI ghi lại image digest
+```
+
+Không nên build image thủ công trên máy cá nhân rồi push bằng tay cho mỗi lần deploy, vì:
+
+- Khó trace image được build từ commit nào.
+- Dễ quên chạy test.
+- Dễ push nhầm tag.
+- Khó rollback theo digest.
+- Không phù hợp GitOps sau này.
+
+Điểm quan trọng:
+
+```text
+Git giữ source code.
+GitLab CI build/test/package.
+ECR giữ image.
+GitOps dùng image digest.
+Argo CD deploy image đó vào EKS ở bước sau.
+```
+
+### 3. Trước khi bắt đầu cần có gì
+
+Cần chuẩn bị:
+
+- Đã hoàn thành phần chuẩn bị file của bước 3.6.
+- ECR repository sẽ được tạo bằng Terraform ở bước 3.6 trước khi chạy pipeline push image.
+- Đã tạo tay 3 GitLab project private, trống, không initialize README.
+- 3 local repo đang trỏ remote `origin` về GitLab hoặc có remote `gitlab` riêng.
+- 3 local repo đã commit/push branch `staging` lên GitLab.
+- GitLab project có quyền chạy CI/CD pipeline.
+- Dockerfile nằm ở root từng repo.
+- AWS account lab vẫn là:
+
+```text
+150914615641
+```
+
+- Region vẫn là:
+
+```text
+ap-southeast-1
+```
+
+Mapping repo source sang ECR repository:
+
+| Local repo | GitLab project | ECR repository |
+|---|---|---|
+| `C:\code\social-media-app\social-media-app-gateway` | `newgate2601/social-media-app-gateway` | `newgate2601-shared-services/gateway` |
+| `C:\code\social-media-app\social-media-app-uaa` | `newgate2601/social-media-app-uaa` | `newgate2601-shared-services/uaa-service` |
+| `C:\code\social-media-app\social-media-app-post` | `newgate2601/social-media-app-post` | `newgate2601-shared-services/post-service` |
+
+Không còn repo/service `service-registry` trong luồng AWS/EKS. Kubernetes Service Discovery thay thế Eureka Registry.
+
+Với repo gateway, pipeline push image vào repository:
+
+```text
+newgate2601-shared-services/gateway
+```
+
+Với repo UAA, pipeline phải dùng:
+
+```text
+newgate2601-shared-services/uaa-service
+```
+
+Với repo Post, pipeline phải dùng:
+
+```text
+newgate2601-shared-services/post-service
+```
+
+### 4. Thao tác chi tiết
+
+#### 4.0. Tạo GitLab project và nối remote cho 3 repo
+
+Trên GitLab.com, tạo tay 3 project private:
+
+```text
+newgate2601/social-media-app-gateway
+newgate2601/social-media-app-uaa
+newgate2601/social-media-app-post
+```
+
+Khi tạo project:
+
+- Chọn namespace `newgate2601`.
+- Visibility: `Private`.
+- Không tick `Initialize repository with a README`.
+- Không bật SAST/Secret Detection ở bước tạo project nếu muốn giữ pipeline tối giản trước.
+
+Nếu local repo cũ đang trỏ `origin` về GitHub và muốn chuyển hẳn sang GitLab, chạy trong từng repo:
+
+```powershell
+git remote remove origin
+git remote add origin https://gitlab.com/newgate2601/social-media-app-gateway.git
+git push -u origin staging
+```
+
+Repo UAA:
+
+```powershell
+cd C:\code\social-media-app\social-media-app-uaa
+git remote remove origin
+git remote add origin https://gitlab.com/newgate2601/social-media-app-uaa.git
+git push -u origin staging
+```
+
+Repo Post:
+
+```powershell
+cd C:\code\social-media-app\social-media-app-post
+git remote remove origin
+git remote add origin https://gitlab.com/newgate2601/social-media-app-post.git
+git push -u origin staging
+```
+
+Nếu muốn giữ GitHub cũ để tham chiếu, không xóa `origin`; thêm GitLab bằng remote riêng:
+
+```powershell
+git remote add gitlab https://gitlab.com/newgate2601/social-media-app-gateway.git
+git push -u gitlab staging
+```
+
+Sau khi push, kiểm tra:
+
+```powershell
+git remote -v
+git status
+git branch -vv
+```
+
+Kết quả mong đợi:
+
+```text
+Branch staging đã tracking remote GitLab
+Working tree clean
+GitLab project không còn empty repository
+```
+
+#### 4.1. Chuẩn bị Dockerfile chạy kiểu production image
+
+Mở file:
+
+```text
+Dockerfile
+```
+
+Nội dung nên là multi-stage build. Ví dụ cho `gateway`:
+
+```dockerfile
+FROM maven:3.9.9-eclipse-temurin-21 AS build
+
+WORKDIR /workspace
+
+COPY pom.xml .
+RUN mvn -B dependency:go-offline
+
+COPY src src
+RUN mvn -B -DskipTests clean package
+
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+RUN addgroup -S spring && adduser -S spring -G spring
+
+COPY --from=build /workspace/target/*.jar app.jar
+
+USER spring:spring
+
+EXPOSE 8081
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+```
+
+Ý nghĩa:
+
+- Stage `build` dùng Maven + JDK để package JAR.
+- Stage runtime chỉ dùng JRE nhỏ hơn.
+- Container chạy bằng user `spring`, không chạy bằng root.
+- App expose port khớp `server.port` của từng service.
+- Image cuối không cần giữ toàn bộ Maven cache/source build trung gian.
+
+Port theo repo:
+
+| Repo | Port |
+|---|---:|
+| `social-media-app-gateway` | `8081` |
+| `social-media-app-uaa` | `8082` |
+| `social-media-app-post` | `8088` |
+
+#### 4.2. Chuẩn bị GitLab CI pipeline cho từng repo
+
+Mở file:
+
+```text
+.gitlab-ci.yml
+```
+
+Đặt file này ở root của cả 3 repo.
+
+Điểm khác nhau duy nhất giữa 3 repo là biến `ECR_REPOSITORY_NAME`:
+
+| Repo | `ECR_REPOSITORY_NAME` |
+|---|---|
+| `social-media-app-gateway` | `newgate2601-shared-services/gateway` |
+| `social-media-app-uaa` | `newgate2601-shared-services/uaa-service` |
+| `social-media-app-post` | `newgate2601-shared-services/post-service` |
+
+Mẫu nội dung cho repo gateway:
+
+```yaml
+stages:
+  - test
+  - package
+  - image
+
+variables:
+  AWS_REGION: "ap-southeast-1"
+  AWS_ACCOUNT_ID: "150914615641"
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  ECR_REPOSITORY_NAME: "newgate2601-shared-services/gateway"
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_IID}"
+  MAVEN_CLI_OPTS: "-B"
+
+test:
+  stage: test
+  image: maven:3.9.9-eclipse-temurin-21
+  script:
+    - mvn $MAVEN_CLI_OPTS -DskipTests compile
+
+package:
+  stage: package
+  image: maven:3.9.9-eclipse-temurin-21
+  script:
+    - mvn $MAVEN_CLI_OPTS -DskipTests clean package
+  artifacts:
+    paths:
+      - target/*.jar
+    expire_in: 1 hour
+
+build-image:
+  stage: image
+  image: docker:27
+  services:
+    - name: docker:27-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - apk add --no-cache aws-cli
+    - aws --version
+    - docker --version
+  script:
+    - export IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG}"
+    - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+    - docker build --pull -t "$IMAGE_URI" .
+    - docker push "$IMAGE_URI"
+    - export IMAGE_DIGEST="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY_NAME" --image-ids imageTag="$IMAGE_TAG" --region "$AWS_REGION" --query 'imageDetails[0].imageDigest' --output text)"
+    - echo "IMAGE_URI=${ECR_REGISTRY}/${ECR_REPOSITORY_NAME}@${IMAGE_DIGEST}" | tee image.env
+    - echo "IMAGE_TAG=${IMAGE_TAG}" | tee -a image.env
+  artifacts:
+    reports:
+      dotenv: image.env
+    paths:
+      - image.env
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+```
+
+Pipeline này gồm 3 stage:
+
+| Stage | Mục đích |
+|---|---|
+| `test` | Smoke check compile để pipeline không phụ thuộc DB thật khi chưa dựng môi trường test riêng. |
+| `package` | Build JAR và lưu artifact ngắn hạn. |
+| `image` | Build Docker image, push ECR và xuất digest. |
+
+Lý do tạm thời chưa chạy `mvn test`: `uaa-service` và `post-service` có `@SpringBootTest` load JPA context, cần PostgreSQL. Trước khi có test profile bằng H2/Testcontainers hoặc service container PostgreSQL trong CI, chạy `mvn test` sẽ fail dù code compile được.
+
+Tạo thêm file:
+
+```text
+.dockerignore
+```
+
+Nội dung tối thiểu:
+
+```text
+.git
+.gitignore
+.gitlab-ci.yml
+.idea
+target
+*.iml
+*.log
+k8s
+```
+
+File này giúp Docker build context nhỏ hơn, không đưa Git history, output `target` cũ hoặc manifest Kubernetes vào image build.
+
+#### 4.2.1. Chuẩn bị Kubernetes profile cho 3 repo
+
+Mỗi service cần profile riêng cho Kubernetes:
+
+```text
+src/main/resources/application-k8s.yaml
+```
+
+Nguyên tắc:
+
+- Không dùng Eureka.
+- Không hard-code secret thật.
+- Datasource/Redis/URL service lấy từ environment variable.
+- Bật health probe cho Kubernetes.
+
+Gateway khác UAA/Post ở chỗ Gateway cần Kubernetes discovery để tự tìm service được label:
+
+```yaml
+spring:
+  cloud:
+    kubernetes:
+      discovery:
+        enabled: true
+        service-labels:
+          "gateway.discovery/enabled": "true"
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+```
+
+UAA/Post không cần đăng ký vào registry nào. Kubernetes Service object đã là service discovery.
+
+#### 4.2.2. Chuẩn bị Kubernetes manifest tối thiểu cho 3 repo
+
+Mỗi repo cần folder:
+
+```text
+k8s/
+  deployment.yaml
+```
+
+UAA và Post cần thêm secret mẫu:
+
+```text
+k8s/
+  secret.example.yaml
+```
+
+Trong `deployment.yaml`, luôn dùng profile `k8s`:
+
+```yaml
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: k8s
+```
+
+Service nào muốn Gateway tự route tới thì gắn label trên Kubernetes Service:
+
+```yaml
+metadata:
+  labels:
+    gateway.discovery/enabled: "true"
+```
+
+Gateway cần ServiceAccount/Role/RoleBinding để đọc `services`, `endpoints`, `pods`, `endpointslices` trong namespace. Không cấp `cluster-admin`.
+
+#### 4.3. Cấu hình biến CI/CD trên GitLab
+
+Trên từng GitLab project, vào:
+
+```text
+Settings
+  -> CI/CD
+  -> Variables
+```
+
+Tạo các biến:
+
+| Variable | Masked | Protected | Ghi chú |
+|---|---:|---:|---|
+| `AWS_ACCESS_KEY_ID` | Yes | Tùy branch strategy | Access key của IAM user/role dùng cho lab. |
+| `AWS_SECRET_ACCESS_KEY` | Yes | Tùy branch strategy | Secret key tương ứng. |
+| `AWS_SESSION_TOKEN` | Yes | Tùy trường hợp | Chỉ cần nếu dùng temporary credentials. |
+
+Không commit các giá trị này vào repo.
+
+Với lab cá nhân, có thể dùng IAM user đã tạo ở bước 2.3 và lưu key trong GitLab CI variables. Với môi trường tốt hơn, nên dùng OIDC để GitLab nhận role tạm thời từ AWS thay vì access key dài hạn.
+
+Phải cấu hình biến cho cả 3 project:
+
+```text
+newgate2601/social-media-app-gateway
+newgate2601/social-media-app-uaa
+newgate2601/social-media-app-post
+```
+
+#### 4.4. Quyền AWS tối thiểu cho CI push ECR
+
+Principal dùng bởi GitLab CI cần quyền ECR tối thiểu như sau:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
+      ],
+      "Resource": [
+        "arn:aws:ecr:ap-southeast-1:150914615641:repository/newgate2601-shared-services/gateway",
+        "arn:aws:ecr:ap-southeast-1:150914615641:repository/newgate2601-shared-services/uaa-service",
+        "arn:aws:ecr:ap-southeast-1:150914615641:repository/newgate2601-shared-services/post-service"
+      ]
+    }
+  ]
+}
+```
+
+Không cấp quyền rộng kiểu `AdministratorAccess` cho CI nếu chỉ cần push image.
+
+#### 4.5. Mốc dừng trước khi tự chạy pipeline
+
+Đến đây là kết thúc phần **chuẩn bị file/config** cho bước 3.7.
+
+Trạng thái mong đợi trên máy local:
+
+```text
+[x] Đã có Dockerfile kiểu production image
+[x] Đã có .dockerignore
+[x] Đã có .gitlab-ci.yml build/test/package/push ECR
+[x] Mỗi repo dùng đúng ECR_REPOSITORY_NAME riêng
+[x] Đã có application-k8s.yaml cho gateway, uaa-service, post-service
+[x] Đã có k8s/deployment.yaml cho gateway, uaa-service, post-service
+[x] UAA/Post có k8s/secret.example.yaml cho DB/Redis secret mẫu
+[x] Pipeline dùng image tag theo commit + pipeline id
+[x] Pipeline xuất IMAGE_URI dạng digest vào image.env
+[x] Không có AWS secret nào được commit vào repo
+```
+
+Ở mốc này **chưa có image nào được push lên ECR** nếu chưa chạy GitLab pipeline.
+
+Trước khi tự chạy pipeline, cần đảm bảo:
+
+```text
+[ ] Bước 3.6 đã apply và 3 ECR repositories đã tồn tại
+[ ] Cả 3 repo đã được push lên GitLab.com
+[ ] Cả 3 GitLab project đã có AWS_ACCESS_KEY_ID và AWS_SECRET_ACCESS_KEY
+[ ] IAM principal của CI có quyền push vào cả 3 ECR repositories
+[ ] Branch chạy pipeline là main, staging hoặc develop
+```
+
+### 5. File/config/lệnh liên quan
+
+Các file cần tạo hoặc sửa:
+
+| File | Trạng thái | Vai trò |
+|---|---|---|
+| `Dockerfile` | Cập nhật | Build Spring Boot app thành production container image. |
+| `.dockerignore` | Tạo mới | Giảm Docker build context và tránh đưa file thừa vào image. |
+| `.gitlab-ci.yml` | Cập nhật | Chạy test, package, build image và push image vào ECR. |
+| `src/main/resources/application-k8s.yaml` | Tạo mới | Profile chạy trên Kubernetes, không dùng Eureka. |
+| `k8s/deployment.yaml` | Tạo mới | Manifest Kubernetes tối thiểu cho service. |
+| `k8s/secret.example.yaml` | Tạo mới nếu service cần secret | Mẫu Secret local, không chứa secret thật. |
+
+Các lệnh tham khảo để kiểm tra local trước khi push GitLab:
+
+```powershell
+docker build -t springboot-learning:local .
+```
+
+Chạy container local nếu đã có PostgreSQL phù hợp:
+
+```powershell
+docker run --rm -p 8086:8086 springboot-learning:local
+```
+
+Các lệnh này chỉ kiểm tra local, không push image lên ECR.
+
+### 6. Giải thích từng phần quan trọng
+
+#### 6.1. Vì sao không push vào GitLab Container Registry nữa
+
+Pipeline cũ push image vào:
+
+```text
+$CI_REGISTRY_IMAGE
+```
+
+Đây là registry của GitLab.
+
+Trong topology AWS/EKS của bài lab, runtime chính là AWS. Vì vậy image nên nằm ở ECR để:
+
+- EKS/ECS pull thuận lợi hơn.
+- IAM và audit nằm cùng AWS account.
+- GitOps manifest dùng ECR URI ổn định.
+- Không phải tạo Kubernetes imagePullSecret riêng cho GitLab registry ngay từ đầu.
+
+#### 6.2. Vì sao tag dùng `${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_IID}`
+
+ECR repository đang bật immutable tag.
+
+Nếu chỉ dùng:
+
+```text
+abc1234
+```
+
+thì khi retry pipeline cùng commit, push lại cùng tag có thể lỗi vì tag cũ đã tồn tại.
+
+Dùng:
+
+```text
+abc1234-57
+```
+
+giúp:
+
+- Vẫn trace được commit.
+- Mỗi pipeline có tag riêng.
+- Không ghi đè image cũ.
+- Hợp với immutable tag.
+
+#### 6.3. Vì sao vẫn cần digest
+
+Tag giúp con người đọc, digest giúp máy chắc chắn.
+
+Ví dụ:
+
+```text
+newgate2601-shared-services/gateway:abc1234-57
+newgate2601-shared-services/gateway@sha256:...
+```
+
+GitOps ở bước sau nên dùng dạng digest:
+
+```yaml
+image: 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway@sha256:...
+```
+
+Như vậy khi Argo CD sync, nó pull đúng image đã được CI push.
+
+#### 6.4. Vì sao Dockerfile không chạy `mvn spring-boot:run`
+
+`mvn spring-boot:run` phù hợp lúc dev local, nhưng không phải cách tốt để chạy container production-like.
+
+Với image deploy thật, nên:
+
+```text
+Build JAR ở build stage
+Copy JAR sang runtime stage
+Chạy java -jar app.jar
+```
+
+Cách này giúp image runtime nhỏ hơn, ít tool thừa hơn và gần với cách deploy thật hơn.
+
+#### 6.5. Vì sao chưa tự động cập nhật GitOps ở bước này
+
+Tài liệu V2 có luồng:
+
+```text
+CI push ECR
+  -> tạo MR/PR cập nhật GitOps image digest
+```
+
+Nhưng ở thời điểm bước 3.7, GitOps repository và Argo CD chưa được tạo. Vì vậy pipeline hiện chỉ xuất digest ra artifact `image.env`.
+
+Đến bước GitOps/Argo CD sau, có thể mở rộng pipeline để tự tạo MR/PR cập nhật file values hoặc manifest.
+
+### 7. Kiểm tra hoàn thành
+
+Kiểm tra file tồn tại:
+
+```powershell
+Test-Path .\Dockerfile
+Test-Path .\.gitlab-ci.yml
+```
+
+Kiểm tra trong `.gitlab-ci.yml` có các biến chính:
+
+```text
+AWS_REGION
+AWS_ACCOUNT_ID
+ECR_REGISTRY
+ECR_REPOSITORY_NAME
+IMAGE_TAG
+```
+
+Kiểm tra GitLab CI syntax:
+
+```text
+GitLab.com
+  -> Project
+  -> Build
+  -> Pipeline editor
+  -> Validate
+```
+
+Sau khi bạn tự chạy pipeline, kết quả mong đợi:
+
+```text
+test        -> passed
+package     -> passed
+build-image -> passed
+```
+
+Artifact `image.env` có dạng:
+
+```text
+IMAGE_URI=150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway@sha256:...
+IMAGE_TAG=abc1234-57
+```
+
+Kiểm tra trên ECR:
+
+```powershell
+aws ecr describe-images `
+  --repository-name newgate2601-shared-services/gateway `
+  --region ap-southeast-1 `
+  --query "imageDetails[].{Tags:imageTags,Digest:imageDigest,PushedAt:imagePushedAt}" `
+  --output table
+```
+
+### 8. Lỗi thường gặp và cách xử lý
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| `RepositoryNotFoundException` | Chưa apply bước 3.6 hoặc sai `ECR_REPOSITORY_NAME`. | Tạo ECR trước, kiểm tra đúng repository name. |
+| `no basic auth credentials` | Docker chưa login ECR hoặc AWS credential sai. | Kiểm tra `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, region và lệnh login. |
+| `AccessDeniedException` | IAM principal của CI thiếu quyền ECR. | Bổ sung quyền push ECR tối thiểu. |
+| `Cannot connect to the Docker daemon` | GitLab runner không bật Docker-in-Docker đúng cách. | Kiểm tra runner có hỗ trợ privileged Docker executor. |
+| `ImageTagAlreadyExistsException` | Repository immutable tag và tag đã tồn tại. | Dùng tag duy nhất theo commit + pipeline id. |
+| Maven test fail | Test hoặc cấu hình datasource cần DB local. | Tách profile test, dùng H2/testcontainers hoặc mock datasource. |
+| Build image quá lâu | Maven dependency tải lại nhiều lần. | Thêm cache Maven trong pipeline ở bước tối ưu sau. |
+
+Lỗi cần đặc biệt chú ý:
+
+```text
+Không đưa AWS access key vào .gitlab-ci.yml, Dockerfile, README hoặc commit history.
+```
+
+Secret chỉ đặt trong GitLab CI/CD Variables.
+
+### 9. Kết quả sau bước này
+
+Trạng thái sau khi hoàn thành phần chuẩn bị:
+
+```text
+[x] Repo có Dockerfile production-like
+[x] Repo có GitLab CI pipeline
+[x] CI không còn push mặc định vào GitLab Container Registry
+[x] CI target sang Amazon ECR ở ap-southeast-1
+[x] CI dùng tag không ghi đè
+[x] CI xuất image digest để dùng cho GitOps
+[x] Chưa tạo EKS
+[x] Chưa cài Argo CD
+[x] Chưa deploy service lên Kubernetes
+```
+
+Sau khi bạn tự chạy pipeline thành công, bài lab có image đầu tiên trong ECR:
+
+```text
+newgate2601-shared-services/gateway:<commit>-<pipeline>
+newgate2601-shared-services/gateway@sha256:...
+```
+
+Bước tiếp theo nên làm là triển khai EKS dev ở bước 4.1, sau đó cài add-on nền và chuẩn bị GitOps/Argo CD để deploy image từ ECR.

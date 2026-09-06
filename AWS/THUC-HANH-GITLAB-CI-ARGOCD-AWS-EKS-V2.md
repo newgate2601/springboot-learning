@@ -1,6 +1,6 @@
 ﻿# Thực hành CI/CD + Argo CD + AWS + EKS theo topology doanh nghiệp low-cost
 
-> Mục tiêu: dựng hệ thống 4 Spring Boot service, PostgreSQL, Redis/Valkey, Kafka, S3, ECR, EKS và Argo CD theo cách làm gần với doanh nghiệp, nhưng sizing nhỏ và chỉ bật khi thực hành để bảo vệ AWS credit 100 USD.  
+> Mục tiêu: dựng hệ thống 3 Spring Boot service, PostgreSQL, Redis/Valkey, Kafka, S3, ECR, EKS và Argo CD theo cách làm gần với doanh nghiệp, nhưng sizing nhỏ và chỉ bật khi thực hành để bảo vệ AWS credit 100 USD.
 > Bản này là v2 của tài liệu `THUC-HANH-GITLAB-CI-ARGOCD-AWS-EKS.md`. Bản cũ giữ lại hướng GitLab Self-Managed; bản v2 không self-host GitLab.
 
 Tài liệu kiến thức nền: [Triển khai hệ thống Spring Boot trên AWS và Kubernetes](./TRIEN-KHAI-HE-THONG-SPRINGBOOT-AWS-EKS-PRODUCTION.md).
@@ -31,7 +31,7 @@ Bước 4.4 - Triển khai ElastiCache Redis/Valkey dev
 Bước 4.5 - Triển khai Amazon MSK Kafka dev
 Bước 4.6 - Triển khai S3 và Secrets Manager dev
 Bước 4.7 - Cài Argo CD và GitOps dev
-Bước 4.8 - Deploy gateway, uaa-service, post-service và service-registry vào EKS
+Bước 4.8 - Deploy gateway, uaa-service và post-service vào EKS
 Bước 4.9 - Hoàn thiện observability và security dev
 Bước 4.10 - Kiểm thử reliability và rollback dev
 Bước 5.1 - Dựng staging theo buổi học từ module đã chạy ở dev
@@ -144,12 +144,10 @@ flowchart TB
     EKS --> SVC1["gateway"]
     EKS --> SVC2["uaa-service"]
     EKS --> SVC3["post-service"]
-    EKS --> SVC4["service-registry"]
 
     SVC1 --> RDS["RDS PostgreSQL"]
     SVC2 --> RDS
     SVC3 --> RDS
-    SVC4 --> RDS
 
     SVC1 --> REDIS["ElastiCache Redis/Valkey"]
     SVC2 --> MSK["Amazon MSK Kafka"]
@@ -184,7 +182,7 @@ Topology low-cost khi chỉ cần test app flow:
 ```text
 EKS 1 cluster
   -> 1-2 worker nodes
-  -> 4 Spring Boot services
+  -> 3 Spring Boot services
 
 RDS PostgreSQL single-AZ
   -> 1 instance nhỏ
@@ -207,17 +205,29 @@ Kafka
 Có thể dùng mono-repo hoặc multi-repo. Với bài học rõ ràng, dùng multi-repo:
 
 ```text
-gateway/
+https://gitlab.com/newgate2601/social-media-app-gateway
 ├── src/
 ├── pom.xml
 ├── Dockerfile
+├── .dockerignore
 ├── .gitlab-ci.yml hoặc .github/workflows/ci.yml
+├── src/main/resources/application-k8s.yaml
+├── k8s/deployment.yaml
 └── README.md
 
-uaa-service/
-post-service/
-service-registry/
+https://gitlab.com/newgate2601/social-media-app-uaa
+https://gitlab.com/newgate2601/social-media-app-post
 ```
+
+Mapping triển khai:
+
+| GitLab project | ECR repository | Kubernetes Service |
+|---|---|---|
+| `newgate2601/social-media-app-gateway` | `newgate2601-shared-services/gateway` | `gateway-service` |
+| `newgate2601/social-media-app-uaa` | `newgate2601-shared-services/uaa-service` | `uaa-service` |
+| `newgate2601/social-media-app-post` | `newgate2601-shared-services/post-service` | `post-service` |
+
+Không dùng `service-registry` trong AWS/EKS path. Service discovery do Kubernetes Service DNS và Spring Cloud Kubernetes Gateway discovery đảm nhiệm.
 
 Nếu muốn đơn giản hóa thao tác, dùng mono-repo:
 
@@ -227,7 +237,6 @@ springboot-learning/
 │   ├── gateway/
 │   ├── uaa-service/
 │   ├── post-service/
-│   └── service-registry/
 ├── terraform/
 └── gitops/
 ```
@@ -270,8 +279,7 @@ gitops/
 │   │   ├── values-staging.yaml
 │   │   └── values-production.yaml
 │   ├── uaa-service/
-│   ├── post-service/
-│   └── service-registry/
+│   └── post-service/
 └── argocd/
     ├── dev/
     ├── staging/
@@ -422,7 +430,6 @@ Tạo ECR repositories:
 gateway
 uaa-service
 post-service
-service-registry
 ```
 
 Cấu hình:
@@ -440,7 +447,6 @@ Hoàn thành khi mỗi service có thể push image:
 <account>.dkr.ecr.<region>.amazonaws.com/gateway@sha256:...
 <account>.dkr.ecr.<region>.amazonaws.com/uaa-service@sha256:...
 <account>.dkr.ecr.<region>.amazonaws.com/post-service@sha256:...
-<account>.dkr.ecr.<region>.amazonaws.com/service-registry@sha256:...
 ```
 
 ## 10. Bước 6 - Source control và CI SaaS
@@ -507,7 +513,7 @@ Low-cost default:
 ```text
 node group: 1-2 nodes
 instance: t3.large hoặc t3a.large
-desired: 2 nếu cần chạy 4 service + Argo CD + addons
+desired: 2 nếu cần chạy 3 service + Argo CD + addons
 ```
 
 HA lab:
@@ -515,7 +521,7 @@ HA lab:
 ```text
 2 AZ
 2 worker nodes
-4 Spring Boot service, mỗi service 2 replicas nếu tài nguyên đủ
+3 Spring Boot service, mỗi service 2 replicas nếu tài nguyên đủ
 ```
 
 Hoàn thành khi:
@@ -596,7 +602,6 @@ gitops/
 ├── applications/gateway/values-dev.yaml
 ├── applications/uaa-service/values-dev.yaml
 ├── applications/post-service/values-dev.yaml
-├── applications/service-registry/values-dev.yaml
 └── argocd/dev/
 ```
 
@@ -615,7 +620,7 @@ Chart phải có:
 
 Không lưu secret thật trong GitOps.
 
-## 15. Bước 11 - Deploy 4 Spring Boot service
+## 15. Bước 11 - Deploy 3 Spring Boot service
 
 Luồng chuẩn:
 
@@ -637,7 +642,6 @@ Client
   -> gateway
   -> uaa-service
   -> post-service
-  -> service-registry
   -> PostgreSQL
   -> Redis/Valkey
   -> Kafka
@@ -646,7 +650,7 @@ Client
 
 Hoàn thành khi:
 
-- 4 service đều healthy.
+- 3 service đều healthy.
 - Ingress gọi được endpoint.
 - Service đọc secret từ ExternalSecret.
 - Service kết nối DB/cache/Kafka/S3 thành công.
@@ -827,7 +831,7 @@ Các resource có thể giữ nếu rất rẻ và có chủ đích:
 - [ ] Image deploy bằng digest, không dùng `latest`.
 - [ ] Argo CD là thành phần deploy app vào EKS.
 - [ ] Terraform module dùng lại cho dev/staging/production.
-- [ ] Dev chạy được 4 Spring Boot service.
+- [ ] Dev chạy được 3 Spring Boot service.
 - [ ] Service kết nối PostgreSQL, Redis/Valkey, Kafka và S3.
 - [ ] Secret lấy từ AWS Secrets Manager qua External Secrets Operator.
 - [ ] Probes, resource limit, HPA, PDB hoạt động.

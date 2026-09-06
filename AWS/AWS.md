@@ -2469,13 +2469,283 @@ API Gateway giúp bạn không phải tự dựng một reverse proxy riêng cho
 
 **ECR**, viết tắt của Elastic Container Registry, là Docker registry của AWS.
 
-Bạn build Docker image rồi push vào ECR:
+Nói dễ hiểu, ECR là nơi lưu **container image** sau khi ứng dụng đã được build thành Docker image.
+
+ECR không phải là nơi lưu source code. Source code vẫn nằm ở GitHub, GitLab hoặc một Git server khác. ECR cũng không tự deploy ứng dụng. Nó chỉ giữ image để các hệ thống chạy container như ECS, EKS, App Runner hoặc máy EC2 có thể pull image về chạy.
+
+Luồng cơ bản:
 
 ```text
 Source code
   -> docker build
   -> push image to ECR
   -> deploy image to ECS/EKS/App Runner
+```
+
+Luồng thực tế trong CI/CD thường đầy đủ hơn:
+
+```text
+Developer push code
+  -> GitHub/GitLab nhận commit
+  -> CI chạy test
+  -> CI build Docker image
+  -> CI push image vào ECR
+  -> CD/GitOps chọn image cần deploy
+  -> ECS/EKS pull image từ ECR
+  -> container chạy trong môi trường thật
+```
+
+Ví dụ repository ECR:
+
+```text
+150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway
+```
+
+Trong đó:
+
+| Phần | Ý nghĩa |
+|---|---|
+| `150914615641` | AWS account ID. |
+| `dkr.ecr.ap-southeast-1.amazonaws.com` | Endpoint Docker registry của ECR ở region Singapore. |
+| `newgate2601-shared-services/gateway` | Tên repository chứa image của service `gateway`. |
+
+#### ECR lưu cái gì?
+
+ECR lưu các image đã build.
+
+Ví dụ source code Java Spring Boot sau khi build thành Docker image:
+
+```text
+gateway:abc1234
+uaa-service:abc1234
+post-service:abc1234
+```
+
+Khi push lên ECR, image sẽ có URI đầy đủ:
+
+```text
+150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway:abc1234
+```
+
+Mỗi image sau khi push còn có **digest**:
+
+```text
+sha256:...
+```
+
+Tag là tên dễ đọc cho con người. Digest là định danh nội dung thật của image.
+
+Ví dụ:
+
+```text
+gateway:abc1234
+gateway@sha256:111...
+```
+
+Nếu muốn deploy chắc chắn, production nên trỏ theo digest thay vì chỉ trỏ theo tag.
+
+#### ECR nằm ở đâu trong hệ thống thực tế?
+
+Trong hệ thống thực tế, ECR nằm giữa CI và runtime:
+
+```text
+Git repository
+  -> CI pipeline
+  -> ECR
+  -> ECS/EKS/App Runner
+```
+
+CI chịu trách nhiệm build và push image. Runtime chịu trách nhiệm pull image và chạy container.
+
+Ví dụ với EKS và Argo CD:
+
+```text
+GitHub/GitLab
+  -> CI build image
+  -> Push image vào ECR
+  -> GitOps repository cập nhật image digest
+  -> Argo CD sync Kubernetes manifest
+  -> EKS pull image từ ECR
+  -> Pod chạy container
+```
+
+Điểm quan trọng là không nên build lại image khi promote từ dev sang staging hoặc production.
+
+Luồng đúng hơn:
+
+```text
+Build 1 lần
+  -> test ở dev
+  -> promote cùng image sang staging
+  -> promote cùng image sang production
+```
+
+Như vậy, nếu image đã qua test ở staging, production dùng đúng artifact đó. Không có chuyện cùng một commit nhưng build lại ra image khác.
+
+#### Use case phù hợp
+
+ECR phù hợp trong các trường hợp:
+
+| Use case | Vì sao ECR phù hợp |
+|---|---|
+| Chạy microservice trên EKS | Kubernetes pull image từ registry; ECR tích hợp tốt với AWS IAM. |
+| Chạy container trên ECS/Fargate | ECS task definition có thể trỏ trực tiếp tới ECR image URI. |
+| Dùng App Runner | App Runner có thể deploy từ ECR image. |
+| CI/CD trong AWS | CodeBuild/GitHub Actions/GitLab CI có thể push image vào ECR. |
+| GitOps | Manifest có thể pin image bằng digest để deploy ổn định. |
+| Nhiều môi trường dev/staging/prod | Một image có thể được promote qua nhiều môi trường. |
+| Cần dọn image cũ | Lifecycle policy giúp tự xóa image cũ. |
+| Cần scan vulnerability cơ bản | Scan on push giúp phát hiện CVE sớm. |
+
+Trong project microservice, thường tạo mỗi service một repository:
+
+```text
+newgate2601-shared-services/gateway
+newgate2601-shared-services/uaa-service
+newgate2601-shared-services/post-service
+```
+
+Cách này dễ quản lý hơn một repository chung vì mỗi service có lifecycle, tag và quyền truy cập riêng.
+
+#### ECR không làm gì?
+
+ECR chỉ là registry, vì vậy nó không thay thế các thành phần khác:
+
+| Việc cần làm | ECR có làm không? | Thành phần đúng |
+|---|---:|---|
+| Lưu source code | Không | GitHub, GitLab, CodeCommit |
+| Build Docker image | Không | GitHub Actions, GitLab CI, Jenkins, CodeBuild |
+| Chạy unit test | Không | CI pipeline |
+| Deploy Kubernetes manifest | Không | Argo CD, Flux, Helm, kubectl |
+| Chạy container | Không | ECS, EKS, App Runner, EC2, local Docker |
+| Public app ra Internet | Không | ALB, API Gateway, CloudFront, Ingress |
+| Tự sửa lỗi bảo mật image | Không | Developer update dependency/base image rồi build lại |
+
+Tóm tắt vai trò:
+
+```text
+Git giữ source code.
+CI build image.
+ECR giữ image.
+ECS/EKS/App Runner chạy image.
+Monitoring quan sát ứng dụng sau khi chạy.
+```
+
+#### Ưu điểm của ECR
+
+Ưu điểm chính:
+
+- **AWS-native**: tích hợp tự nhiên với IAM, CloudTrail, ECS, EKS và các AWS service khác.
+- **Không phải tự vận hành registry**: không cần tự quản lý server, storage backend, HA, upgrade hoặc backup.
+- **Private mặc định**: repository private nằm trong AWS account.
+- **Dễ dùng với ECS/EKS**: workload trong AWS pull image từ ECR thuận tiện hơn registry ngoài.
+- **Hỗ trợ lifecycle policy**: tự xóa image cũ để tránh giữ rác mãi.
+- **Hỗ trợ image scanning**: scan on push giúp phát hiện lỗ hổng container/base image.
+- **Hỗ trợ immutable tag**: ngăn ghi đè tag cũ, tốt cho audit và rollback.
+- **Phù hợp GitOps**: dễ pin image bằng digest trong manifest.
+
+Với môi trường doanh nghiệp, ECR giúp kiểm soát artifact rõ hơn:
+
+```text
+Commit nào tạo ra image nào?
+Image nào đang chạy ở production?
+Image đó đã scan chưa?
+Image đó có thể rollback không?
+```
+
+#### Nhược điểm và điểm cần cẩn thận
+
+Nhược điểm:
+
+- **Phụ thuộc AWS account và region**: repository ở region nào thì endpoint thuộc region đó.
+- **Cần login token**: Docker phải login bằng `aws ecr get-login-password`.
+- **Có chi phí storage**: image lớn hoặc giữ quá nhiều version vẫn tốn tiền.
+- **Không tiện bằng Docker Hub cho image public phổ thông**.
+- **Cross-account/cross-region cần cấu hình thêm**: production ở account khác cần policy hoặc replication.
+- **Scan không thay thế security process**: scan chỉ báo lỗi; vẫn phải sửa dependency/base image.
+- **Immutable tag làm CI nghiêm hơn**: push lại cùng tag sẽ lỗi, nên pipeline phải đặt tag cẩn thận.
+
+Trong lab cá nhân, ECR thường không phải nguồn burn tiền lớn. Các dịch vụ như NAT Gateway, EKS, RDS, MSK, ElastiCache hoặc Load Balancer mới đáng sợ hơn. Tuy vậy, vẫn nên dùng lifecycle policy để tránh image cũ tích tụ.
+
+#### So sánh ECR với các cách khác
+
+| Phương pháp | Khi nào nên dùng | Ưu điểm | Nhược điểm |
+|---|---|---|---|
+| Amazon ECR | Workload chạy trên AWS, nhất là ECS/EKS/App Runner | IAM-native, private, dễ pull trong AWS, có lifecycle/scanning | Gắn với AWS account/region, cần AWS auth |
+| Docker Hub | Image public, demo đơn giản, base image phổ biến | Phổ biến, dễ dùng, nhiều image public | Rate limit, private/team features có thể tính phí, không AWS-native |
+| GitLab Container Registry | Source và CI nằm trên GitLab | Gắn với GitLab project/pipeline, developer dễ dùng | EKS/ECS pull cần token/secret, không tự nhiên bằng IAM/ECR |
+| GitHub Container Registry | Source và Actions nằm trên GitHub | Tiện với GitHub org/repo, phù hợp package nội bộ/open source | Workload AWS vẫn cần auth riêng |
+| Self-hosted registry | Cần kiểm soát hạ tầng rất riêng | Toàn quyền kiểm soát network/storage/policy | Phải tự vận hành, backup, HA, security, upgrade |
+| Build trực tiếp trên server | Demo cực nhỏ hoặc học Docker local | Nhanh lúc mới thử | Khó trace, khó rollback, không phù hợp CI/CD/GitOps |
+
+Nếu hệ thống chạy chủ yếu trên AWS, ECR là lựa chọn tự nhiên. Nếu mục tiêu là chia sẻ image public cho cộng đồng, Docker Hub hoặc GHCR có thể hợp hơn. Nếu team dùng GitLab rất sâu và deploy ngoài AWS, GitLab Container Registry cũng là lựa chọn ổn.
+
+#### Luồng thao tác thực tế với ECR
+
+Login Docker vào ECR:
+
+```powershell
+aws ecr get-login-password --region ap-southeast-1 |
+  docker login --username AWS --password-stdin 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com
+```
+
+Build image:
+
+```powershell
+docker build -t gateway:abc1234 .
+```
+
+Tag image sang ECR URI:
+
+```powershell
+docker tag gateway:abc1234 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway:abc1234
+```
+
+Push image:
+
+```powershell
+docker push 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway:abc1234
+```
+
+Lấy digest:
+
+```powershell
+aws ecr describe-images `
+  --repository-name newgate2601-shared-services/gateway `
+  --image-ids imageTag=abc1234 `
+  --region ap-southeast-1 `
+  --query "imageDetails[0].imageDigest" `
+  --output text
+```
+
+Manifest deploy nên dùng digest:
+
+```yaml
+image: 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/gateway@sha256:...
+```
+
+Tag như `abc1234` giúp con người đọc và trace commit. Digest giúp máy deploy đúng nội dung image.
+
+#### Quy ước tag nên dùng
+
+Không nên dùng `latest` cho triển khai thật vì `latest` có thể bị ghi đè và khó biết chính xác đang chạy build nào.
+
+Các tag nên dùng:
+
+| Tag | Ý nghĩa |
+|---|---|
+| `abc1234` | Short commit SHA, dễ trace về source code. |
+| `2026-09-05.1` | Build theo ngày và số lần build trong ngày. |
+| `dev-abc1234` | Build phục vụ dev, vẫn trace được commit. |
+| `v1.2.3` | Release version rõ ràng. |
+
+Khuyến nghị:
+
+```text
+CI push tag bằng short commit SHA.
+GitOps hoặc production deploy bằng digest.
+Release ổn định thì thêm tag version.
+Không ghi đè tag cũ nếu đã bật immutable tag.
 ```
 
 ### 31.2. ECS

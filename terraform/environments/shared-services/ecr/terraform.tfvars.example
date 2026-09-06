@@ -20,9 +20,4 @@ repositories = {
     scan_on_push         = true
     keep_last_images     = 20
   }
-  service-registry = {
-    image_tag_mutability = "IMMUTABLE"
-    scan_on_push         = true
-    keep_last_images     = 20
-  }
 }
