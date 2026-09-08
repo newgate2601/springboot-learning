@@ -1,39 +1,24 @@
-# chỉ ra image nào mà ta đang kế thừa (sẵn có)
-FROM openjdk:17-jdk-alpine
+FROM maven:3.9.9-eclipse-temurin-21 AS build
 
-# config thư mục làm việc + trong Linux kernel của container này có 1 directory
-# là /app, thay vì ta nhảy vào cd cái directory này thì ta khai báo Working directory
-# tức là khi container bật lên 1 cái thì nó sẽ tự đọng nhảy vào thư mục này
+WORKDIR /workspace
+
+COPY pom.xml mvnw ./
+COPY .mvn .mvn
+RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
+
+COPY src src
+RUN ./mvnw -B -DskipTests clean package
+
+FROM eclipse-temurin:21-jre-alpine
+
 WORKDIR /app
 
-# copy từ host sang container và cái "/" ở dưới là cái WORKDIR
-COPY .mvn/ .mvn
-COPY mvnw pom.xml ./
+RUN addgroup -S spring && adduser -S spring -G spring
 
-# trong image này ta run lệnh dưới này khi image được tạo ra
-# câu lệnh dưới dùng để download dependency giúp nó nằm luôn trong image này
-RUN ./mvnw dependency:go-offline
+COPY --from=build /workspace/target/*.jar app.jar
 
-COPY src ./src
-# sau khi cài hết các library thì nó chạy
-CMD ["./mvnw", "spring-boot:run"]
+USER spring:spring
 
-## chỉ ra image nào mà ta đang kế thừa (sẵn có)
-#FROM openjdk:17-jdk-alpine
-#
-## config thư mục làm việc + trong Linux kernel của container này có 1 directory
-## là /app, thay vì ta nhảy vào cd cái directory này thì ta khai báo Working directory
-## tức là khi container bật lên 1 cái thì nó sẽ tự đọng nhảy vào thư mục này
-#WORKDIR /app
-#
-## copy từ host sang container và cái "/" ở dưới là cái WORKDIR
-#COPY .mvn/ .mvn
-#COPY mvnw pom.xml ./
-#
-## trong image này ta run lệnh dưới này khi image được tạo ra
-## câu lệnh dưới dùng để download dependency giúp nó nằm luôn trong image này
-#RUN ./mvnw dependency:go-offline
-#
-#COPY src ./src
-## sau khi cài hết các library thì nó chạy
-#CMD ["./mvnw", "spring-boot:run"]
+EXPOSE 8086
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

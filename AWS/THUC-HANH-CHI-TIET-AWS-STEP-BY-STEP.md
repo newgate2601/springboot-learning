@@ -6478,7 +6478,70 @@ metadata:
 
 Gateway cần ServiceAccount/Role/RoleBinding để đọc `services`, `endpoints`, `pods`, `endpointslices` trong namespace. Không cấp `cluster-admin`.
 
-#### 4.3. Cấu hình biến CI/CD trên GitLab
+#### 4.3. Cấu hình GitLab CI truy cập AWS
+
+Trong mô hình doanh nghiệp, GitLab CI không nên giữ AWS access key dài hạn.
+
+Flow chuẩn:
+
+```text
+GitLab CI job
+  -> phát hành OIDC ID token
+  -> AWS IAM trust policy kiểm tra token
+  -> assume IAM role tạm thời
+  -> nhận temporary credentials
+  -> login ECR
+  -> push image
+```
+
+Ưu điểm:
+
+- Không có secret AWS dài hạn nằm trong GitLab.
+- Có thể giới hạn quyền theo project, branch, environment.
+- Credential tự hết hạn.
+- Audit CloudTrail thấy rõ role nào được assume.
+- Dễ tách role cho `dev`, `staging`, `production`.
+
+##### 4.3.1. GitLab OIDC assume role là đường chính
+
+Thiết kế role tối thiểu:
+
+| Role | Dùng cho | Quyền chính |
+|---|---|---|
+| `gitlab-ci-ecr-dev-role` | Pipeline build/push image dev | Push image vào 3 ECR repositories. |
+| `gitlab-ci-gitops-dev-role` | Nếu CI cần gọi AWS để lấy metadata | Thường không cần nếu chỉ mở MR vào GitOps. |
+| `argocd-dev-role` hoặc EKS node/pod role | Runtime pull image/call AWS | Pull ECR, đọc secret qua ESO nếu cần. |
+
+Trong GitLab CI, job dùng OIDC token rồi gọi:
+
+```text
+aws sts assume-role-with-web-identity
+```
+
+Các biến GitLab cần lưu chỉ là metadata không nhạy cảm:
+
+| Variable | Secret? | Ví dụ | Ghi chú |
+|---|---:|---|---|
+| `AWS_REGION` | No | `ap-southeast-1` | Region ECR. |
+| `AWS_ACCOUNT_ID` | No | `150914615641` | Account chứa ECR. |
+| `AWS_ROLE_ARN` | No | `arn:aws:iam::150914615641:role/gitlab-ci-ecr-dev-role` | Role cho CI assume. |
+| `ECR_REPOSITORY_NAME` | No | `newgate2601-shared-services/post-service` | Mỗi repo app dùng giá trị riêng. |
+
+Các biến này vẫn nên đặt trong:
+
+```text
+Settings
+  -> CI/CD
+  -> Variables
+```
+
+Nhưng chúng không phải secret dài hạn. Có thể `Visible` hoặc `Masked` đều được; với thói quen an toàn, vẫn có thể để `Masked` nếu GitLab chấp nhận format.
+
+##### 4.3.2. Lab fallback: dùng AWS access key nếu chưa cấu hình OIDC
+
+Nếu mục tiêu là thực hành nhanh trong lab cá nhân và chưa dựng OIDC trust, có thể tạm dùng IAM access key.
+
+Đây là shortcut để học pipeline, không phải mô hình production chuẩn.
 
 Trên từng GitLab project, vào:
 
@@ -6492,15 +6555,13 @@ Tạo các biến:
 
 | Variable | Masked | Protected | Ghi chú |
 |---|---:|---:|---|
-| `AWS_ACCESS_KEY_ID` | Yes | Tùy branch strategy | Access key của IAM user/role dùng cho lab. |
+| `AWS_ACCESS_KEY_ID` | Yes | Tùy branch strategy | Access key của IAM user/role dùng tạm trong lab. |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Tùy branch strategy | Secret key tương ứng. |
 | `AWS_SESSION_TOKEN` | Yes | Tùy trường hợp | Chỉ cần nếu dùng temporary credentials. |
 
 Không commit các giá trị này vào repo.
 
-##### 4.3.1. Setting từng field khi bấm Add variable
-
-Khi bấm **Add variable** trên GitLab, điền như sau cho từng biến AWS:
+Khi bấm **Add variable** trên GitLab, điền như sau cho từng biến AWS secret:
 
 | Field | Giá trị nên chọn | Ghi chú |
 |---|---|---|
@@ -6512,18 +6573,9 @@ Khi bấm **Add variable** trên GitLab, điền như sau cho từng biến AWS:
 | `Key` | `AWS_ACCESS_KEY_ID` hoặc `AWS_SECRET_ACCESS_KEY` | Nhập đúng tên biến mà `.gitlab-ci.yml` đang dùng. |
 | `Value` | Giá trị lấy từ AWS IAM access key | Không paste vào code, commit, issue hoặc chat. |
 
-Với flow hiện tại đang chạy pipeline trên branch `staging`, nếu chưa cấu hình `staging` là protected branch thì phải **bỏ tick Protect variable** cho `AWS_ACCESS_KEY_ID` và `AWS_SECRET_ACCESS_KEY`.
+Với flow lab đang chạy pipeline trên branch `staging`, nếu chưa cấu hình `staging` là protected branch thì phải **bỏ tick Protect variable** cho `AWS_ACCESS_KEY_ID` và `AWS_SECRET_ACCESS_KEY`.
 
-Sau này khi chuyển sang flow chuẩn hơn:
-
-- Protect branch `main`.
-- Chỉ cho merge qua Merge Request.
-- Bật `Protect variable`.
-- Chỉ pipeline trên protected branch/tag mới được quyền push image release lên ECR.
-
-##### 4.3.2. Lấy AWS access key ở đâu
-
-Trên AWS Console:
+Khi tạo AWS access key cho lab:
 
 ```text
 IAM
@@ -6540,7 +6592,7 @@ IAM
 Application running outside AWS
 ```
 
-Lý do: GitLab SaaS runner chạy bên ngoài AWS, nên nó cần credential để gọi AWS API và push image vào Amazon ECR.
+Lý do: GitLab SaaS runner chạy bên ngoài AWS.
 
 Ở bước description, đặt tên dễ nhận diện:
 
@@ -6566,9 +6618,7 @@ Nếu access key hoặc secret key từng bị lộ qua ảnh chụp màn hình,
 
 Không dùng root access key cho GitLab CI.
 
-Với lab cá nhân, có thể dùng IAM user đã tạo ở bước 2.3 và lưu key trong GitLab CI variables. Với môi trường tốt hơn, nên dùng OIDC để GitLab nhận role tạm thời từ AWS thay vì access key dài hạn.
-
-Phải cấu hình biến cho cả 3 project:
+Phải cấu hình cơ chế AWS auth cho cả 3 project:
 
 ```text
 newgate2601/social-media-app-gateway
@@ -6640,8 +6690,8 @@ Trước khi tự chạy pipeline, cần đảm bảo:
 ```text
 [ ] Bước 3.6 đã apply và 3 ECR repositories đã tồn tại
 [ ] Cả 3 repo đã được push lên GitLab.com
-[ ] Cả 3 GitLab project đã có AWS_ACCESS_KEY_ID và AWS_SECRET_ACCESS_KEY
-[ ] IAM principal của CI có quyền push vào cả 3 ECR repositories
+[ ] Cả 3 GitLab project đã có AWS auth: OIDC assume role hoặc lab fallback access key
+[ ] IAM role/principal của CI có quyền push vào cả 3 ECR repositories
 [ ] Branch chạy pipeline là main, staging hoặc develop
 ```
 
@@ -6821,8 +6871,8 @@ aws ecr describe-images `
 | Lỗi | Nguyên nhân thường gặp | Cách xử lý |
 |---|---|---|
 | `RepositoryNotFoundException` | Chưa apply bước 3.6 hoặc sai `ECR_REPOSITORY_NAME`. | Tạo ECR trước, kiểm tra đúng repository name. |
-| `no basic auth credentials` | Docker chưa login ECR hoặc AWS credential sai. | Kiểm tra `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, region và lệnh login. |
-| `AccessDeniedException` | IAM principal của CI thiếu quyền ECR. | Bổ sung quyền push ECR tối thiểu. |
+| `no basic auth credentials` | Docker chưa login ECR hoặc AWS auth sai. | Kiểm tra OIDC role/access key fallback, region và lệnh login. |
+| `AccessDeniedException` | IAM role/principal của CI thiếu quyền ECR. | Bổ sung quyền push ECR tối thiểu. |
 | `Cannot connect to the Docker daemon` | GitLab runner không bật Docker-in-Docker đúng cách. | Kiểm tra runner có hỗ trợ privileged Docker executor. |
 | `ImageTagAlreadyExistsException` | Repository immutable tag và tag đã tồn tại. | Dùng tag duy nhất theo commit + pipeline id. |
 | Maven test fail | Test hoặc cấu hình datasource cần DB local. | Tách profile test, dùng H2/testcontainers hoặc mock datasource. |
@@ -6859,4 +6909,726 @@ newgate2601-shared-services/gateway:<commit>-<pipeline>
 newgate2601-shared-services/gateway@sha256:...
 ```
 
-Bước tiếp theo nên làm là triển khai EKS dev ở bước 4.1, sau đó cài add-on nền và chuẩn bị GitOps/Argo CD để deploy image từ ECR.
+Bước tiếp theo nên làm là thiết kế GitOps repository và promotion model ở bước 3.8. Sau đó mới triển khai EKS dev ở bước 4.1.
+
+## Bước 3.8 - Thiết kế GitOps repository và promotion model
+
+### 1. Mục tiêu
+
+Bước này chỉ thiết kế repo GitOps và cách promotion giữa các môi trường.
+
+Không lặp lại cách tạo ECR, tạo GitLab repo, cấu hình CI variables hoặc chạy pipeline. Những phần đó thuộc bước 3.6 và 3.7.
+
+Ở bước này **chưa tạo EKS, chưa cài Argo CD, chưa tạo RDS/Redis thật và chưa deploy application lên Kubernetes**.
+
+### 2. Vì sao cần bước này
+
+App repo và GitOps repo có trách nhiệm khác nhau:
+
+| Loại repo | Trách nhiệm | Không nên chứa |
+|---|---|---|
+| App repo | Source code, test, Dockerfile, CI build/push image | Config deploy của mọi môi trường |
+| GitOps repo | Desired state Kubernetes theo môi trường | Source code app, secret thật, lịch sử mọi image đã build |
+
+GitOps repo là nơi Argo CD đọc để biết cluster **nên đang chạy cái gì**. Nó không phải nơi lưu tất cả image của tất cả developer.
+
+### 3. Enterprise baseline
+
+Mô hình chuẩn doanh nghiệp của bài lab này:
+
+```text
+App repository
+  -> merge request
+  -> compile/test/scan
+  -> build container image
+  -> push image vào ECR
+  -> tạo deploy candidate
+  -> mở MR/PR cập nhật GitOps repo
+
+GitOps repository
+  -> lưu desired state theo environment
+  -> chỉ thay đổi digest image được chọn deploy
+  -> không chứa secret thật
+
+Argo CD
+  -> watch GitOps repo
+  -> sync desired state vào EKS
+
+AWS Secrets Manager
+  -> External Secrets Operator
+  -> Kubernetes Secret
+  -> Pod env/volume
+
+EKS runtime permission
+  -> IRSA hoặc EKS Pod Identity
+  -> không nhét AWS access key vào container
+```
+
+Các nguyên tắc phải giữ:
+
+- CI **không deploy trực tiếp** vào cluster bằng `kubectl apply`.
+- CI chỉ build, scan, push image và đề xuất thay đổi GitOps bằng MR/PR.
+- Argo CD là thành phần deploy vào EKS.
+- Deploy bằng image digest, không dùng `latest`.
+- Promote `dev -> staging -> production` bằng **cùng một digest**, không rebuild.
+- Secret thật nằm ở AWS Secrets Manager hoặc secret store tương đương.
+- Kubernetes Secret là kết quả sync/runtime, không phải source of truth lâu dài.
+- Quyền AWS của workload dùng IRSA/EKS Pod Identity, không dùng env access key trong pod.
+
+Lab có thể dùng vài shortcut để học nhanh, nhưng tài liệu phải luôn phân biệt rõ:
+
+| Chủ đề | Enterprise path | Lab fallback |
+|---|---|---|
+| CI truy cập AWS | GitLab OIDC assume IAM role | IAM access key trong GitLab variables |
+| Secret runtime | AWS Secrets Manager + External Secrets Operator | Kubernetes Secret tạo tay |
+| Deploy app | Argo CD sync từ GitOps | `kubectl apply` để debug tạm |
+| Promote release | MR/approval đổi digest trong GitOps | Copy digest thủ công khi học cơ chế |
+
+### 4. Quan hệ giữa nhiều image và GitOps
+
+Trong dự án thật, ECR sẽ có rất nhiều image:
+
+```text
+developer A push commit -> image tag a1b2c3-10
+developer B push commit -> image tag d4e5f6-11
+hotfix push commit      -> image tag 998877-12
+```
+
+Không phải image nào build ra cũng được deploy.
+
+GitOps repo chỉ lưu **image đang được chọn để chạy ở từng environment**:
+
+```text
+dev        -> có thể cập nhật thường xuyên
+staging    -> chỉ nhận image đã qua dev hoặc MR được duyệt
+production -> chỉ nhận image đã promote từ staging
+```
+
+Vì vậy, không hiểu bước này là "dev ngồi viết image thủ công mỗi lần có build mới". Cách đúng là:
+
+```text
+App repo CI
+  -> build image
+  -> push ECR
+  -> lấy digest
+  -> tạo MR/PR sang GitOps repo để đổi digest của environment phù hợp
+
+Reviewer
+  -> xem MR/PR
+  -> merge nếu muốn deploy
+
+Argo CD
+  -> thấy GitOps đổi
+  -> sync vào cluster
+```
+
+Trong lab, có thể copy digest thủ công 1-2 lần để hiểu cơ chế. Nhưng flow chuẩn là CI hoặc release job tự mở MR/PR cập nhật GitOps.
+
+### 5. Deploy candidate record
+
+Mỗi pipeline thành công nên xuất ra thông tin candidate, thường nằm trong artifact `image.env`:
+
+```text
+SERVICE_NAME=post-service
+IMAGE_REPOSITORY=150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/post-service
+IMAGE_TAG=11c46479-1
+IMAGE_DIGEST=sha256:...
+IMAGE_URI=150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/post-service@sha256:...
+SOURCE_COMMIT=11c46479...
+PIPELINE_ID=...
+```
+
+Release/GitOps job dùng record này để cập nhật đúng environment.
+
+Ví dụ mapping về mặt ý nghĩa:
+
+| Environment | Ai/Job được quyền cập nhật | Ý nghĩa |
+|---|---|---|
+| `dev` | CI trên branch `staging` hoặc manual deploy job | Bản đang test tích hợp. |
+| `staging` | Promotion job hoặc MR được duyệt | Bản chuẩn bị release. |
+| `production` | Promotion job có approval | Bản chạy thật. |
+
+### 6. Cấu trúc GitOps repository
+
+GitOps repository là repo riêng dùng để lưu trạng thái mong muốn của Kubernetes.
+
+Cấu trúc đề xuất cho bài lab:
+
+```text
+social-media-app-gitops/
+├── charts/
+│   └── springboot-service/
+├── applications/
+│   ├── gateway/
+│   │   ├── values-dev.yaml
+│   │   ├── values-staging.yaml
+│   │   └── values-production.yaml
+│   ├── uaa-service/
+│   │   ├── values-dev.yaml
+│   │   ├── values-staging.yaml
+│   │   └── values-production.yaml
+│   └── post-service/
+│       ├── values-dev.yaml
+│       ├── values-staging.yaml
+│       └── values-production.yaml
+├── argocd/
+│   ├── dev/
+│   │   ├── gateway.yaml
+│   │   ├── uaa-service.yaml
+│   │   └── post-service.yaml
+│   ├── staging/
+│   │   ├── gateway.yaml
+│   │   ├── uaa-service.yaml
+│   │   └── post-service.yaml
+│   └── production/
+│       ├── gateway.yaml
+│       ├── uaa-service.yaml
+│       └── post-service.yaml
+└── README.md
+```
+
+Giải thích các thành phần trong cây:
+
+| Thành phần | Vai trò | Ví dụ nội dung |
+|---|---|---|
+| `charts/` | Chứa Helm chart hoặc template nền do platform/team DevOps chuẩn hóa. | Template `Deployment`, `Service`, `Ingress`, `ServiceAccount`, probes, resources, security context. |
+| `charts/springboot-service/` | Chart nền cho các service Spring Boot có kiểu deploy giống nhau. | Dùng được cho HTTP service thông thường; không bắt buộc dùng cho service có nhu cầu quá khác. |
+| `applications/` | Chứa cấu hình deploy riêng của từng application. | Mỗi service có một folder riêng. |
+| `applications/gateway/` | Values deploy cho gateway theo từng môi trường. | `values-dev.yaml`, `values-staging.yaml`, `values-production.yaml`. |
+| `applications/uaa-service/` | Values deploy cho UAA theo từng môi trường. | Image digest, port, env, secret name, replica, resource size. |
+| `applications/post-service/` | Values deploy cho Post theo từng môi trường. | Image digest, DB secret, Redis secret, URL gọi `uaa-service`. |
+| `values-dev.yaml` | Desired config của service ở môi trường dev. | Thường cập nhật nhanh hơn để test tích hợp. |
+| `values-staging.yaml` | Desired config của service ở môi trường staging. | Chỉ nhận digest đã được chọn/promote từ dev. |
+| `values-production.yaml` | Desired config của service ở production. | Chỉ đổi qua approval/release process. |
+| `argocd/` | Chứa manifest Argo CD Application. | File cho Argo CD biết nên sync service nào, chart nào, values nào. |
+| `argocd/dev/` | Argo CD Application cho môi trường dev. | Trỏ tới `values-dev.yaml`. |
+| `argocd/staging/` | Argo CD Application cho staging. | Trỏ tới `values-staging.yaml`. |
+| `argocd/production/` | Argo CD Application cho production. | Trỏ tới `values-production.yaml`. |
+| `README.md` | Ghi quy ước vận hành repo GitOps. | Cách promote, rollback, naming, ownership, approval. |
+
+`charts/` là nơi chứa **Helm chart/template nền**. Có thể hiểu đơn giản:
+
+```text
+Helm chart = bộ template Kubernetes manifest
+values.yaml = dữ liệu đầu vào để render template đó
+```
+
+Điểm dễ nhầm: doanh nghiệp không coi mọi service là giống hệt nhau. Các service có business, dependency, port, env, secret, scaling và routing khác nhau. Phần có thể chuẩn hóa thường là **khung vận hành Kubernetes**:
+
+```text
+thường giống nhau:
+  cách khai báo Deployment
+  cách khai báo Service
+  readiness/liveness probes
+  resources requests/limits
+  securityContext
+  labels/annotations chuẩn
+  serviceAccount/RBAC pattern
+
+thường khác nhau:
+  service name
+  port
+  image repository/digest
+  env vars
+  secret names
+  replica/resource size theo môi trường
+  ingress/routing rule
+  dependency như DB/Redis/Kafka/S3
+```
+
+Vì vậy có vài cách làm thực tế:
+
+| Cách | Khi nào dùng | Nhận xét |
+|---|---|---|
+| Shared/base Helm chart | Nhiều service có kiểu deploy gần giống nhau. | Platform team giữ chuẩn chung; app team chỉ truyền values. |
+| Chart riêng cho từng service | Service có runtime/routing/job/sidecar khác rõ rệt. | Linh hoạt hơn, nhưng dễ lặp chuẩn nếu không kiểm soát. |
+| Kustomize base/overlay | Team không muốn Helm hoặc muốn patch YAML thuần. | Dễ nhìn manifest, nhưng template logic ít hơn Helm. |
+
+Với 3 service hiện tại:
+
+| Service | Có thể dùng chart nền không? | Lý do |
+|---|---|---|
+| `uaa-service` | Có | HTTP Spring Boot service, cần DB secret, Service nội bộ. |
+| `post-service` | Có | HTTP Spring Boot service, cần DB/Redis/client URL. |
+| `gateway` | Có thể dùng ban đầu, nhưng dễ tách riêng sau | Gateway có routing/discovery/ingress đặc thù hơn service thường. |
+
+Nói gọn: chart nền không có nghĩa là service giống nhau. Nó chỉ giúp chuẩn hóa phần Kubernetes lặp lại. Service vẫn khác nhau qua values, và service đủ đặc biệt thì tách chart/overlay riêng.
+
+Lợi ích nếu dùng chart nền đúng chỗ:
+
+- Ít lặp manifest.
+- Dễ áp chung chuẩn security/resource/probe cho mọi service.
+- Khi cần sửa chuẩn Deployment, sửa trong chart một lần.
+- Mỗi environment vẫn có values riêng để khác image digest, resource size, replica, endpoint hoặc feature flag.
+
+Ở bước 3.8 chỉ cần thiết kế cấu trúc và nội dung mẫu. Chưa cần tạo Argo CD Application thật vì chưa có EKS cluster.
+
+### 7. Values theo environment nên chứa gì
+
+File values không chứa "mọi image từng build". Nó chỉ chứa **image đang được chọn để deploy cho environment đó**.
+
+Ví dụ `applications/post-service/values-dev.yaml`:
+
+```yaml
+service:
+  name: post-service
+  port: 8088
+
+image:
+  repository: 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/post-service
+  digest: "sha256:<digest-duoc-chon-cho-dev>"
+
+spring:
+  profile: k8s
+
+database:
+  secretName: post-service-db
+
+redis:
+  secretName: post-service-redis
+
+clients:
+  uaaServiceUrl: http://uaa-service:8082
+```
+
+`digest` ở đây không phải giá trị cố định do developer tự gõ mỗi ngày. Nó là **trạng thái deploy hiện tại của environment**.
+
+Ví dụ dễ hiểu:
+
+```text
+ECR có 20 image của post-service
+dev chỉ đang chạy 1 image trong số đó
+values-dev.yaml chỉ ghi digest của 1 image đang được chọn cho dev
+```
+
+Khi có image mới, pipeline không sửa source code app. Nó tạo một thay đổi nhỏ ở GitOps repo, thường là MR/PR, để đề xuất đổi digest của environment muốn deploy:
+
+```diff
+ image:
+   repository: 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/post-service
+-  digest: sha256:<digest-cu-dang-chay-o-dev>
++  digest: sha256:<digest-moi-muon-deploy-len-dev>
+```
+
+Nếu MR/PR được merge, Argo CD thấy GitOps đổi và sync cluster. Nếu không merge, image mới vẫn nằm trong ECR nhưng không được deploy.
+
+Với staging/production cũng tương tự, nhưng digest được promote có kiểm soát:
+
+```text
+values-dev.yaml        -> image đang chạy ở dev
+values-staging.yaml    -> image đã được chọn cho staging
+values-production.yaml -> image đã được approve cho production
+```
+
+Trong team nhiều dev, đây là điểm quan trọng:
+
+- ECR giữ lịch sử nhiều image.
+- GitLab pipeline tạo deploy candidate.
+- GitOps environment file chỉ giữ bản đang được deploy.
+- Merge/revert GitOps commit chính là deploy/rollback.
+
+### 8. Secret trong GitOps
+
+Không lưu secret thật trong GitOps repo.
+
+Ở giai đoạn chưa có External Secrets Operator, có thể tạo secret thủ công sau khi có cluster:
+
+```text
+uaa-service-db
+post-service-db
+post-service-redis
+```
+
+Các file `k8s/secret.example.yaml` trong service repo chỉ là mẫu để biết cần key nào. Không commit file chứa password thật.
+
+Khi sang môi trường chuẩn hơn:
+
+```text
+AWS Secrets Manager
+  -> External Secrets Operator
+  -> Kubernetes Secret
+  -> Pod env
+```
+
+### 9. Quy tắc đặt image trong manifest
+
+Manifest hoặc Helm values nên ghép image theo dạng:
+
+```text
+<repository>@<digest>
+```
+
+Không dùng:
+
+```text
+latest
+```
+
+Không nên dùng riêng tag cho deploy chính:
+
+```text
+<repository>:<tag>
+```
+
+Tag vẫn hữu ích để đọc bằng mắt trong ECR/GitLab, nhưng digest mới là khóa deploy ổn định.
+
+### 10. Cổng nghiệm thu
+
+Đánh dấu hoàn thành bước 3.8 khi:
+
+```text
+[x] Hiểu GitOps chỉ lưu image đang được chọn cho từng environment
+[x] Có cấu trúc GitOps repo/folder cho dev, staging, production
+[x] Có quy ước values theo environment
+[x] Có quy ước promote bằng cùng digest
+[x] Có quy ước secret không nằm trong GitOps
+[x] Chưa tạo EKS
+[x] Chưa cài Argo CD
+[x] Chưa deploy app
+```
+
+### 11. Lỗi thiết kế thường gặp
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| GitOps bị cập nhật bằng mọi image mới | Nhầm GitOps với image history. | Chỉ merge digest muốn deploy; các image khác nằm ở ECR như build history. |
+| CI deploy thẳng vào cluster | Trộn CI và CD. | CI chỉ mở MR/PR; Argo CD sync từ GitOps. |
+| Rebuild lại khi promote production | Không bảo toàn artifact. | Promote cùng digest đã qua dev/staging. |
+| Secret thật nằm trong GitOps | Nhầm config và secret. | Dùng AWS Secrets Manager + External Secrets Operator. |
+| Ép mọi service vào một chart chung dù khác quá nhiều | Chart phình to, nhiều `if/else`, khó hiểu. | Tách chart/overlay riêng cho service đặc biệt. |
+| Mỗi service tự có manifest khác nhau hoàn toàn | Dễ drift và khó maintain. | Chuẩn hóa phần giống nhau bằng chart nền/library/base; chỉ tách riêng phần thật sự khác. |
+
+### 12. Kết quả sau bước này
+
+Sau bước 3.8, bạn có mô hình GitOps/CD đủ sạch để tạo GitOps skeleton:
+
+```text
+App repo và GitOps repo đã tách trách nhiệm
+GitOps repo lưu desired state theo environment
+Promotion đi bằng MR/PR đổi digest
+Argo CD là bên deploy
+Secret thật không nằm trong Git
+```
+
+Bước tiếp theo là tạo GitOps repository skeleton ở bước 3.9. Sau đó mới triển khai EKS dev ở bước 4.1.
+
+## Bước 3.9 - Tạo GitOps repository skeleton
+
+### 1. Mục tiêu
+
+Bước này tạo khung ban đầu cho GitOps repository.
+
+Nói đơn giản: từ bước này trở đi, ta có một repo riêng để mô tả **muốn Kubernetes chạy cái gì**. Repo này chưa làm cluster chạy ngay, vì chưa có EKS và chưa cài Argo CD. Nó chỉ chuẩn bị cấu trúc để các bước sau dùng.
+
+Ở bước này **chưa tạo EKS, chưa cài Argo CD, chưa connect cluster và chưa deploy app**.
+
+### 2. Người mới cần hiểu gì trước
+
+GitOps repository giống như "bản thiết kế vận hành" của Kubernetes.
+
+```text
+App repo
+  -> chứa code Java/Spring Boot
+  -> build ra Docker image
+
+GitOps repo
+  -> chứa cấu hình Kubernetes muốn chạy
+  -> nói image nào được deploy ở dev/staging/production
+  -> Argo CD đọc repo này để sync vào cluster
+```
+
+Nếu app repo là nơi developer viết tính năng, thì GitOps repo là nơi team vận hành/release quyết định phiên bản nào được chạy ở môi trường nào.
+
+Một image mới build xong chưa có nghĩa là tự động chạy production. Nó chỉ trở thành bản đang chạy khi GitOps repo được cập nhật và Argo CD sync.
+
+### 3. Tên repo đề xuất
+
+Tạo một project GitLab private mới:
+
+```text
+social-media-app-gitops
+```
+
+Repo này tách khỏi 3 repo service:
+
+```text
+social-media-app-gateway
+social-media-app-uaa
+social-media-app-post
+```
+
+Lý do tách riêng:
+
+- App repo thay đổi theo feature.
+- GitOps repo thay đổi theo deploy/release.
+- Rollback deploy có thể làm bằng revert commit GitOps.
+- Argo CD chỉ cần quyền đọc GitOps repo, không cần đọc toàn bộ source code app.
+- Team có thể phân quyền approval deploy riêng với approval code.
+
+### 4. Cấu trúc thư mục cần tạo
+
+Cấu trúc ban đầu:
+
+```text
+social-media-app-gitops/
+├── charts/
+│   └── springboot-service/
+│       ├── Chart.yaml
+│       ├── values.yaml
+│       └── templates/
+│           ├── deployment.yaml
+│           ├── service.yaml
+│           ├── serviceaccount.yaml
+│           └── _helpers.tpl
+├── applications/
+│   ├── gateway/
+│   │   ├── values-dev.yaml
+│   │   ├── values-staging.yaml
+│   │   └── values-production.yaml
+│   ├── uaa-service/
+│   │   ├── values-dev.yaml
+│   │   ├── values-staging.yaml
+│   │   └── values-production.yaml
+│   └── post-service/
+│       ├── values-dev.yaml
+│       ├── values-staging.yaml
+│       └── values-production.yaml
+├── argocd/
+│   ├── dev/
+│   │   ├── gateway.yaml
+│   │   ├── uaa-service.yaml
+│   │   └── post-service.yaml
+│   ├── staging/
+│   │   ├── gateway.yaml
+│   │   ├── uaa-service.yaml
+│   │   └── post-service.yaml
+│   └── production/
+│       ├── gateway.yaml
+│       ├── uaa-service.yaml
+│       └── post-service.yaml
+└── README.md
+```
+
+Giải thích cho người mới:
+
+| File/folder | Hiểu đơn giản là gì |
+|---|---|
+| `charts/springboot-service/` | Bộ khuôn mẫu Kubernetes cho Spring Boot service thông thường. |
+| `Chart.yaml` | Thông tin tên/version của Helm chart. |
+| `values.yaml` | Giá trị mặc định của chart. |
+| `templates/deployment.yaml` | Khuôn để tạo Kubernetes Deployment. |
+| `templates/service.yaml` | Khuôn để tạo Kubernetes Service. |
+| `templates/serviceaccount.yaml` | Khuôn để tạo ServiceAccount nếu service cần identity riêng. |
+| `templates/_helpers.tpl` | Helper đặt tên label/name cho chart, tránh lặp template. |
+| `applications/<service>/values-*.yaml` | Config riêng của từng service theo từng môi trường. |
+| `argocd/<env>/<service>.yaml` | Argo CD Application manifest, dùng ở bước sau khi đã có cluster. |
+| `README.md` | Quy ước vận hành GitOps repo. |
+
+### 5. Vì sao chưa viết secret thật
+
+GitOps repo không phải nơi lưu password.
+
+Không đưa các giá trị này vào GitOps:
+
+```text
+database password
+redis password
+JWT secret
+AWS access key
+private key
+token thật
+```
+
+Trong GitOps chỉ nên ghi **tên secret** mà application sẽ đọc:
+
+```yaml
+database:
+  secretName: post-service-db
+```
+
+Giá trị thật đi theo flow khác:
+
+```text
+AWS Secrets Manager
+  -> External Secrets Operator
+  -> Kubernetes Secret
+  -> Pod đọc secret
+```
+
+Ở lab chưa có EKS/ESO thì chỉ cần giữ `secretName` trong values. Tạo secret thật là việc của bước sau.
+
+### 6. Values file nên viết như thế nào
+
+Ví dụ `applications/post-service/values-dev.yaml`:
+
+```yaml
+nameOverride: post-service
+
+replicaCount: 1
+
+image:
+  repository: 150914615641.dkr.ecr.ap-southeast-1.amazonaws.com/newgate2601-shared-services/post-service
+  digest: ""
+
+service:
+  port: 8088
+
+spring:
+  profile: k8s
+
+env:
+  APP_CLIENTS_UAA_SERVICE_URL: http://uaa-service:8082
+
+secrets:
+  database: post-service-db
+  redis: post-service-redis
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 768Mi
+```
+
+Ở skeleton ban đầu, `digest` có thể để rỗng:
+
+```yaml
+digest: ""
+```
+
+Lý do: bước này chỉ tạo khung GitOps. Digest thật sẽ được CI/release MR cập nhật sau khi chọn image muốn deploy.
+
+Với người mới, hãy nhớ:
+
+```text
+repository = kho image nằm ở đâu
+digest     = đúng bản image nào được chọn chạy
+```
+
+### 7. Dev, staging, production khác nhau ở đâu
+
+Cùng một service có thể có 3 file values:
+
+```text
+values-dev.yaml
+values-staging.yaml
+values-production.yaml
+```
+
+Những thứ có thể khác nhau:
+
+| Khác nhau | Dev | Staging | Production |
+|---|---|---|---|
+| `replicaCount` | Ít | Gần production | Nhiều hơn |
+| `resources` | Nhỏ | Vừa | Theo tải thật |
+| `image.digest` | Đổi thường xuyên | Promote có chọn lọc | Chỉ release đã duyệt |
+| feature flag | Có thể bật thử | Gần production | Cẩn trọng |
+| external endpoint | Dev endpoint | Staging endpoint | Production endpoint |
+
+Những thứ không nên khác nhau tùy tiện:
+
+- Cách đặt label.
+- Cách đặt probe.
+- Security context.
+- Cách đọc secret.
+- Cách expose service nội bộ.
+
+Các phần này nên được chuẩn hóa bằng chart/template/base.
+
+### 8. Argo CD files để làm gì
+
+Các file trong `argocd/` chưa chạy ở bước này. Chúng là manifest để sau này cài Argo CD xong thì apply.
+
+Ví dụ ý nghĩa của `argocd/dev/post-service.yaml`:
+
+```text
+Nói với Argo CD rằng:
+  hãy deploy post-service
+  dùng chart springboot-service
+  lấy values từ applications/post-service/values-dev.yaml
+  sync vào namespace dev
+```
+
+Người mới có thể hiểu Argo CD Application như một "đăng ký deploy". Có file này, Argo CD mới biết nó cần theo dõi app nào trong GitOps repo.
+
+### 9. Promotion sẽ diễn ra như thế nào
+
+Promotion không phải là build lại image.
+
+Flow đúng:
+
+```text
+Build image một lần
+  -> test ở dev
+  -> nếu ổn, promote cùng digest sang staging
+  -> nếu staging ổn, promote cùng digest sang production
+```
+
+Ví dụ:
+
+```text
+post-service digest sha256:abc
+  -> values-dev.yaml
+  -> values-staging.yaml
+  -> values-production.yaml
+```
+
+Lợi ích:
+
+- Biết chính xác production đang chạy đúng image đã test.
+- Không bị chuyện "build lại cùng code nhưng image khác".
+- Rollback bằng cách revert GitOps commit.
+
+### 10. Mốc dừng thực hành
+
+Sau khi tạo GitOps skeleton, dừng lại trước khi sang EKS.
+
+Không cần:
+
+- Apply Argo CD Application.
+- Chạy `helm install`.
+- Chạy `kubectl apply`.
+- Tạo Kubernetes Secret thật.
+- Điền digest production thật.
+
+Những việc đó để sau khi đã có EKS dev và Argo CD.
+
+### 11. Cổng nghiệm thu
+
+Đánh dấu hoàn thành bước 3.9 khi:
+
+```text
+[x] Có GitOps repo riêng
+[x] Có cấu trúc charts/applications/argocd
+[x] Có values-dev/staging/production cho 3 service
+[x] Values chưa chứa secret thật
+[x] Digest có thể để rỗng hoặc placeholder rõ ràng
+[x] README ghi rõ GitOps repo dùng để deploy, không chứa source app
+[x] Chưa deploy gì lên Kubernetes
+```
+
+### 12. Lỗi thường gặp
+
+| Lỗi | Vì sao sai | Cách sửa |
+|---|---|---|
+| Đưa password vào values | GitOps repo nằm trong Git history, rất khó xóa sạch secret. | Chỉ ghi `secretName`, giá trị thật để Secrets Manager/ESO. |
+| Copy toàn bộ manifest từ app repo vào GitOps mà không chuẩn hóa | Sau này 3 service drift, khó sửa đồng loạt. | Chuẩn hóa phần giống nhau bằng chart/base. |
+| Ép gateway giống hệt service thường | Gateway có routing/ingress/discovery đặc thù. | Ban đầu có thể dùng chart nền, sau này tách chart/overlay riêng nếu cần. |
+| Điền digest bừa để cho đủ file | Người đọc tưởng đó là image thật. | Để `digest: ""` hoặc placeholder rõ ràng. |
+| Tạo GitOps repo nhưng vẫn deploy bằng CI | Mất ý nghĩa GitOps. | CI mở MR/PR; Argo CD sync. |
+
+### 13. Kết quả sau bước này
+
+Sau bước 3.9, bạn có repo GitOps skeleton để bước EKS/Argo CD dùng tiếp:
+
+```text
+GitOps repo đã có khung
+Service config đã tách theo môi trường
+Secret thật chưa vào Git
+Digest thật chưa bắt buộc ở bước này
+Sẵn sàng sang EKS dev
+```
+
+Bước tiếp theo là triển khai EKS dev ở bước 4.1.

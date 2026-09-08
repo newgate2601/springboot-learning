@@ -1,39 +1,61 @@
 stages:
   - test
   - package
-  - docker
+  - image
 
 variables:
-  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
+  AWS_REGION: "ap-southeast-1"
+  AWS_ACCOUNT_ID: "150914615641"
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  ECR_REPOSITORY_NAME: "newgate2601-shared-services/gateway"
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}-${CI_PIPELINE_IID}"
+  MAVEN_CLI_OPTS: "-B"
 
 test:
   stage: test
   image: maven:3.9.9-eclipse-temurin-21
   script:
     - chmod +x mvnw
-    - ./mvnw test
+    - ./mvnw $MAVEN_CLI_OPTS test
 
 package:
   stage: package
   image: maven:3.9.9-eclipse-temurin-21
   script:
     - chmod +x mvnw
-    - ./mvnw -DskipTests clean package
+    - ./mvnw $MAVEN_CLI_OPTS -DskipTests clean package
   artifacts:
     paths:
       - target/*.jar
     expire_in: 1 hour
 
-docker-build-push:
-  stage: docker
+build-image:
+  stage: image
   image: docker:27
   services:
-    - docker:27-dind
+    - name: docker:27-dind
+      command: ["--tls=false"]
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - apk add --no-cache aws-cli
+    - aws --version
+    - docker --version
   script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - docker build -t "$CI_REGISTRY_IMAGE:$IMAGE_TAG" .
-    - docker push "$CI_REGISTRY_IMAGE:$IMAGE_TAG"
-  only:
-    - develop
+    - export IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG}"
+    - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+    - docker build --pull -t "$IMAGE_URI" .
+    - docker push "$IMAGE_URI"
+    - export IMAGE_DIGEST="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY_NAME" --image-ids imageTag="$IMAGE_TAG" --region "$AWS_REGION" --query 'imageDetails[0].imageDigest' --output text)"
+    - echo "IMAGE_URI=${ECR_REGISTRY}/${ECR_REPOSITORY_NAME}@${IMAGE_DIGEST}" | tee image.env
+    - echo "IMAGE_TAG=${IMAGE_TAG}" | tee -a image.env
+  artifacts:
+    reports:
+      dotenv: image.env
+    paths:
+      - image.env
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'

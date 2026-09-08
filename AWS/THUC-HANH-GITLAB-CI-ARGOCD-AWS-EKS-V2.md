@@ -24,6 +24,8 @@ Bước 3.4 - Dựng network shared-services bằng lại module VPC
 Bước 3.5 - Chốt không self-host GitLab trong lab AWS credit 100$
 Bước 3.6 - Triển khai Amazon ECR dùng chung
 Bước 3.7 - Chuẩn bị source control và CI SaaS build/push image
+Bước 3.8 - Thiết kế GitOps repository và promotion model
+Bước 3.9 - Tạo GitOps repository skeleton
 Bước 4.1 - Triển khai EKS dev
 Bước 4.2 - Cài add-on nền cho EKS dev
 Bước 4.3 - Triển khai RDS PostgreSQL dev
@@ -272,19 +274,48 @@ terraform/
 ```text
 gitops/
 ├── charts/
-│   └── springboot-service/
+│   └── springboot-service/    # Helm chart dùng chung cho Spring Boot service
 ├── applications/
 │   ├── gateway/
 │   │   ├── values-dev.yaml
 │   │   ├── values-staging.yaml
 │   │   └── values-production.yaml
 │   ├── uaa-service/
+│   │   ├── values-dev.yaml
+│   │   ├── values-staging.yaml
+│   │   └── values-production.yaml
 │   └── post-service/
+│       ├── values-dev.yaml
+│       ├── values-staging.yaml
+│       └── values-production.yaml
 └── argocd/
     ├── dev/
+    │   ├── gateway.yaml
+    │   ├── uaa-service.yaml
+    │   └── post-service.yaml
     ├── staging/
+    │   ├── gateway.yaml
+    │   ├── uaa-service.yaml
+    │   └── post-service.yaml
     └── production/
+        ├── gateway.yaml
+        ├── uaa-service.yaml
+        └── post-service.yaml
 ```
+
+Giải thích nhanh:
+
+| Thành phần | Vai trò |
+|---|---|
+| `charts/` | Helm chart/template nền để chuẩn hóa phần Kubernetes giống nhau giữa các service. |
+| `charts/springboot-service/` | Chart nền cho Spring Boot HTTP service thông thường; service đặc biệt vẫn có thể tách chart/overlay riêng. |
+| `applications/` | Values riêng của từng service theo từng environment. |
+| `values-dev.yaml` | Config image/resource/env của service ở dev. |
+| `values-staging.yaml` | Config của service ở staging, thường nhận digest được promote từ dev. |
+| `values-production.yaml` | Config production, chỉ đổi qua approval/release process. |
+| `argocd/` | Argo CD Application manifest trỏ vào đúng chart và đúng values của từng environment. |
+
+Chart nền không có nghĩa là mọi service giống nhau. Nó chỉ gom phần vận hành Kubernetes thường lặp lại như Deployment, Service, probes, resources, security context và labels chuẩn. Phần khác nhau của từng service nằm trong values riêng; service quá đặc thù có thể dùng chart hoặc overlay riêng.
 
 Ban đầu chỉ apply `dev`. Các folder `staging` và `production` có thể tồn tại để giữ cấu trúc, nhưng không tạo AWS resource thật cho đến khi cần học promotion.
 
@@ -463,19 +494,39 @@ Yêu cầu:
 - Protected main branch.
 - Merge Request/Pull Request bắt buộc.
 - Pipeline phải pass trước khi merge.
-- CI dùng OIDC/role tạm thời nếu có thể.
+- CI dùng OIDC/role tạm thời để truy cập AWS.
 - Không lưu AWS access key dài hạn trong repo.
-- Nếu dùng GitLab CI với access key trong lab, lưu key trong **Settings -> CI/CD -> Variables**, không commit vào source code.
+- Access key chỉ là lab fallback khi chưa cấu hình OIDC.
 
-GitLab CI variables tối thiểu cho pipeline push ECR:
+Mô hình enterprise cho CI push ECR:
+
+```text
+GitLab CI
+  -> OIDC ID token
+  -> AWS STS assume-role-with-web-identity
+  -> temporary credentials
+  -> docker login ECR
+  -> push image
+```
+
+GitLab CI variables nên là metadata không nhạy cảm:
+
+| Variable | Secret? | Ghi chú |
+|---|---:|---|
+| `AWS_REGION` | No | Region ECR, ví dụ `ap-southeast-1`. |
+| `AWS_ACCOUNT_ID` | No | AWS account chứa ECR. |
+| `AWS_ROLE_ARN` | No | IAM role cho GitLab CI assume. |
+| `ECR_REPOSITORY_NAME` | No | Mỗi service repo có repository name riêng. |
+
+Lab fallback nếu chưa cấu hình OIDC:
 
 | Variable | Visibility | Protected | Ghi chú |
 |---|---|---|---|
-| `AWS_ACCESS_KEY_ID` | `Masked` | Bỏ tick nếu chạy branch `staging` chưa protected | Access key của IAM user dành cho CI. |
+| `AWS_ACCESS_KEY_ID` | `Masked` | Bỏ tick nếu chạy branch `staging` chưa protected | Access key dùng tạm trong lab. |
 | `AWS_SECRET_ACCESS_KEY` | `Masked` | Bỏ tick nếu chạy branch `staging` chưa protected | Secret key tương ứng. |
 | `AWS_SESSION_TOKEN` | `Masked` | Tùy trường hợp | Chỉ cần khi dùng temporary credentials. |
 
-Khi tạo AWS access key cho GitLab SaaS runner, chọn use case:
+Nếu tạo AWS access key cho lab, chọn use case:
 
 ```text
 Application running outside AWS
@@ -501,6 +552,33 @@ Merge main
 ```
 
 Hoàn thành khi CI push được image vào ECR và mở thay đổi GitOps.
+
+Trước khi dựng EKS, chốt thêm một bước đệm:
+
+```text
+Bước 3.8
+  -> thiết kế GitOps repository riêng
+  -> chốt cấu trúc dev/staging/production
+  -> chốt promotion bằng MR/PR đổi image digest
+  -> chốt nguyên tắc secret không nằm trong GitOps
+
+Bước 3.9
+  -> tạo GitOps repository skeleton
+  -> chuẩn bị chart/base template ban đầu
+  -> tạo values-dev/staging/production cho 3 service
+  -> chưa deploy vào Kubernetes
+```
+
+Không đưa secret thật vào GitOps repository. GitOps chỉ lưu repository URI, digest image đang được chọn cho từng environment và cấu hình không nhạy cảm. ECR mới là nơi giữ nhiều image build history; GitOps không phải danh sách mọi image từng được build.
+
+Enterprise baseline:
+
+- CI không deploy trực tiếp bằng `kubectl apply`.
+- CI mở MR/PR vào GitOps repo để đổi digest.
+- Argo CD là thành phần sync vào EKS.
+- Promote `dev -> staging -> production` bằng cùng digest.
+- Secret thật nằm ở AWS Secrets Manager và được sync qua External Secrets Operator.
+- Workload dùng IRSA/EKS Pod Identity khi cần quyền AWS runtime.
 
 ---
 
