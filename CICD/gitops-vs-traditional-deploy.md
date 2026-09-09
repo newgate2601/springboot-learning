@@ -58,6 +58,13 @@ Một deployment hoàn chỉnh thường gồm:
 - Rollback hoặc roll-forward nếu có lỗi.
 - Ghi nhận audit: ai deploy, deploy commit nào, artifact nào, lúc nào, lên môi trường nào.
 
+Ghi chú thực tế:
+
+- Nếu deploy kiểu truyền thống cho Java/Spring Boot trên VM/server, artifact thường là `app.jar` hoặc `app.war`.
+- Nếu deploy bằng Docker/Kubernetes, artifact chạy trực tiếp thường là container image, ví dụ `registry.example.com/app:1.2.3`.
+- Với Spring Boot chạy trên Kubernetes, `jar` thường vẫn được build ra trước, nhưng nó nằm bên trong Docker image. Kubernetes không deploy file `jar` trực tiếp, mà pull image từ registry rồi chạy container.
+- Với GitOps, thứ được commit vào Git thường là Kubernetes manifest, Helm values hoặc Kustomize overlay có trỏ tới image tag/digest cần chạy.
+
 ### 2.2. Artifact là gì?
 
 Artifact là đầu ra đã build và có thể deploy.
@@ -72,6 +79,117 @@ Frontend: dist/
 Helm chart: app-0.1.0.tgz
 Terraform module/package: versioned module
 ```
+
+Các thành phần tương đương theo kiểu triển khai:
+
+| Kiểu triển khai | Artifact chính | Vai trò |
+|---|---|---|
+| Java traditional deploy | `target/app.jar`, `app.war` | Copy lên server rồi chạy bằng `java -jar` hoặc deploy vào app server như Tomcat. |
+| Docker deploy | Docker/OCI image | Image đã chứa runtime, dependency và app, có thể chạy bằng `docker run`. |
+| Kubernetes deploy | Docker/OCI image + YAML/Helm/Kustomize | Kubernetes chạy container từ image; YAML/Helm/Kustomize mô tả replicas, service, ingress, config, secret reference. |
+| GitOps deploy | Git commit chứa desired state | Argo CD/Flux đọc Git, thấy image/chart/config version mới rồi sync vào cluster. |
+| Frontend static | `dist/`, `build/` hoặc image Nginx | Có thể upload lên CDN/S3/Nginx, hoặc đóng folder build vào container image. |
+| Infrastructure | Terraform module/state config version | Dùng để tạo hoặc thay đổi cloud resource như VPC, EKS, RDS, IAM. |
+
+Flow phổ biến với Spring Boot + Docker + Kubernetes:
+
+```text
+source code
+  -> build ra target/app.jar
+  -> Dockerfile copy jar vào image
+  -> push image lên registry
+  -> server/Kubernetes pull image về
+  -> tạo container từ image
+  -> container chạy lệnh java -jar /app/app.jar
+```
+
+Giải thích chi tiết hơn:
+
+1. Build `jar`
+
+   Khi chạy Maven/Gradle, source code Java được compile và đóng gói thành `target/app.jar`.
+   File `jar` này chứa code đã biên dịch, dependency cần thiết và metadata để Spring Boot có thể chạy bằng lệnh:
+
+   ```bash
+   java -jar target/app.jar
+   ```
+
+2. Đóng `jar` vào Docker image
+
+   Docker image là một gói đầy đủ hơn `jar`. Nó thường chứa:
+
+   - Java runtime, ví dụ JRE/JDK 17 hoặc 21.
+   - File `app.jar`.
+   - Cấu trúc thư mục trong container, ví dụ `/app/app.jar`.
+   - Lệnh mặc định để chạy app, ví dụ `java -jar /app/app.jar`.
+
+   Ví dụ Dockerfile:
+
+   ```dockerfile
+   FROM eclipse-temurin:21-jre
+   WORKDIR /app
+   COPY target/app.jar app.jar
+   CMD ["java", "-jar", "/app/app.jar"]
+   ```
+
+   Lý do cần ném `jar` vào image: server hoặc Kubernetes không cần tự cài Java, tự copy file, tự biết chạy lệnh gì. Tất cả đã được đóng gói sẵn trong image, chạy ở đâu cũng giống nhau hơn.
+
+3. Push image lên registry
+
+   Sau khi build image, CI push image lên registry như Docker Hub, GitLab Registry, AWS ECR:
+
+   ```text
+   registry.example.com/app:1.2.3
+   registry.example.com/app@sha256:abc...
+   ```
+
+   Registry giống như kho lưu image. Server hoặc Kubernetes sẽ pull image từ kho này về khi cần chạy.
+
+4. Server hoặc Kubernetes xử lý image
+
+   Với Docker trên một server thường:
+
+   ```text
+   docker pull registry.example.com/app:1.2.3
+   docker run registry.example.com/app:1.2.3
+   ```
+
+   Docker sẽ đọc image, tạo container filesystem từ các layer của image, rồi chạy `CMD` đã khai báo trong Dockerfile. Nó không "bóc jar ra ngoài server" để chạy kiểu truyền thống; `jar` vẫn nằm trong filesystem của container.
+
+   Với Kubernetes:
+
+   ```text
+   K8s đọc manifest Deployment
+     -> thấy image cần chạy
+     -> node pull image từ registry
+     -> container runtime tạo container
+     -> container chạy command trong image
+     -> Service/Ingress đưa traffic vào Pod
+   ```
+
+   Kubernetes cũng không deploy trực tiếp `jar`. Kubernetes chỉ biết chạy container từ image. Nếu app cần cấu hình, Kubernetes gắn thêm env vars, ConfigMap, Secret, volume, resource limit, health check... vào lúc tạo Pod.
+
+5. Vậy có cần `jar` không?
+
+   Có, nếu app là Spring Boot thì thường vẫn cần `jar` ở bước build Java. Nhưng trong Docker/Kubernetes/GitOps, `jar` là artifact trung gian bên trong image. Artifact triển khai chính là image, còn manifest/Helm/Kustomize là cách mô tả image đó sẽ chạy như thế nào.
+
+Helm và chart:
+
+- Helm là công cụ package/deploy cho Kubernetes, giống package manager cho app chạy trên cluster.
+- Chart là gói của Helm, chứa nhiều Kubernetes YAML template như Deployment, Service, Ingress, ConfigMap.
+- `values.yaml` là file cấu hình đầu vào cho chart, ví dụ image tag, số replica, port, resource limit.
+- Khi chạy Helm, Helm lấy chart + values rồi render thành YAML Kubernetes thật và apply vào cluster.
+- Trong GitOps, Argo CD/Flux có thể đọc Helm chart hoặc Helm values từ Git, render ra manifest rồi sync vào Kubernetes.
+
+Ví dụ ngắn:
+
+```text
+Docker image: registry.example.com/app:1.2.3
+Helm chart: mô tả image đó chạy mấy replica, port nào, ingress nào, config nào
+values.yaml: nơi đổi image tag, replica, env theo từng môi trường
+```
+
+Tóm lại: image là thứ app chạy; Kubernetes YAML mô tả cách chạy image; Helm chart đóng gói các YAML đó; Helm là tool render/deploy chart vào Kubernetes.
 
 Nguyên tắc tốt:
 
@@ -171,6 +289,18 @@ flowchart LR
     CI --> ENV["Target Environment"]
     ENV --> APP["Application Runtime"]
 ```
+
+Ý nghĩa từng dòng:
+
+| Dòng | Ý nghĩa |
+|---|---|
+| `Developer -> Source Repository` | Developer push code lên Git repository, ví dụ GitLab/GitHub. Đây là nơi lưu source code và là điểm bắt đầu của pipeline. |
+| `Source Repository -> CI/CD Pipeline` | Khi có commit, tag hoặc merge request, pipeline được trigger để test, build và deploy. |
+| `CI/CD Pipeline -> Artifact Registry` | Pipeline build artifact rồi push lên nơi lưu artifact, ví dụ Docker Registry/ECR/GitLab Registry hoặc kho lưu `jar`. |
+| `CI/CD Pipeline -> Target Environment` | Pipeline dùng credential để deploy trực tiếp vào môi trường đích như VM, server, Kubernetes cluster hoặc cloud service. |
+| `Target Environment -> Application Runtime` | Môi trường đích tạo hoặc cập nhật runtime thật của app, ví dụ process Java, Docker container, Kubernetes Pod. |
+
+Hiểu ngắn gọn: trong deploy truyền thống, pipeline không chỉ build artifact mà còn trực tiếp ra lệnh cho môi trường đích chạy version mới.
 
 Trong mô hình này, pipeline thường là nơi biết:
 
@@ -339,6 +469,20 @@ flowchart LR
     CTRL --> STATUS["Sync / Health / Drift Status"]
 ```
 
+Ý nghĩa từng dòng:
+
+| Dòng | Ý nghĩa |
+|---|---|
+| `Developer -> Application Source Repository` | Developer push code app lên Git repository chính, ví dụ repo Spring Boot. |
+| `Application Source Repository -> CI Pipeline` | Commit/tag/merge request trigger CI để test, build và đóng gói app. |
+| `CI Pipeline -> Container Registry` | CI build Docker image rồi push image lên registry như ECR, Docker Hub, GitLab Registry. |
+| `CI Pipeline -> GitOps Repository` | CI hoặc bot cập nhật desired state trong GitOps repo, thường là đổi image tag/digest trong YAML, Helm values hoặc Kustomize. |
+| `GitOps Repository -> GitOps Controller` | Argo CD/Flux chạy trong cluster, theo dõi GitOps repo và phát hiện commit mới. |
+| `GitOps Controller -> Kubernetes Cluster` | Controller render/apply manifest vào cluster để live state khớp với desired state trong Git. |
+| `GitOps Controller -> Sync / Health / Drift Status` | Controller báo trạng thái sync, health và drift: đã khớp Git chưa, app khỏe không, live state có bị lệch không. |
+
+Hiểu ngắn gọn: CI vẫn build và cập nhật Git, nhưng không deploy trực tiếp vào cluster. Phần deploy do GitOps controller trong cluster tự pull desired state từ Git và reconcile liên tục.
+
 Điểm quan trọng:
 
 - CI build artifact.
@@ -496,6 +640,57 @@ GitOps repo
   -> policy references
   -> secret references, không phải secret plain text
 ```
+
+Ví dụ thực tế:
+
+Giả sử production của app `order-service` phải chạy image `order-service:1.2.3`, có 3 replica, dùng DB production.
+
+Với deploy truyền thống, trạng thái production có thể bị rải ở nhiều nơi:
+
+```text
+Source code repo:
+  code Java của order-service
+
+Jenkinsfile:
+  lệnh build image và lệnh deploy
+
+CI/CD variables:
+  PROD_NAMESPACE=order
+  PROD_REPLICAS=3
+  DATABASE_URL=...
+
+Helm values trong repo:
+  image.tag=1.2.3
+  replicaCount=2
+
+Script trên server:
+  kubectl scale deployment/order-service --replicas=4
+
+Manual change trên production:
+  một người chạy kubectl edit để đổi replica từ 3 thành 5
+
+Wiki:
+  ghi chú "production nên chạy 3 replica"
+```
+
+Lúc này rất khó trả lời câu hỏi: production đúng ra phải chạy mấy replica, 2, 3, 4 hay 5? Source of truth bị phân tán nên dễ drift, khó audit và khó rollback.
+
+Với GitOps, team cố đưa trạng thái mong muốn về GitOps repo:
+
+```yaml
+# gitops-repo/apps/order-service/prod/values.yaml
+image:
+  repository: registry.example.com/order-service
+  tag: "1.2.3"
+
+replicaCount: 3
+
+envFrom:
+  - secretRef:
+      name: order-service-prod-secret
+```
+
+Nếu muốn đổi production lên version `1.2.4`, CI hoặc bot tạo pull request đổi `tag: "1.2.4"`. Sau khi merge, Argo CD/Flux đọc GitOps repo và sync cluster về đúng trạng thái trong Git. Nếu có người sửa tay trong cluster thành 5 replica, controller sẽ phát hiện drift và có thể đưa về 3 replica theo Git.
 
 Lưu ý: GitOps không có nghĩa là lưu mọi thứ vào Git. Persistent data như dữ liệu database không nằm trong Git. Secret thật cũng không nên lưu plain text trong Git.
 
@@ -759,21 +954,63 @@ Khuyến nghị:
 
 #### Deploy truyền thống
 
-Thường chia như sau:
+Trong deploy truyền thống, quyền deploy thường tập trung nhiều ở pipeline, Jenkins/GitLab CI hoặc đội vận hành. App team viết code, còn bước đưa version mới lên production thường cần CI/CD owner, DevOps, SRE hoặc Operation tham gia trực tiếp.
+
+Mô hình team thường gặp:
 
 ```text
 Developer
   -> viết code
   -> merge source
+  -> tạo release/tag
+  -> báo DevOps/Ops deploy hoặc bấm deploy nếu được cấp quyền
 
 CI/CD owner
-  -> duy trì pipeline
-  -> duy trì runner
+  -> viết và duy trì Jenkinsfile/.gitlab-ci.yml
+  -> quản lý runner/agent
+  -> quản lý job build, job deploy, job rollback
 
 DevOps/SRE/Operation
   -> giữ credential deploy
-  -> xử lý server/cluster
+  -> quản lý server/VM/cluster
   -> approve production
+  -> chạy hoặc giám sát deploy production
+  -> xử lý incident nếu deploy lỗi
+```
+
+Luồng release production thường như sau:
+
+```text
+Developer merge code
+  -> CI chạy test/build
+  -> tạo artifact, ví dụ jar hoặc Docker image
+  -> pipeline chờ approval production
+  -> DevOps/Ops approve hoặc chạy job deploy
+  -> pipeline dùng credential production để SSH/kubectl/helm/cloud CLI
+  -> môi trường đích được cập nhật
+```
+
+Điểm cần hiểu:
+
+- Pipeline là nơi chứa nhiều logic deploy: deploy bằng command gì, deploy vào server nào, dùng credential nào, rollback ra sao.
+- Dev thường không trực tiếp sửa production, hoặc chỉ được bấm job đã định nghĩa sẵn.
+- Ops/SRE thường có quyền mạnh hơn vì cần xử lý production, secret, server, network, cluster.
+- Nếu deploy lỗi, app team và ops phải phối hợp: app team hiểu bug/code, ops hiểu hạ tầng/runtime.
+- Knowledge deploy dễ nằm trong Jenkinsfile, script, wiki hoặc kinh nghiệm của một vài người.
+
+Ví dụ thực tế:
+
+```text
+App team:
+  merge order-service v1.2.3
+
+CI:
+  build image registry.example.com/order-service:1.2.3
+
+Ops:
+  -> approve production
+  -> chạy helm upgrade hoặc kubectl apply từ pipeline
+  -> kiểm tra pod/log/metric
 ```
 
 Ưu điểm:
@@ -781,31 +1018,86 @@ DevOps/SRE/Operation
 - Vai trò quen thuộc.
 - Dễ áp dụng với hệ thống cũ.
 - Operation kiểm soát chặt deploy production.
+- Dễ làm với VM, bare metal, app legacy hoặc deploy cần nhiều bước thủ công.
+- Khi có sự cố, ops có thể can thiệp trực tiếp nhanh.
 
 Nhược điểm:
 
 - Dễ tạo "handoff": dev xong thì ném sang ops.
 - Ops có thể trở thành nút cổ chai.
 - Knowledge deploy nằm nhiều trong script/tool/người.
+- Pipeline cần credential mạnh để deploy vào production.
+- Audit desired state không rõ bằng GitOps vì trạng thái đúng có thể nằm rải ở pipeline, biến CI, server, wiki.
+- Nếu có nhiều team cùng deploy, quy trình dễ lệch nhau: team này dùng script, team kia dùng Helm, team khác sửa tay trên server.
 
 #### GitOps
 
-Thường chia như sau:
+Trong GitOps, team được tổ chức quanh Git repository và pull request. CI vẫn build/test/push image, nhưng quyền thay đổi production được thể hiện bằng thay đổi desired state trong GitOps repo. Argo CD/Flux là thành phần thực thi deploy vào cluster.
+
+Mô hình team thường gặp:
 
 ```text
 Developer
   -> viết code
-  -> tạo artifact
-  -> đề xuất thay đổi desired state
+  -> merge source
+  -> tạo artifact qua CI
+  -> đề xuất thay đổi desired state bằng pull request
+  -> đọc trạng thái sync/health/drift từ Argo CD/Flux
 
 Platform/SRE
   -> thiết kế GitOps repo
   -> quản lý controller, policy, RBAC
+  -> quản lý cluster baseline, namespace, ingress, secret reference
   -> review production change
+  -> định nghĩa golden path cho các app team
 
 GitOps controller
   -> thực hiện sync
   -> báo drift/health
+  -> đưa live state về khớp desired state trong Git
+```
+
+Luồng release production thường như sau:
+
+```text
+Developer merge code
+  -> CI test/build
+  -> CI push image lên registry
+  -> CI hoặc bot mở PR vào GitOps repo để đổi image tag/digest
+  -> app owner và platform/SRE review PR
+  -> merge PR
+  -> Argo CD/Flux phát hiện Git thay đổi
+  -> controller sync manifest xuống Kubernetes
+  -> controller tiếp tục báo sync/health/drift
+```
+
+Điểm cần hiểu:
+
+- App team vẫn chịu trách nhiệm về app: image version, env cần dùng, resource request/limit hợp lý, health check, migration compatibility.
+- Platform/SRE chịu trách nhiệm về nền tảng: GitOps repo structure, Argo CD/Flux, RBAC, policy, cluster add-ons, cách quản lý secret reference.
+- Production change nên đi qua PR/MR, có CODEOWNERS để tự động yêu cầu đúng người review.
+- CI không cần credential mạnh để deploy thẳng vào cluster production; CI thường chỉ cần quyền push image và tạo PR/commit vào GitOps repo.
+- Controller trong cluster có quyền sync theo phạm vi đã cấp, ví dụ chỉ namespace của app hoặc project tương ứng.
+- Khi cần rollback, team revert commit hoặc đổi image digest về version cũ trong GitOps repo.
+- Khi có người sửa tay trong cluster, controller phát hiện drift; tùy policy, nó có thể cảnh báo hoặc tự đưa cluster về đúng Git.
+
+Ví dụ thực tế:
+
+```text
+App team:
+  merge order-service v1.2.4
+
+CI:
+  build image registry.example.com/order-service@sha256:def...
+  tạo PR đổi image digest trong gitops-repo/apps/order-service/prod
+
+Review:
+  app owner kiểm tra version app
+  platform/SRE kiểm tra resource, ingress, secret reference, policy
+
+GitOps controller:
+  sau khi PR merge, sync Deployment vào Kubernetes
+  báo trạng thái Synced/Healthy hoặc OutOfSync/Degraded
 ```
 
 Ưu điểm:
@@ -813,12 +1105,45 @@ GitOps controller
 - Dev và Ops cùng review thay đổi qua Git.
 - Quy trình production minh bạch.
 - Dễ chuẩn hóa golden path.
+- Tách rõ "build artifact" và "deploy desired state".
+- Dễ audit: ai đổi image, đổi replica, đổi config đều nằm trong Git history.
+- Giảm phụ thuộc vào thao tác tay của ops khi deploy thường ngày.
+- Phù hợp nhiều app, nhiều team, nhiều môi trường và nhiều cluster.
 
 Nhược điểm:
 
 - Cần team hiểu Kubernetes/declarative config tốt hơn.
 - Nếu GitOps repo thiết kế kém, mọi thứ vẫn rối.
 - Cần thống nhất ownership giữa app team và platform team.
+- Cần quy ước rõ app team được sửa phần nào, platform team kiểm soát phần nào.
+- Cần quy trình emergency change: khi production cần sửa nóng thì sửa trực tiếp được không, sau đó reconcile về Git thế nào.
+- Nếu PR review quá nặng, GitOps repo cũng có thể trở thành nút cổ chai mới.
+
+Một cách chia ownership thực tế:
+
+| Thành phần | App team thường sở hữu | Platform/SRE thường sở hữu |
+|---|---|---|
+| Source code | Có | Không trực tiếp |
+| Dockerfile | Có, platform có thể cung cấp template | Hỗ trợ chuẩn base image/security |
+| Image version | Có | Review khi production quan trọng |
+| Helm values của app | Có với các field app-level | Guardrail/policy cho field nhạy cảm |
+| Namespace/RBAC/Ingress class | Đề xuất nhu cầu | Thiết kế và kiểm soát |
+| Secret thật | Không commit plain text | Quản lý qua Vault/Secrets Manager/External Secrets |
+| Argo CD/Flux | Sử dụng dashboard/trạng thái | Cài đặt, vận hành, phân quyền |
+| Production approval | App owner tham gia | Platform/SRE/compliance tham gia |
+
+Tóm lại:
+
+```text
+Deploy truyền thống:
+  pipeline và ops thường là trung tâm deploy
+
+GitOps:
+  GitOps repo là trung tâm desired state
+  CI build artifact
+  controller trong cluster thực hiện deploy
+  app team và platform team phối hợp qua PR/MR
+```
 
 ### 7.2. Bảo mật
 
