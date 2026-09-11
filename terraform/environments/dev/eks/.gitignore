@@ -1,0 +1,9 @@
+.terraform/
+*.tfplan
+*.tfplan.json
+tfplan
+*.tfstate*
+kubeconfig*
+
+terraform.tfvars
+*.auto.tfvars

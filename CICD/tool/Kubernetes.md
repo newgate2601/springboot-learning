@@ -92,81 +92,157 @@ Control Plane là bộ não điều khiển cluster. Worker Node là nơi worklo
 
 ## 5. Control Plane
 
+Control Plane là nhóm thành phần quản lý và điều phối Kubernetes cluster. Bạn khai báo **trạng thái mong muốn**, chẳng hạn “chạy 3 bản sao của post-service”; Control Plane phối hợp để tạo Pod, chọn Node và duy trì trạng thái đó. Container của ứng dụng được thực thi bởi container runtime trên Worker Node.
+
+Control Plane gồm nhiều thành phần, mỗi thành phần có trách nhiệm riêng:
+
+| Thành phần | Câu hỏi nó giải quyết |
+|---|---|
+| API Server | Ai gửi yêu cầu, có quyền thực hiện không, cấu hình có hợp lệ không? |
+| etcd | Cấu hình và trạng thái quản lý cluster được lưu ở đâu? |
+| Scheduler | Pod mới nên được gán vào Node nào? |
+| Controller Manager | Cần thay đổi gì để trạng thái thực tế tiến về trạng thái mong muốn? |
+| Cloud Controller Manager | Kubernetes phối hợp với tài nguyên của nhà cung cấp cloud như thế nào? |
+
 ### 5.1. API Server
 
-API Server là cổng giao tiếp trung tâm của Kubernetes. Mọi thao tác như tạo Deployment, xem Pod, cập nhật Service, xóa ConfigMap đều đi qua API Server.
+API Server là cổng giao tiếp trung tâm để đọc và thay đổi các đối tượng Kubernetes. Các thao tác như tạo Deployment, xem Pod, cập nhật Service hay xóa ConfigMap đều gửi yêu cầu tới API Server.
 
-Khi chạy lệnh:
+Ví dụ bạn đã có file `deployment.yaml` khai báo Deployment của post-service với `replicas: 3`:
 
 ```bash
 kubectl apply -f deployment.yaml
 ```
 
-`kubectl` gửi request tới API Server. API Server kiểm tra xác thực, phân quyền, validate dữ liệu, rồi lưu trạng thái mong muốn vào `etcd`.
+Luồng xử lý được đơn giản hóa như sau:
 
-API Server không trực tiếp chạy container. Nó tiếp nhận và lưu trạng thái. Các thành phần khác trong cluster sẽ đọc trạng thái đó và hành động.
+1. `kubectl` đọc file và gửi yêu cầu tới API Server.
+2. API Server xác thực danh tính: người hoặc chương trình gửi yêu cầu là ai?
+3. API Server kiểm tra phân quyền: danh tính đó có được tạo hoặc cập nhật Deployment trong namespace này không?
+4. API Server thực hiện các bước kiểm tra dữ liệu và admission áp dụng cho yêu cầu.
+5. Nếu yêu cầu được chấp nhận, đối tượng được lưu vào etcd và API Server trả kết quả cho client.
+
+**Lệnh apply thành công chưa có nghĩa 3 Pod đã chạy khỏe.** Nó cho biết yêu cầu cấu hình được chấp nhận; controller, scheduler và kubelet còn phải thực hiện phần việc tiếp theo.
+
+API Server không trực tiếp chạy container. Controller, scheduler và kubelet theo dõi hoặc cập nhật các đối tượng qua API Server. Trong luồng quản lý thông thường này, chúng không tự đọc/ghi etcd trực tiếp.
+
+API Server cũng không phải API nghiệp vụ của post-service: API Server xử lý yêu cầu quản lý cluster; API của post-service xử lý nghiệp vụ như tạo hoặc đọc bài viết.
 
 ### 5.2. etcd
 
-`etcd` là kho lưu trữ dạng key-value dùng để lưu toàn bộ trạng thái của cluster. Đây là nơi Kubernetes lưu thông tin như:
+`etcd` là kho dữ liệu key-value dùng để lưu bền vững dữ liệu quản lý Kubernetes, gồm cấu hình mong muốn và trạng thái được các thành phần báo cáo qua API Server.
 
-- Có những Node nào?
-- Có những Pod nào?
-- Deployment mong muốn bao nhiêu replica?
-- Service trỏ tới nhóm Pod nào?
-- ConfigMap và Secret hiện tại là gì?
+Ví dụ các đối tượng được lưu gồm:
 
-`etcd` cực kỳ quan trọng. Nếu mất dữ liệu `etcd` mà không có backup, cluster có thể mất trạng thái quản lý. Trong production, `etcd` cần được backup định kỳ, bảo vệ truy cập và triển khai với độ tin cậy cao.
+- Deployment của post-service yêu cầu 3 replica và dùng image nào.
+- Pod nào đã được tạo, được gán vào Node nào và có trạng thái được báo cáo ra sao.
+- Các Node đã đăng ký với cluster.
+- Service, ConfigMap, Secret và các đối tượng cấu hình khác.
+
+Có thể hình dung etcd là “sổ ghi chép” của cluster. API Server quản lý việc đọc và cập nhật sổ; controller và scheduler dựa vào dữ liệu lấy qua API Server để ra quyết định.
+
+**etcd không phải database nghiệp vụ của ứng dụng.** Nội dung bài viết, tài khoản người dùng hay đơn hàng vẫn nằm trong database ứng dụng, chẳng hạn PostgreSQL. etcd cũng không lưu image container hay toàn bộ log của ứng dụng.
+
+Dữ liệu trạng thái trong etcd là trạng thái được báo cáo, có thể có độ trễ so với những gì đang xảy ra trên Node. Nó không phải phép đo trực tiếp liên tục của mọi container.
+
+Nếu mất dữ liệu etcd mà không có backup, cluster có thể mất thông tin cần thiết để quản lý tài nguyên. Với cluster tự vận hành, cần bảo vệ truy cập, backup và kiểm tra khả năng khôi phục etcd.
 
 ### 5.3. Scheduler
 
-Scheduler quyết định Pod mới sẽ được chạy trên Node nào. Nó không tự chạy container, mà chỉ gán Pod vào Node phù hợp.
+Scheduler theo dõi các Pod chưa được gán Node, sau đó lựa chọn Node phù hợp và ghi nhận việc gán qua API Server. Nó quyết định **chạy ở đâu**, còn kubelet và container runtime trên Node đảm nhiệm việc chạy container.
 
-Scheduler cân nhắc nhiều yếu tố:
+Scheduler cân nhắc các điều kiện như:
 
-- Node còn đủ CPU/RAM không?
-- Pod có yêu cầu nodeSelector, affinity, anti-affinity không?
-- Pod có cần GPU hoặc loại ổ đĩa đặc biệt không?
-- Node có bị cordon hoặc taint không?
-- Pod có toleration phù hợp không?
-- Có nên phân tán Pod ra nhiều Node để tăng độ sẵn sàng không?
+- Node còn đủ tài nguyên có thể phân bổ theo `requests` của Pod không?
+- Pod có `nodeSelector`, affinity hoặc anti-affinity không?
+- Node có bị cordon hoặc có taint mà Pod không toleration được không?
+- Có ràng buộc về GPU, volume, zone hoặc phân bố Pod không?
 
-Ví dụ một Pod yêu cầu 500m CPU và 512Mi RAM. Scheduler sẽ tìm Node còn đủ tài nguyên request để đặt Pod vào. Nếu không có Node phù hợp, Pod ở trạng thái `Pending`.
+Ví dụ Pod khai báo:
+
+```yaml
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+```
+
+`500m` tương đương 0,5 CPU; `512Mi` là 512 MiB bộ nhớ. Scheduler xét phần tài nguyên có thể phân bổ của Node sau khi tính các request đã được đặt lên Node. Việc chọn Node không đơn giản là tìm máy đang có phần trăm CPU sử dụng thấp nhất.
+
+Nếu không có Node đáp ứng các điều kiện, Pod có thể ở trạng thái `Pending` vì chưa được schedule. Scheduler không tự làm Node có thêm CPU/RAM và cũng không tự tạo EC2 mới. Việc bổ sung Node cần cơ chế quản lý capacity riêng.
+
+Có nhiều Node không mặc định bảo đảm các replica phân bố đều hoặc nằm ở các AZ khác nhau; cần cấu hình ràng buộc phân bố và kiểm tra kết quả thực tế.
 
 ### 5.4. Controller Manager
 
-Controller Manager chạy nhiều controller khác nhau. Controller là vòng lặp điều khiển liên tục so sánh trạng thái mong muốn và trạng thái thực tế.
+Controller Manager chạy nhiều controller. Mỗi controller là một **vòng lặp điều khiển**: quan sát trạng thái qua API Server, so sánh với trạng thái mong muốn và thực hiện thay đổi thuộc trách nhiệm của mình.
 
-Ví dụ Deployment Controller quan sát Deployment:
+Với Deployment, các controller phối hợp như sau:
+
+```text
+Deployment: mong muốn 3 replica
+  → Deployment Controller quản lý ReplicaSet tương ứng
+  → ReplicaSet Controller tạo các đối tượng Pod để đủ số lượng
+  → Scheduler gán các Pod chưa có Node
+  → kubelet/container runtime trên Node chạy container
+```
+
+Các mũi tên biểu diễn quan hệ công việc. Đây không phải chuỗi gọi hàm trực tiếp; các thành phần phối hợp thông qua đối tượng và trạng thái trên API Server.
+
+Ví dụ bạn xóa một Pod thuộc ReplicaSet đang yêu cầu 3 replica:
 
 ```text
 Mong muốn: 3 replica
-Thực tế: 2 Pod đang chạy
-Hành động: tạo thêm 1 Pod
+Sau khi xóa: chỉ còn 2 Pod thuộc ReplicaSet
+ReplicaSet Controller: tạo một Pod mới để bù
+Scheduler: chọn Node cho Pod mới
+kubelet trên Node đó: thực hiện chạy container
 ```
 
-Một số controller phổ biến:
+Pod thay thế là đối tượng mới, không phải khôi phục nguyên Pod đã xóa. Pod mới cũng có thể được gán vào Node khác.
 
-- Deployment Controller.
-- ReplicaSet Controller.
-- StatefulSet Controller.
-- Job Controller.
-- Node Controller.
-- EndpointSlice Controller.
-- Namespace Controller.
+Cần phân biệt các trường hợp:
 
-Kubernetes mạnh vì nó dựa vào nhiều controller nhỏ phối hợp với nhau. Mỗi controller chịu trách nhiệm một loại tài nguyên hoặc một phần trạng thái.
+| Tình huống | Thành phần xử lý chính |
+|---|---|
+| Container trong Pod bị crash | kubelet phối hợp với runtime để restart theo restart policy. |
+| Một Pod của ReplicaSet bị xóa | ReplicaSet Controller tạo Pod mới để duy trì số lượng. |
+| Có Pod mới chưa được gán Node | Scheduler tìm Node phù hợp. |
+| Một Pod còn tồn tại nhưng chưa Ready | Không thể kết luận controller sẽ lập tức tạo thêm Pod; cần xem trạng thái và nguyên nhân lỗi. |
+
+Các controller khác gồm StatefulSet, Job, Node, EndpointSlice và Namespace Controller. Mỗi controller xử lý một phần; Kubernetes liên tục điều chỉnh chứ không chỉ thực hiện cấu hình một lần rồi kết thúc.
 
 ### 5.5. Cloud Controller Manager
 
-Cloud Controller Manager tích hợp Kubernetes với nhà cung cấp cloud như AWS, GCP, Azure, OpenStack. Nó xử lý các phần phụ thuộc cloud như:
+Cloud Controller Manager tích hợp Kubernetes với nhà cung cấp cloud. Tùy triển khai, các controller của nó có thể:
 
-- Tạo Load Balancer.
-- Gắn volume cloud vào Node.
-- Đồng bộ thông tin Node.
-- Quản lý route mạng tùy môi trường cloud.
+- Đồng bộ thông tin Node với máy ảo trên cloud, như địa chỉ hoặc thông tin nhận diện.
+- Quản lý route cần thiết cho mạng cluster nếu mô hình mạng sử dụng cơ chế đó.
+- Phối hợp tạo, cập nhật hoặc xóa Load Balancer cho Service phù hợp.
 
-Nếu chạy Kubernetes on-premise hoặc local, thành phần này có thể khác hoặc không cần đầy đủ như trên cloud.
+Ví dụ khi tạo Service có `type: LoadBalancer`, controller phụ trách tích hợp Load Balancer có thể gọi API cloud để tạo tài nguyên rồi cập nhật địa chỉ vào trạng thái Service. Đối tượng Service trong Kubernetes và Load Balancer trên cloud là hai tài nguyên liên quan, không phải cùng một đối tượng.
+
+Không phải mọi chức năng cloud đều do Cloud Controller Manager xử lý. Controller chịu trách nhiệm Load Balancer cụ thể phụ thuộc cách cài đặt cluster. Với volume dùng CSI, việc cấp phát/gắn volume thuộc cơ chế CSI và các thành phần lưu trữ liên quan; không nên gom toàn bộ việc gắn volume vào Cloud Controller Manager.
+
+Với Kubernetes local hoặc on-premise, có thể không cần thành phần này hoặc dùng giải pháp tích hợp hạ tầng khác.
+
+### 5.6. Ghép các thành phần qua một lần deploy
+
+Giả sử yêu cầu là “chạy 3 replica của post-service”:
+
+| Bước | Thành phần | Việc thực hiện |
+|---|---|---|
+| 1 | kubectl → API Server | Gửi và kiểm tra yêu cầu tạo/cập nhật Deployment. |
+| 2 | API Server → etcd | Lưu cấu hình được chấp nhận. |
+| 3 | Deployment/ReplicaSet Controller | Quản lý ReplicaSet và tạo đối tượng Pod cần thiết. |
+| 4 | Scheduler | Gán từng Pod chưa có Node vào Node đáp ứng điều kiện. |
+| 5 | kubelet và runtime trên Worker Node | Chuẩn bị và chạy container của các Pod được giao. |
+| 6 | kubelet → API Server | Báo trạng thái Pod/Node; trạng thái quản lý được cập nhật. |
+| 7 | Các controller | Tiếp tục quan sát và điều chỉnh khi có thay đổi. |
+
+Cloud Controller Manager tham gia khi có công việc tích hợp cloud thuộc trách nhiệm của nó; không phải bước bắt buộc nối tiếp trong mọi lần tạo Pod.
+
+Nguồn đối chiếu: [Kubernetes Components](https://kubernetes.io/docs/concepts/overview/components/) và [Cloud Controller Manager](https://kubernetes.io/docs/concepts/architecture/cloud-controller/).
 
 ## 6. Worker Node
 

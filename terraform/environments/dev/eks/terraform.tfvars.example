@@ -1,0 +1,28 @@
+aws_region  = "ap-southeast-1"
+account_id  = "150914615641"
+project     = "newgate2601"
+environment = "dev"
+owner       = "tony"
+
+kubernetes_version = "REPLACE_WITH_STANDARD_SUPPORT_VERSION"
+operator_role_arn  = "REPLACE_WITH_REAL_IAM_ROLE_ARN"
+
+# Private-only: [] va can co duong quan tri vao VPC.
+# May Windows chua co duong private: ["YOUR_ACTUAL_PUBLIC_IPV4/32"].
+admin_public_cidrs            = []
+management_security_group_ids = []
+
+node = {
+  instance_type = "t3.medium"
+  desired_size  = 2
+  min_size      = 2
+  max_size      = 3
+  ami_release   = "REPLACE_WITH_SSM_RELEASE_VERSION"
+  disk_size     = 30
+}
+
+addon_versions = {
+  vpc_cni    = "REPLACE_WITH_COMPATIBLE_EKSBUILD_VERSION"
+  kube_proxy = "REPLACE_WITH_COMPATIBLE_EKSBUILD_VERSION"
+  coredns    = "REPLACE_WITH_COMPATIBLE_EKSBUILD_VERSION"
+}

@@ -606,10 +606,14 @@ Tạo:
 Low-cost default:
 
 ```text
-node group: 1-2 nodes
-instance: t3.large hoặc t3a.large
-desired: 2 nếu cần chạy 3 service + Argo CD + addons
+node group: 2 nodes
+instance: t3.medium
+desired: 2 để thực hành multi-AZ và rolling update
 ```
+
+Nếu Pod không đủ RAM khi chạy nhiều replica, observability đầy đủ hoặc reliability
+drill, tăng kích thước node lên `t3.large` hoặc `t3a.large`. Việc tăng kích
+thước phải dựa trên resource request và số liệu sử dụng thực tế.
 
 HA lab:
 
@@ -950,4 +954,3 @@ Các resource có thể giữ nếu rất rẻ và có chủ đích:
 - [Amazon MSK](https://docs.aws.amazon.com/msk/latest/developerguide/what-is-msk.html)
 - [External Secrets Operator](https://external-secrets.io/)
 - [Argo CD](https://argo-cd.readthedocs.io/)
-

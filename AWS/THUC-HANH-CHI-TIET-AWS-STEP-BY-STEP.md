@@ -7640,982 +7640,250 @@ Bước tiếp theo là triển khai EKS dev ở bước 4.1.
 
 ### 1. Mục tiêu của bước này
 
-Bước này dựng nền Kubernetes dev bằng Terraform theo kiến trúc doanh nghiệp, dùng capacity nhỏ để học:
+Mục tiêu là dùng Terraform tạo một cụm Amazon EKS cho môi trường `dev`.
 
-- Module `terraform/modules/eks` dùng lại được cho các môi trường.
-- Root module `terraform/environments/dev/eks` có state riêng, đọc network dev đã tạo.
-- EKS control plane do AWS vận hành; ENI kết nối VPC và EC2 managed node group dùng private app subnet của dev.
-- Quyền người vận hành qua IAM role và EKS Access Entry.
-- VPC CNI dùng IAM role riêng qua IRSA; node role không kiêm quyền CNI.
-- Bật control-plane logs; mã hóa EBS của node; bắt buộc IMDSv2.
-- Quản lý phiên bản Kubernetes, AMI và add-on bằng cấu hình được review.
-- Kiểm tra node Ready, DNS, quyền truy cập và khả năng pull image.
+Sau khi hoàn thành, AWS sẽ có:
 
-**Chưa cài Argo CD, chưa deploy 3 service, chưa tạo RDS/Redis/MSK.** Ba add-on thiết yếu `vpc-cni`, `kube-proxy` và `coredns` thuộc bootstrap ở bước này vì node và DNS cần chúng. EBS CSI, Metrics Server và các add-on mở rộng thuộc bước 4.2.
+- Một EKS cluster tên `newgate2601-dev-eks`.
+- Một managed node group tên `system`.
+- Hai EC2 worker node loại `t3.medium`.
+- Mỗi node có ổ `gp3` 30 GiB được mã hóa.
+- Ba add-on cơ bản:
+  - `vpc-cni`: CNI là Container Network Interface. Thành phần này kết nối Pod vào mạng VPC và cấp địa chỉ IP cho Pod.
+  - `kube-proxy`: chuyển kết nối từ Kubernetes Service đến đúng Pod.
+  - `coredns`: phân giải tên Service trong cluster thành địa chỉ IP.
+- Một EKS Access Entry cấp quyền quản trị cluster cho role operator.
+- Một OIDC provider và IAM role riêng cho VPC CNI.
+- CloudWatch Logs cho EKS control plane.
 
-“Chuẩn doanh nghiệp” ở đây là nền tảng về phân quyền, khả năng tái tạo, audit và quản lý thay đổi. Hoàn thành 4.1 chưa có nghĩa hệ thống đã production-ready; observability, policy workload, reliability và DR còn các bước sau.
+Ở bước này chưa cài Argo CD, EBS CSI, Metrics Server, RDS, Redis, Kafka và chưa deploy ba ứng dụng Spring Boot.
 
 ### 2. Vì sao cần làm bước này
 
-ECR giữ image; GitOps giữ desired state; EKS cung cấp nơi chạy Pod. Ba phần có vòng đời và quyền khác nhau.
+EKS là nơi chạy các container của ứng dụng.
+
+Các bước trước đã tạo:
+
+- VPC và private subnet cho môi trường dev.
+- ECR để lưu container image.
+- GitOps repository để lưu cấu hình triển khai.
+
+Bước 4.1 tạo phần Kubernetes cơ bản trước. Các add-on mở rộng, Argo CD và ứng dụng sẽ được cài ở các bước sau.
+
+Terraform được chia thành hai phần:
+
+| Thư mục | Mục đích |
+|---|---|
+| `terraform/modules/eks` | Chứa cấu hình EKS có thể dùng lại cho dev, staging và production. |
+| `terraform/environments/dev/eks` | Chứa cấu hình riêng của dev và là nơi chạy lệnh Terraform. |
+
+EKS có state riêng:
 
 ```text
-Terraform network state
-  -> VPC dev + private app subnets + route/NAT
-  -> Terraform EKS state
-       -> EKS API + IAM + node group + networking add-ons
-
-Platform operator role
-  -> EKS Access Entry
-  -> kubectl quản trị cluster
-
-App CI
-  -> ECR
-  -> GitOps MR ở các bước sau
-
-Argo CD ở bước 4.7
-  -> đọc GitOps branch master
-  -> deploy vào EKS
+dev/eks/terraform.tfstate
 ```
 
-Không cấp quyền quản trị Kubernetes cho app CI. Role tạo hạ tầng cũng không tự động được cấp quyền Kubernetes: quyền đó phải xuất hiện rõ trong Access Entry.
+Network dev có state khác:
 
-Baseline cho bài thực hành:
-
-| Hạng mục | Cấu hình ở dev | Khi vận hành môi trường quan trọng |
-|---|---|---|
-| Node | 2 node On-Demand, private subnet nhiều AZ | Capacity theo tải, kiểm chứng đủ sức chịu mất node/AZ |
-| API endpoint | Private bật; public chỉ mở CIDR quản trị nếu chưa có đường private | Có thể đóng public hoàn toàn khi có VPN/management runner |
-| Identity | Role qua SSO/STS; Access Entry tường minh | Phân tách operator, read-only, break-glass và workload |
-| Network egress | Dùng NAT dev đang có | Review egress, endpoint và NAT theo AZ |
-| Version | Pin Kubernetes, add-on và AMI release | Nâng cấp qua MR, kiểm thử trước rồi rollout |
-| State | S3 mã hóa + lock, key riêng | Pipeline hạ tầng có review/approval và quyền giới hạn |
-
-Network dev hiện dùng một NAT Gateway. Đây là giới hạn availability của lab: node nhiều AZ **không biến một NAT thành HA**. Không lấy cấu hình này làm bằng chứng hệ thống đã chịu lỗi một AZ.
-
-### 3. Trước khi bắt đầu cần có gì
-
-#### 3.1. Công cụ và AWS identity
-
-Dùng PowerShell trên máy Windows. Kiểm tra:
-
-```powershell
-aws --version
-terraform version
-kubectl version --client
-aws sts get-caller-identity
+```text
+dev/network/terraform.tfstate
 ```
 
-Dùng Terraform >= 1.6 và AWS CLI v2 có lệnh `eks describe-cluster-versions`. kubectl cần phiên bản tương thích với control plane; nên chọn cùng minor version.
+Root EKS chỉ đọc VPC và private subnet từ state network. Nó không tạo lại VPC hoặc NAT Gateway.
 
-Account của lab là `150914615641`, region `ap-southeast-1`. Dừng nếu `get-caller-identity` trả về account khác.
+### 3. Thao tác chi tiết
 
-Phiên chạy Terraform cần quyền quản lý EKS, EC2 launch template/security group, IAM role/policy/OIDC, CloudWatch Logs, và đọc/ghi backend S3 + lock + sử dụng KMS backend. `iam:PassRole` phải giới hạn vào các role hạ tầng được phép chuyển cho EKS/EC2. Nếu tổ chức dùng permissions boundary/SCP, cần áp dụng quy ước đó vào các role trong module trước khi plan.
+#### 3.1. Mở PowerShell tại thư mục EKS dev
 
-Không dùng AWS root hoặc access key của app CI để tạo cluster. Dùng profile SSO/assume-role cho hạ tầng, ví dụ tên profile do bạn tự cấu hình:
+**Mục đích:** chọn AWS profile dùng để tạo hạ tầng và đi vào đúng thư mục chạy Terraform.
+
+Mở PowerShell rồi gõ:
 
 ```powershell
 $env:AWS_PROFILE = "infra-dev"
 $env:AWS_REGION = "ap-southeast-1"
-aws sts get-caller-identity
+Set-Location D:\AWS\springboot-learning\terraform\environments\dev\eks
 ```
 
-`infra-dev` là ví dụ tên profile, không phải profile đã được tạo sẵn bởi tài liệu.
+Giữ nguyên cửa sổ PowerShell này cho đến khi `terraform apply` hoàn thành.
 
-#### 3.2. Chuẩn bị role quản trị Kubernetes
+`infra-dev` là profile hạ tầng đã dùng ở các bước Terraform trước. Nếu bạn đặt tên profile khác thì thay bằng tên đó.
 
-Cần một IAM role tồn tại, ví dụ `newgate2601-dev-platform-operator`, được người vận hành assume bằng SSO hoặc STS. Role này thuộc bootstrap identity, không nên bị xóa cùng cluster.
+#### 3.2. Tạo IAM role dùng để chạy kubectl
 
-Trên AWS Console: **IAM -> Roles -> chọn role quản trị đã cấp cho bạn -> copy ARN**. Với IAM Identity Center, lấy ARN IAM role đầy đủ, bao gồm path `aws-reserved/sso.amazonaws.com/...` nếu có.
+**Mục đích:** tạo một role riêng cho người quản trị Kubernetes. Không dùng IAM user hoặc role của CI để quản trị cluster.
 
-Phải dùng:
+Nếu account đã dùng IAM Identity Center, dùng IAM role của permission set dành cho platform dev và lấy ARN role trong **IAM → Roles**.
 
-```text
-arn:aws:iam::150914615641:role/<role-path-and-name>
-```
+Nếu đang dùng IAM user `tony-lab-admin` của bước 2.3, tạo role như sau:
 
-Không dùng ARN phiên đăng nhập:
-
-```text
-arn:aws:sts::150914615641:assumed-role/<role>/<session>
-```
-
-Nếu chưa có role/profile này, hoàn thành phần identity trước khi apply: trust policy chỉ cho principal quản trị phù hợp assume; người dùng được xác thực MFA/SSO; role có `eks:DescribeCluster` trên cluster dev để tạo kubeconfig. Quyền Kubernetes của role sẽ được cấp bằng Access Entry trong Terraform bên dưới. Không thay bằng `principal: "*"` hoặc IAM user tùy tiện để chạy cho qua.
-
-Nguồn: [EKS Access Entries](https://docs.aws.amazon.com/eks/latest/userguide/access-entries.html) và [yêu cầu principal của Access Entry](https://docs.aws.amazon.com/eks/latest/userguide/creating-access-entries.html).
-
-
-##### 3.2.1. Nếu đã dùng IAM Identity Center
-
-Dùng IAM role của permission set dành cho platform dev. Nhờ quản trị viên cấp
-`eks:DescribeCluster` trên cluster dev nếu permission set chưa có quyền đó.
-Chạy `aws configure sso --profile platform-dev`, điền start URL/SSO region của tổ chức,
-chọn đúng account và permission set, rồi `aws sso login --profile platform-dev`.
-ARN đưa vào tfvars lấy từ IAM Roles, không lấy trực tiếp trường `Arn` của STS.
-
-##### 3.2.2. Nếu đang đi theo IAM user lab ở bước 2.3
-
-Các bước trước tạo `tony-lab-admin`, chưa tạo role operator. Vì vậy không thể chỉ
-đặt `AWS_PROFILE=platform-dev` rồi mong profile tồn tại. Với lab cá nhân, tạo role
-qua Console dưới đây bằng IAM admin hiện có; không dùng nhánh này cho SSO.
-
-1. Vào **IAM → Users → tony-lab-admin → Summary**, copy ARN user và ARN MFA device
-   trong **Security credentials**. User phải có MFA để assume role theo trust bên dưới.
-2. Vào **IAM → Roles → Create role → Custom trust policy**. Dùng JSON sau, thay
-   ARN user nếu tên/path thực tế khác:
+1. Mở **IAM → Roles → Create role**.
+2. Chọn **Custom trust policy**.
+3. Dán trust policy:
 
 ```json
 {
   "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Principal": {"AWS": "arn:aws:iam::150914615641:user/tony-lab-admin"},
-    "Action": "sts:AssumeRole",
-    "Condition": {"Bool": {"aws:MultiFactorAuthPresent": "true"}}
-  }]
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::150914615641:user/tony-lab-admin"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        }
+      }
+    }
+  ]
 }
 ```
 
-3. Chưa gắn policy admin AWS vào role này. Đặt tên
-   `newgate2601-dev-platform-operator`, tạo role, mở **Permissions → Add permissions
-   → Create inline policy → JSON** và lưu policy tên `DescribeDevEks`:
+4. Đặt tên role:
+
+```text
+newgate2601-dev-platform-operator
+```
+
+5. Tạo role rồi mở role vừa tạo.
+6. Chọn **Add permissions → Create inline policy → JSON**.
+7. Dán policy:
 
 ```json
 {
   "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": "eks:DescribeCluster",
-    "Resource": "arn:aws:eks:ap-southeast-1:150914615641:cluster/newgate2601-dev-eks"
-  }]
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "eks:DescribeCluster",
+      "Resource": "arn:aws:eks:ap-southeast-1:150914615641:cluster/newgate2601-dev-eks"
+    }
+  ]
 }
 ```
 
-4. IAM user nguồn cũng cần được phép `sts:AssumeRole` tới ARN role này. Group
-   `LabAdmin` có `AdministratorAccess` ở bước 2.3 đã bao gồm quyền đó, trừ khi có
-   explicit deny/SCP/boundary. Với user giới hạn quyền, quản trị viên cấp riêng
-   action này trên đúng role; không cần nâng thành admin để dùng kubectl.
-5. Xem các profile hiện có bằng `aws configure list-profiles`. Chọn profile đang
-   dùng thành công ở bước network làm nguồn. Ví dụ dưới dùng `lab-admin`; thay
-   bằng tên thực tế, không tạo thêm access key chỉ để đổi tên profile.
+8. Đặt tên policy là `DescribeDevEks` rồi lưu.
+
+Role operator có ARN:
+
+```text
+arn:aws:iam::150914615641:role/newgate2601-dev-platform-operator
+```
+
+Terraform sẽ tạo EKS Access Entry và cấp `AmazonEKSClusterAdminPolicy` cho ARN này. Không cần gắn AWS `AdministratorAccess` vào role operator.
+
+Lấy ARN thiết bị MFA:
+
+```powershell
+aws iam list-mfa-devices --user-name tony-lab-admin --query "MFADevices[0].SerialNumber" --output text
+```
+
+Copy ARN được in ra rồi tạo profile `platform-dev`:
 
 ```powershell
 aws configure set role_arn arn:aws:iam::150914615641:role/newgate2601-dev-platform-operator --profile platform-dev
-aws configure set source_profile lab-admin --profile platform-dev
+aws configure set source_profile infra-dev --profile platform-dev
 aws configure set mfa_serial arn:aws:iam::150914615641:mfa/REPLACE_WITH_REAL_MFA_DEVICE --profile platform-dev
 aws configure set region ap-southeast-1 --profile platform-dev
-aws sts get-caller-identity --profile platform-dev
 ```
 
-Lệnh cuối hỏi OTP và phải trả về account lab, ARN dạng
-`arn:aws:sts::150914615641:assumed-role/newgate2601-dev-platform-operator/...`.
-Đây là **kết quả kiểm tra phiên assume**, còn tfvars dùng ARN `arn:aws:iam::...:role/...`.
-Chưa thể chạy kubectl vì cluster/Access Entry chưa được tạo. Role operator lab
-này chỉ đủ tạo kubeconfig và gọi Kubernetes; các lệnh AWS đọc add-on, IAM, EC2,
-CloudWatch trong bài dùng profile hạ tầng. Các root Helm ở bước sau cần profile
-hạ tầng có quyền backend/AWS và cấu hình assume operator cho Kubernetes.
+Thay `REPLACE_WITH_REAL_MFA_DEVICE` bằng đúng tên thiết bị MFA vừa lấy.
 
-Nguồn: [AWS CLI assume-role profile và MFA](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html).
+#### 3.3. Lấy Kubernetes version
 
-#### 3.3. Kiểm tra network dev có thật
+**Mục đích:** chọn Kubernetes version còn standard support để tránh phí extended support và tránh dùng version đã cũ.
+
+Gõ:
 
 ```powershell
-Set-Location D:\AWS\springboot-learning\terraform\environments\dev\network
-terraform output vpc_id
-terraform output private_app_subnet_ids
+aws eks describe-cluster-versions --region ap-southeast-1 --version-status STANDARD_SUPPORT --query "clusterVersions[].clusterVersion" --output table
 ```
 
-Cần có VPC và ít nhất hai private app subnet ở hai AZ. Kiểm tra trong **VPC -> Subnets**:
-
-- Các subnet thuộc đúng VPC dev.
-- Auto-assign public IPv4 tắt.
-- Route table có đường ra NAT hoạt động để tải image/gọi AWS API.
-- VPC có DNS resolution và DNS hostnames bật.
-- Không chọn isolated data subnet cho node.
-
-Output còn trong state không đủ chứng minh tài nguyên còn tồn tại: kiểm tra AWS Console nếu đã từng destroy thủ công.
-
-#### 3.4. Chọn đường quản trị API
-
-Module mặc định chỉ bật private endpoint. Có hai cách sử dụng:
-
-1. Nếu có VPN/management host hoặc runner kết nối được VPC: giữ `admin_public_cidrs = []`, và cho phép security group của management host vào cluster TCP 443 qua `management_security_group_ids`.
-2. Với máy Windows lab chưa có đường private: đặt `admin_public_cidrs` thành public IPv4 thực tế của mạng quản trị với hậu tố `/32`. Private endpoint vẫn bật cho node; public endpoint vẫn yêu cầu IAM authentication và Kubernetes authorization.
-
-Lấy địa chỉ public IPv4:
+Chọn một version trong kết quả rồi lưu vào biến PowerShell:
 
 ```powershell
-$eksAdminIp = (Invoke-RestMethod -Uri "https://checkip.amazonaws.com").Trim()
-"$eksAdminIp/32"
+$EksVersion = Read-Host "Nhap Kubernetes version da chon, vi du 1.xx"
 ```
 
-Không dùng IP LAN như `192.168.x.x`; không mở `0.0.0.0/0`. Nếu VPN/proxy đổi địa chỉ egress, dùng đúng địa chỉ mà máy gửi request ra AWS.
+Giá trị cần có dạng `1.xx`.
 
-Nguồn: [EKS cluster endpoint](https://docs.aws.amazon.com/eks/latest/userguide/cluster-endpoint.html).
+#### 3.4. Lấy version của ba add-on
 
-#### 3.5. Chọn phiên bản thay vì chép số cũ
+**Mục đích:** chọn đúng version `vpc-cni`, `kube-proxy` và `coredns` tương thích với Kubernetes version vừa chọn.
 
-Tra phiên bản còn standard support ở region:
+Gõ:
 
 ```powershell
-aws eks describe-cluster-versions --region ap-southeast-1 --version-status STANDARD_SUPPORT --output table
+aws eks describe-addon-versions --region ap-southeast-1 --kubernetes-version $EksVersion --addon-name vpc-cni --query "addons[0].addonVersions[].addonVersion" --output table
+aws eks describe-addon-versions --region ap-southeast-1 --kubernetes-version $EksVersion --addon-name kube-proxy --query "addons[0].addonVersions[].addonVersion" --output table
+aws eks describe-addon-versions --region ap-southeast-1 --kubernetes-version $EksVersion --addon-name coredns --query "addons[0].addonVersions[].addonVersion" --output table
 ```
 
-Chọn một minor version còn standard support và ghi vào `kubernetes_version`. Với mỗi add-on, tra phiên bản tương thích:
+Chọn một version trong từng danh sách rồi gõ:
 
 ```powershell
-$eksVersion = Read-Host "Nhap Kubernetes minor version da chon, vi du 1.35"
-aws eks describe-addon-versions --region ap-southeast-1 --kubernetes-version $eksVersion --addon-name vpc-cni --output table
-aws eks describe-addon-versions --region ap-southeast-1 --kubernetes-version $eksVersion --addon-name kube-proxy --output table
-aws eks describe-addon-versions --region ap-southeast-1 --kubernetes-version $eksVersion --addon-name coredns --output table
-$eksAmiParameter = "/aws/service/eks/optimized-ami/$eksVersion/amazon-linux-2023/x86_64/standard/recommended/release_version"
-aws ssm get-parameter --region ap-southeast-1 --name $eksAmiParameter --query Parameter.Value --output text
+$VpcCniVersion = Read-Host "Nhap version vpc-cni"
+$KubeProxyVersion = Read-Host "Nhap version kube-proxy"
+$CoreDnsVersion = Read-Host "Nhap version coredns"
 ```
 
-Ghi nguyên chuỗi release của AMI và chuỗi version có `-eksbuild.` của add-on vào tfvars. Khi chạy lại sau vài tuần, Terraform vẫn dùng phiên bản đã chọn; nâng cấp bằng thay đổi cấu hình có review. Không tự truy vấn “latest” trong mỗi lần apply.
+Version add-on có dạng `vX.Y.Z-eksbuild.N`.
 
-Nguồn: [vòng đời version EKS](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html), [AWS CLI describe-cluster-versions](https://docs.aws.amazon.com/cli/latest/reference/eks/describe-cluster-versions.html) và [managed node group Terraform](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_node_group.html).
+#### 3.5. Lấy Amazon Linux 2023 release cho worker node
 
+**Mục đích:** dùng đúng bản Amazon Linux 2023 do AWS khuyến nghị cho Kubernetes version đã chọn.
 
-Đọc kết quả theo thứ tự, không chọn ngẫu nhiên mỗi dòng một version:
-
-| Giá trị | Lấy từ đâu | Dùng ở đâu |
-|---|---|---|
-| Minor Kubernetes | `clusterVersions[].clusterVersion`, còn standard support | `kubernetes_version` |
-| CNI/kube-proxy/CoreDNS | `addons[].addonVersions[].addonVersion`, kiểm tra `compatibilities` và kiến trúc `amd64` | Ba trường `addon_versions` |
-| Release AL2023 | `Parameter.Value` từ đường dẫn SSM đúng minor và x86_64 | `node.ami_release` |
-
-`--version-status STANDARD_SUPPORT` là giá trị hợp lệ của tham số mới;
-không nhầm với `--status standard-support` cũ. Chuỗi AMI release có dạng
-`1.xx.y-YYYYMMDD`, không phải ID `ami-...`. Không dùng AMI AL2 hoặc ARM cho
-`ami_type = AL2023_x86_64_STANDARD` và instance `t3.large`.
-
-Module đã bật engine NetworkPolicy của VPC CNI để bước 4.2 áp dụng policy.
-Kiểm tra schema của **đúng bản CNI đã chọn** trước khi điền input:
+Gõ:
 
 ```powershell
-$eksCniVersion = Read-Host "Nhap version VPC CNI da chon"
-aws eks describe-addon-configuration --region ap-southeast-1 --addon-name vpc-cni --addon-version $eksCniVersion --query configurationSchema --output text
+$EksAmiParameter = "/aws/service/eks/optimized-ami/$EksVersion/amazon-linux-2023/x86_64/standard/recommended/release_version"
+$AmiRelease = aws ssm get-parameter --region ap-southeast-1 --name $EksAmiParameter --query Parameter.Value --output text
+$AmiRelease
 ```
 
-Schema cần có `enableNetworkPolicy`; cấu hình trong module truyền chuỗi `"true"`
-theo schema CNI. Bật engine chưa tạo NetworkPolicy, chưa chặn traffic giữa các Pod.
-Nguồn: [cấu hình NetworkPolicy của Amazon VPC CNI](https://docs.aws.amazon.com/eks/latest/userguide/cni-network-policy-configure.html).
+Kết quả có dạng `x.y.z-YYYYMMDD`. Đây là release version, không phải AMI ID `ami-...`.
 
-### 4. Thao tác chi tiết
+#### 3.6. Lấy public IPv4 của máy thực hành
 
-#### 4.1. Tạo cấu trúc file
+**Mục đích:** chỉ cho địa chỉ public IPv4 hiện tại của máy kết nối vào public endpoint của EKS.
 
-Trong repo `D:\AWS\springboot-learning`, tạo:
+Nếu máy Windows chưa có VPN hoặc đường private vào VPC, gõ:
+
+```powershell
+$EksAdminIp = (Invoke-RestMethod -Uri "https://checkip.amazonaws.com").Trim()
+$EksAdminCidr = "$EksAdminIp/32"
+$EksAdminCidr
+```
+
+Copy kết quả có dạng:
 
 ```text
-terraform/
-├── modules/
-│   └── eks/
-│       ├── versions.tf
-│       ├── variables.tf
-│       ├── main.tf
-│       ├── outputs.tf
-│       └── README.md
-└── environments/
-    └── dev/
-        └── eks/
-            ├── versions.tf
-            ├── backend.tf
-            ├── providers.tf
-            ├── variables.tf
-            ├── main.tf
-            ├── outputs.tf
-            ├── terraform.tfvars.example
-            ├── .gitignore
-            ├── README.md
-            ├── CONFIG-GUIDE.md
-            └── terraform.tfvars          # input local, không commit
+203.0.113.10/32
 ```
+
+Không dùng `0.0.0.0/0` và không dùng địa chỉ LAN như `192.168.x.x`.
+
+Nếu máy quản trị đã có VPN hoặc management host trong VPC thì không dùng public IP. Trong `terraform.tfvars`, điền:
+
+```hcl
+admin_public_cidrs            = []
+management_security_group_ids = ["sg-REPLACE_WITH_MANAGEMENT_SG"]
+```
+
+#### 3.7. Tạo terraform.tfvars cho EKS dev
+
+**Mục đích:** cung cấp các giá trị riêng của môi trường dev cho Terraform.
+
+Gõ:
 
 ```powershell
-Set-Location D:\AWS\springboot-learning
-New-Item -ItemType Directory -Force terraform\modules\eks
-New-Item -ItemType Directory -Force terraform\environments\dev\eks
-```
-
-Chỉ tạo cấu hình dev. Module không chứa account ID, tên môi trường hoặc subnet ID cố định.
-
-#### 4.2. Module EKS: versions.tf và variables.tf
-
-File `terraform/modules/eks/versions.tf`:
-
-```hcl
-terraform {
-  required_version = ">= 1.6.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.99.1, < 6.0"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = ">= 4.0, < 5.0"
-    }
-  }
-}
-```
-
-Ở đây giữ cùng major AWS provider 5 với các root hiện có. Commit `.terraform.lock.hcl` được sinh ở root EKS; việc đổi major provider phải là thay đổi riêng được kiểm tra.
-
-File `terraform/modules/eks/variables.tf`:
-
-```hcl
-variable "name" {
-  type = string
-}
-variable "vpc_id" {
-  type = string
-}
-variable "subnet_ids" {
-  type = list(string)
-  validation {
-    condition     = length(distinct(var.subnet_ids)) >= 2
-    error_message = "Use private application subnets in at least two AZs."
-  }
-}
-variable "kubernetes_version" {
-  type = string
-  validation {
-    condition     = can(regex("^1[.][0-9]+$", var.kubernetes_version))
-    error_message = "Set a Kubernetes minor version such as 1.35; verify standard support in AWS."
-  }
-}
-variable "operator_role_arn" {
-  type = string
-  validation {
-    condition     = can(regex("^arn:aws:iam::[0-9]{12}:role/.+", var.operator_role_arn))
-    error_message = "Use a permanent IAM role ARN, not an STS session ARN."
-  }
-}
-variable "admin_public_cidrs" {
-  type    = list(string)
-  default = []
-  validation {
-    condition = alltrue([
-      for cidr in var.admin_public_cidrs :
-      can(cidrnetmask(cidr)) && endswith(cidr, "/32")
-    ])
-    error_message = "This baseline accepts only individual IPv4 /32 management addresses."
-  }
-}
-variable "management_security_group_ids" {
-  type    = set(string)
-  default = []
-}
-variable "node" {
-  type = object({
-    instance_type = string
-    desired_size  = number
-    min_size      = number
-    max_size      = number
-    ami_release   = string
-    disk_size     = number
-  })
-  validation {
-    condition     = var.node.disk_size >= 20 && var.node.disk_size == floor(var.node.disk_size)
-    error_message = "Use an integer root volume size of at least 20 GiB for this AL2023 baseline."
-  }
-  validation {
-    condition     = can(regex("^[0-9]+[.][0-9]+[.][0-9]+-[0-9]{8}$", var.node.ami_release))
-    error_message = "Set the AL2023 release_version returned by SSM, not an AMI ID or placeholder."
-  }
-  validation {
-    condition = (
-      var.node.min_size >= 1 &&
-      alltrue([for size in [var.node.min_size, var.node.desired_size, var.node.max_size] : size == floor(size)]) &&
-      var.node.min_size <= var.node.desired_size &&
-      var.node.desired_size <= var.node.max_size
-    )
-    error_message = "Require integer sizes with 1 <= min_size <= desired_size <= max_size."
-  }
-}
-variable "addon_versions" {
-  type = object({
-    vpc_cni    = string
-    kube_proxy = string
-    coredns    = string
-  })
-  validation {
-    condition     = alltrue([for version in values(var.addon_versions) : can(regex("^v[0-9]+[.][0-9]+[.][0-9]+-eksbuild[.][0-9]+$", version))])
-    error_message = "Pin all three add-ons to full versions returned by describe-addon-versions."
-  }
-}
-variable "tags" {
-  type = map(string)
-}
-```
-
-Validation kiểm tra ít nhất hai subnet ID khác nhau. `data.aws_subnet.selected` và `lifecycle.precondition` trong `main.tf` kiểm tra VPC, auto-assign public IPv4 và ít nhất hai AZ từ dữ liệu AWS thật. Route tới NAT và số IP còn trống vẫn phải kiểm tra riêng.
-
-**Hiểu hợp đồng đầu vào trước khi tạo resource:** `type` kiểm tra hình dạng dữ liệu;
-`validation` chặn subnet trùng, ARN phiên STS, placeholder version và số node lẻ.
-Validation không gọi AWS nên không chứng minh version còn hỗ trợ hay role tồn tại.
-Biến không có `default` phải được root truyền vào; module không tự đọc tfvars của dev.
-
-#### 4.3. Module EKS: main.tf
-
-File `terraform/modules/eks/main.tf`:
-
-```hcl
-data "aws_subnet" "selected" {
-  for_each = toset(var.subnet_ids)
-  id       = each.value
-}
-
-resource "aws_iam_role" "cluster" {
-  name = format("%s-cluster", var.name)
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Action    = "sts:AssumeRole"
-      Principal = { Service = "eks.amazonaws.com" }
-    }]
-  })
-  tags = var.tags
-}
-
-resource "aws_iam_role_policy_attachment" "cluster" {
-  role       = aws_iam_role.cluster.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-resource "aws_cloudwatch_log_group" "cluster" {
-  name              = format("/aws/eks/%s/cluster", var.name)
-  retention_in_days = 30
-  tags              = var.tags
-}
-
-resource "aws_eks_cluster" "this" {
-  name     = var.name
-  role_arn = aws_iam_role.cluster.arn
-  version  = var.kubernetes_version
-
-
-  lifecycle {
-    precondition {
-      condition     = alltrue([for subnet in data.aws_subnet.selected : subnet.vpc_id == var.vpc_id && !subnet.map_public_ip_on_launch])
-      error_message = "EKS subnets must belong to the selected VPC and disable public IPv4 assignment."
-    }
-    precondition {
-      condition     = length(toset([for subnet in data.aws_subnet.selected : subnet.availability_zone])) >= 2
-      error_message = "EKS requires subnets in at least two AZs."
-    }
-  }
-  bootstrap_self_managed_addons = false
-  enabled_cluster_log_types = [
-    "api", "audit", "authenticator", "controllerManager", "scheduler"
-  ]
-
-  access_config {
-    authentication_mode                         = "API"
-    bootstrap_cluster_creator_admin_permissions = false
-  }
-
-  kubernetes_network_config {
-    ip_family = "ipv4"
-  }
-
-  vpc_config {
-    subnet_ids              = var.subnet_ids
-    endpoint_private_access = true
-    endpoint_public_access  = length(var.admin_public_cidrs) > 0
-    public_access_cidrs     = length(var.admin_public_cidrs) > 0 ? var.admin_public_cidrs : null
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.cluster,
-    aws_cloudwatch_log_group.cluster
-  ]
-  tags = var.tags
-}
-
-resource "aws_security_group_rule" "management_api" {
-  for_each                 = var.management_security_group_ids
-  type                     = "ingress"
-  from_port                = 443
-  to_port                  = 443
-  protocol                 = "tcp"
-  security_group_id        = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
-  source_security_group_id = each.value
-  description              = "Private API access from management"
-}
-
-resource "aws_eks_access_entry" "operator" {
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = var.operator_role_arn
-  type          = "STANDARD"
-  tags          = var.tags
-}
-
-resource "aws_eks_access_policy_association" "operator" {
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = aws_eks_access_entry.operator.principal_arn
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-  access_scope {
-    type = "cluster"
-  }
-}
-
-data "tls_certificate" "oidc" {
-  url = aws_eks_cluster.this.identity[0].oidc[0].issuer
-}
-
-resource "aws_iam_openid_connect_provider" "this" {
-  url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.oidc.certificates[0].sha1_fingerprint]
-  tags            = var.tags
-}
-
-locals {
-  oidc_host = replace(aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
-}
-
-resource "aws_iam_role" "cni" {
-  name = format("%s-vpc-cni", var.name)
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = "sts:AssumeRoleWithWebIdentity"
-      Principal = {
-        Federated = aws_iam_openid_connect_provider.this.arn
-      }
-      Condition = {
-        StringEquals = {
-          (format("%s:aud", local.oidc_host)) = "sts.amazonaws.com"
-          (format("%s:sub", local.oidc_host)) = "system:serviceaccount:kube-system:aws-node"
-        }
-      }
-    }]
-  })
-  tags = var.tags
-}
-
-resource "aws_iam_role_policy_attachment" "cni" {
-  role       = aws_iam_role.cni.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-}
-
-resource "aws_eks_addon" "cni" {
-  cluster_name                = aws_eks_cluster.this.name
-  addon_name                  = "vpc-cni"
-  configuration_values        = jsonencode({ enableNetworkPolicy = "true" })
-  addon_version               = var.addon_versions.vpc_cni
-  service_account_role_arn    = aws_iam_role.cni.arn
-  resolve_conflicts_on_create = "NONE"
-  resolve_conflicts_on_update = "NONE"
-  depends_on                  = [aws_iam_role_policy_attachment.cni]
-  tags                        = var.tags
-}
-
-resource "aws_iam_role" "node" {
-  name = format("%s-node", var.name)
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Action    = "sts:AssumeRole"
-      Principal = { Service = "ec2.amazonaws.com" }
-    }]
-  })
-  tags = var.tags
-}
-
-resource "aws_iam_role_policy_attachment" "node" {
-  for_each = toset([
-    "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
-  ])
-  role       = aws_iam_role.node.name
-  policy_arn = each.value
-}
-
-resource "aws_launch_template" "node" {
-  name_prefix = format("%s-node-", var.name)
-
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 1
-  }
-
-  block_device_mappings {
-    device_name = "/dev/xvda"
-    ebs {
-      volume_type           = "gp3"
-      volume_size           = var.node.disk_size
-      encrypted             = true
-      delete_on_termination = true
-    }
-  }
-
-  tag_specifications {
-    resource_type = "instance"
-    tags          = merge(var.tags, { Name = format("%s-node", var.name) })
-  }
-
-  tag_specifications {
-    resource_type = "volume"
-    tags          = var.tags
-  }
-
-  tags = var.tags
-}
-
-resource "aws_eks_node_group" "system" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "system"
-  node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.subnet_ids
-  version         = var.kubernetes_version
-  ami_type        = "AL2023_x86_64_STANDARD"
-  release_version = var.node.ami_release
-  capacity_type   = "ON_DEMAND"
-  instance_types  = [var.node.instance_type]
-
-  scaling_config {
-    desired_size = var.node.desired_size
-    min_size     = var.node.min_size
-    max_size     = var.node.max_size
-  }
-
-  update_config {
-    max_unavailable = 1
-  }
-
-  launch_template {
-    id      = aws_launch_template.node.id
-    version = tostring(aws_launch_template.node.latest_version)
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.node,
-    aws_eks_addon.cni
-  ]
-  tags = var.tags
-}
-
-resource "aws_eks_addon" "after_compute" {
-  for_each = {
-    kube-proxy = var.addon_versions.kube_proxy
-    coredns    = var.addon_versions.coredns
-  }
-  cluster_name                = aws_eks_cluster.this.name
-  addon_name                  = each.key
-  addon_version               = each.value
-  resolve_conflicts_on_create = "NONE"
-  resolve_conflicts_on_update = "NONE"
-  depends_on                  = [aws_eks_node_group.system]
-  tags                        = var.tags
-}
-```
-
-Thứ tự bootstrap là **cluster -> OIDC/IRSA -> VPC CNI -> node group -> CoreDNS/kube-proxy**. Không đặt CoreDNS làm điều kiện phải healthy trước khi có node chạy nó.
-
-Node group dùng launch template không gắn custom security group nên EKS gắn cluster security group để node liên lạc với control plane. Không thêm SSH key, không mở port 22. Đây là security group bootstrap của EKS; chính sách phân tách traffic giữa workload vẫn cần NetworkPolicy ở các bước sau.
-
-`http_put_response_hop_limit = 1` hạn chế Pod thông thường lấy node credentials qua IMDS. Workload cần AWS dùng IRSA/Pod Identity; host-network Pod vẫn cần được kiểm soát bằng policy và quyền triển khai. Đây không phải cơ chế sandbox tuyệt đối.
-
-Nguồn: [IAM role của node](https://docs.aws.amazon.com/eks/latest/userguide/create-node-role.html), [IRSA cho VPC CNI](https://docs.aws.amazon.com/eks/latest/userguide/cni-iam-role.html), [launch template EKS](https://docs.aws.amazon.com/eks/latest/userguide/launch-templates.html) và [Terraform EKS add-on](https://registry.terraform.io/providers/hashicorp/aws/5.99.1/docs/resources/eks_addon).
-
-**Đọc `main.tf` theo thứ tự phụ thuộc, không theo thứ tự dòng:**
-
-```text
-Subnet lookup + IAM cluster + log group
-  → EKS control plane
-      → Access Entry + Access Policy (operator)
-      → OIDC provider → CNI IAM role/policy → VPC CNI
-          → managed node group + launch template + node IAM policies
-              → CoreDNS và kube-proxy
-```
-
-Terraform suy ra dependency từ tham chiếu resource. `depends_on` bổ sung điều kiện
-mà tham chiếu ARN chưa thể hiện, chẳng hạn role đã tồn tại nhưng policy chưa gắn.
-
-| Khối | Vì sao cần | Điểm cần đọc trong plan |
-|---|---|---|
-| `data.aws_subnet.selected` | Đọc subnet thật theo từng ID | Đúng VPC; ít nhất hai AZ; public IP assignment tắt |
-| `lifecycle.precondition` | Chặn subnet sai trước khi tạo cluster | Không thay thế kiểm tra NAT/route table |
-| `aws_iam_role.cluster` | Cho dịch vụ EKS assume role | Trust là `eks.amazonaws.com`, không phải user |
-| `aws_cloudwatch_log_group.cluster` | Terraform quản lý retention từ đầu | Đúng tên log group và 30 ngày |
-| `aws_eks_cluster.this` | Control plane do EKS quản lý | Version, API access mode, endpoints, năm loại log |
-| `aws_eks_access_entry` + association | Cho role operator quyền Kubernetes | IAM role đúng; scope cluster chỉ dành cho quản trị |
-| OIDC + role `cni` | Pod aws-node lấy quyền tạo/quản lý network qua IRSA | Audience STS và subject đúng service account |
-| `aws_eks_addon.cni` | Cài CNI trước compute | Version pin, role riêng, engine NetworkPolicy bật |
-| `aws_launch_template.node` | Cấu hình EC2 do node group tạo | IMDSv2, root EBS gp3 mã hóa; không gắn public IP/SSH key |
-| `aws_eks_node_group.system` | Quản lý vòng đời EC2 worker | AL2023 x86_64, release pin, private subnets, On-Demand |
-| `aws_eks_addon.after_compute` | CoreDNS có node để được schedule | Hai managed add-on, không tạo bản unmanaged trùng |
-
-EKS tự quản lý quyền join cluster cho managed node group; không đăng ký node role
-dưới Access Entry loại `STANDARD` và không cấp cluster-admin cho node. Operator,
-cluster service role, node role và CNI role là bốn danh tính khác nhau.
-
-Launch template không đặt AMI ID/user data vì EKS chọn AMI tối ưu và bootstrap
-node dựa vào `ami_type`/`release_version`. Không cấu hình `disk_size` thêm ở node
-group khi đã đặt đĩa trong template. Không đặt custom security group nếu chưa tự
-thiết kế các rule node/control plane; hiện EKS gắn cluster security group.
-
-`http_put_response_hop_limit = 1` hạn chế Pod thường truy cập IMDS, nhưng không
-cô lập tuyệt đối hostNetwork/Pod đặc quyền. Controller ở 4.2 phải có identity AWS
-riêng; không sửa hop limit để cho controller dùng tạm quyền node.
-
-#### 4.4. Module EKS: outputs.tf
-
-File `terraform/modules/eks/outputs.tf`:
-
-```hcl
-output "cluster_name" {
-  value = aws_eks_cluster.this.name
-}
-output "cluster_endpoint" {
-  value = aws_eks_cluster.this.endpoint
-}
-output "cluster_security_group_id" {
-  value = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
-}
-output "oidc_provider_arn" {
-  value = aws_iam_openid_connect_provider.this.arn
-}
-output "node_role_arn" {
-  value = aws_iam_role.node.arn
-}
-output "vpc_cni_role_arn" {
-  value = aws_iam_role.cni.arn
-}
-```
-
-Output là giá trị công khai của module cho root gọi nó, không phải tài nguyên mới.
-`cluster_endpoint` là URL Kubernetes API, không phải URL ứng dụng. OIDC provider
-ARN sẽ được dùng cho IRSA ở bước sau; node role ARN phục vụ kiểm tra quyền pull ECR.
-Root phải xuất lại output để các state khác đọc được qua `terraform_remote_state`.
-
-#### 4.5. Root dev: versions.tf, backend.tf và providers.tf
-
-File `terraform/environments/dev/eks/versions.tf`:
-
-```hcl
-terraform {
-  required_version = ">= 1.6.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.99"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
-  }
-}
-```
-
-File `terraform/environments/dev/eks/backend.tf`:
-
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-    key            = "dev/eks/terraform.tfstate"
-    region         = "ap-southeast-1"
-    dynamodb_table = "terraform-state-lock"
-    encrypt        = true
-    kms_key_id     = "arn:aws:kms:ap-southeast-1:150914615641:key/38aaa237-5b16-4d7e-811c-c634ae35de52"
-  }
-}
-```
-
-Bucket, lock table và KMS ARN lấy từ backend network hiện có. Nếu bạn đã thay backend, dùng thông tin thực tế. **Key phải là `dev/eks/terraform.tfstate`**, không ghi đè `dev/network/terraform.tfstate`.
-
-Giữ cơ chế DynamoDB lock đang dùng để không trộn thêm một migration backend vào bước dựng EKS. Không copy thư mục `.terraform` của network sang EKS.
-
-File `terraform/environments/dev/eks/providers.tf`:
-
-```hcl
-provider "aws" {
-  region              = var.aws_region
-  allowed_account_ids = [var.account_id]
-  default_tags {
-    tags = local.tags
-  }
-}
-```
-
-**Ba file này xử lý ba việc khác nhau:**
-
-- `versions.tf` ràng buộc phiên bản công cụ/provider; không tự cài Terraform.
-  Root `~> 5.99` và module `>= 5.99.1, < 6.0` kết hợp thành khoảng chung;
-  lock file quyết định bản chính xác sau init.
-- `backend.tf` chọn nơi giữ state. Đối chiếu bucket, DynamoDB lock table và KMS
-  với output bootstrap 3.1. Chỉ key đổi thành `dev/eks/terraform.tfstate`; không
-  copy key của network. Backend không nhận `var.*` và không dùng AWS provider.
-- `providers.tf` chọn account/region cho resource. `allowed_account_ids` ngăn
-  chạy nhầm account ở provider, không bảo vệ thay cho quyền truy cập backend.
-  Credentials lấy từ profile, không viết vào HCL.
-
-#### 4.6. Root dev: variables.tf
-
-File `terraform/environments/dev/eks/variables.tf`:
-
-```hcl
-variable "aws_region" {
-  type = string
-}
-variable "account_id" {
-  type = string
-}
-variable "project" {
-  type = string
-}
-variable "environment" {
-  type = string
-  validation {
-    condition     = var.environment == "dev"
-    error_message = "This root module is reserved for dev."
-  }
-}
-variable "owner" {
-  type = string
-}
-variable "kubernetes_version" {
-  type = string
-}
-variable "operator_role_arn" {
-  type = string
-}
-variable "admin_public_cidrs" {
-  type    = list(string)
-  default = []
-}
-variable "management_security_group_ids" {
-  type    = set(string)
-  default = []
-}
-variable "node" {
-  type = object({
-    instance_type = string
-    desired_size  = number
-    min_size      = number
-    max_size      = number
-    ami_release   = string
-    disk_size     = number
-  })
-}
-variable "addon_versions" {
-  type = object({
-    vpc_cni    = string
-    kube_proxy = string
-    coredns    = string
-  })
-}
-```
-
-Root khai báo input người học điền. Object `node` gom capacity/AMI/đĩa;
-`addon_versions` gom ba version độc lập. Root truyền các giá trị xuống module,
-nơi kiểm tra chi tiết. `environment` chỉ nhận `dev` để không vô tình tạo staging
-bên trong state dev. Đổi environment cần root/backend riêng.
-
-#### 4.7. Root dev: main.tf và outputs.tf
-
-File `terraform/environments/dev/eks/main.tf`:
-
-```hcl
-locals {
-  name = format("%s-%s-eks", var.project, var.environment)
-  tags = {
-    Project     = var.project
-    Environment = var.environment
-    Owner       = var.owner
-    ManagedBy   = "Terraform"
-  }
-}
-
-data "terraform_remote_state" "network" {
-  backend = "s3"
-  config = {
-    bucket = "newgate2601-terraform-state-150914615641-ap-southeast-1"
-    key    = "dev/network/terraform.tfstate"
-    region = var.aws_region
-  }
-}
-
-module "eks" {
-  source = "../../../modules/eks"
-
-  name                          = local.name
-  vpc_id                        = data.terraform_remote_state.network.outputs.vpc_id
-  subnet_ids                    = data.terraform_remote_state.network.outputs.private_app_subnet_ids
-  kubernetes_version            = var.kubernetes_version
-  operator_role_arn             = var.operator_role_arn
-  admin_public_cidrs            = var.admin_public_cidrs
-  management_security_group_ids = var.management_security_group_ids
-  node                          = var.node
-  addon_versions                = var.addon_versions
-  tags                          = local.tags
-}
-```
-
-Remote state chỉ dùng để đọc output network; root EKS không tạo lại VPC/NAT. Quyền đọc remote state cho phép đọc nội dung state object, nên chỉ cấp cho role hạ tầng, không cấp cho app CI.
-
-File `terraform/environments/dev/eks/outputs.tf`:
-
-```hcl
-output "cluster_name" {
-  value = module.eks.cluster_name
-}
-output "cluster_endpoint" {
-  value = module.eks.cluster_endpoint
-}
-output "cluster_security_group_id" {
-  value = module.eks.cluster_security_group_id
-}
-output "oidc_provider_arn" {
-  value = module.eks.oidc_provider_arn
-}
-output "node_role_arn" {
-  value = module.eks.node_role_arn
-}
-output "vpc_cni_role_arn" {
-  value = module.eks.vpc_cni_role_arn
-}
-```
-
-Luồng giá trị của root là:
-
-```text
-terraform.tfvars → var.project/environment/owner → local.name và local.tags
-network state   → outputs.vpc_id/private_app_subnet_ids → module.eks
-terraform.tfvars → version/role/CIDR/node/add-ons         → module.eks
-module.eks outputs → root outputs → kubectl và các root bước sau
-```
-
-`source = ../../../modules/eks` tính từ thư mục root EKS, không tính từ file bài học.
-Đọc remote state yêu cầu `s3:GetObject` và `kms:Decrypt` theo backend thực tế.
-Nếu thiếu output network, sửa/hoàn thành network trước; không nhập subnet đoán
-vào module để bỏ qua nguồn state.
-
-#### 4.8. Tạo input mẫu và điền terraform.tfvars
-
-Tạo file `terraform/environments/dev/eks/terraform.tfvars.example` với nội dung dưới đây.
-File mẫu được commit để người học sau biết cần điền gì; file thật chỉ nằm local.
-Nếu repo đã có file thật, mở và sửa các placeholder còn lại, không ghi đè giá trị đã chọn.
-
-```powershell
-Set-Location D:\AWS\springboot-learning\terraform\environments\dev\eks
-if (-not (Test-Path terraform.tfvars)) {
-  Copy-Item terraform.tfvars.example terraform.tfvars
-}
+Copy-Item terraform.tfvars.example terraform.tfvars
 notepad terraform.tfvars
 ```
 
-File `terraform/environments/dev/eks/terraform.tfvars.example`:
+Điền nội dung theo mẫu:
 
 ```hcl
 aws_region  = "ap-southeast-1"
@@ -8624,168 +7892,196 @@ project     = "newgate2601"
 environment = "dev"
 owner       = "tony"
 
-kubernetes_version = "REPLACE_WITH_STANDARD_SUPPORT_VERSION"
-operator_role_arn  = "REPLACE_WITH_REAL_IAM_ROLE_ARN"
+kubernetes_version = "REPLACE_WITH_EKS_VERSION"
+operator_role_arn  = "arn:aws:iam::150914615641:role/newgate2601-dev-platform-operator"
 
-# Private-only: [] va can co duong quan tri vao VPC.
-# May Windows chua co duong private: ["YOUR_ACTUAL_PUBLIC_IPV4/32"].
-admin_public_cidrs            = []
+admin_public_cidrs            = ["REPLACE_WITH_PUBLIC_IPV4/32"]
 management_security_group_ids = []
 
 node = {
-  instance_type = "t3.large"
+  instance_type = "t3.medium"
   desired_size  = 2
   min_size      = 2
   max_size      = 3
-  ami_release   = "REPLACE_WITH_SSM_RELEASE_VERSION"
+  ami_release   = "REPLACE_WITH_AL2023_RELEASE"
   disk_size     = 30
 }
 
 addon_versions = {
-  vpc_cni    = "REPLACE_WITH_COMPATIBLE_EKSBUILD_VERSION"
-  kube_proxy = "REPLACE_WITH_COMPATIBLE_EKSBUILD_VERSION"
-  coredns    = "REPLACE_WITH_COMPATIBLE_EKSBUILD_VERSION"
+  vpc_cni    = "REPLACE_WITH_VPC_CNI_VERSION"
+  kube_proxy = "REPLACE_WITH_KUBE_PROXY_VERSION"
+  coredns    = "REPLACE_WITH_COREDNS_VERSION"
 }
 ```
 
-Thay toàn bộ `REPLACE_...` bằng kết quả tra cứu ở mục 3. Không chạy apply với placeholder. Nếu `admin_public_cidrs = []` và chưa có đường private, máy Windows sẽ không chạy kubectl được dù cluster tạo thành công.
+Thay các placeholder:
 
-Hai node On-Demand dành cho dev có 3 Java service và platform add-on ở các bước sau. `max_size = 3` không tự bật autoscaling; Cluster Autoscaler/Karpenter chưa được cài. Kiểm tra EC2 vCPU quota và sức chứa subnet trước khi tăng node.
+| Placeholder | Giá trị |
+|---|---|
+| `REPLACE_WITH_EKS_VERSION` | Giá trị trong `$EksVersion`. |
+| `REPLACE_WITH_PUBLIC_IPV4/32` | Giá trị trong `$EksAdminCidr`. |
+| `REPLACE_WITH_AL2023_RELEASE` | Giá trị trong `$AmiRelease`. |
+| `REPLACE_WITH_VPC_CNI_VERSION` | Giá trị trong `$VpcCniVersion`. |
+| `REPLACE_WITH_KUBE_PROXY_VERSION` | Giá trị trong `$KubeProxyVersion`. |
+| `REPLACE_WITH_COREDNS_VERSION` | Giá trị trong `$CoreDnsVersion`. |
 
-#### 4.9. Kiểm tra và review plan
+Cấu hình node:
 
-Tạo `terraform/environments/dev/eks/.gitignore` (chỉ áp dụng cho root EKS dev):
+| Thuộc tính | Giá trị | Ý nghĩa |
+|---|---:|---|
+| `instance_type` | `t3.medium` | Mỗi node có 2 vCPU và 4 GiB RAM. |
+| `desired_size` | `2` | Terraform tạo hai node. |
+| `min_size` | `2` | Giữ tối thiểu hai node trong thời gian thực hành. |
+| `max_size` | `3` | Cho phép tăng tối đa ba node khi có autoscaler. |
+| `disk_size` | `30` | Mỗi node có ổ gp3 30 GiB. |
 
-```gitignore
-.terraform/
-*.tfplan
-*.tfplan.json
-tfplan
-*.tfstate*
-kubeconfig*
+Hai node giữ được cách triển khai nhiều node và nhiều Availability Zone. `t3.medium` giảm chi phí so với `t3.large` nhưng phù hợp hơn `t3.small` khi bài lab chạy ba JVM, Argo CD và các Pod hệ thống.
 
-terraform.tfvars
-*.auto.tfvars
-```
+`max_size = 3` chỉ là giới hạn trên. Terraform vẫn tạo hai node vì `desired_size = 2`.
 
-Giữ `.terraform.lock.hcl` trong Git. Không commit state, kubeconfig hoặc saved plan.
+Lưu file rồi đóng Notepad. Không commit `terraform.tfvars` lên Git.
+
+#### 3.8. Khởi tạo Terraform
+
+**Mục đích:** định dạng mã Terraform, kết nối S3 backend, tải provider và kiểm tra cấu hình Terraform.
+
+Gõ lần lượt:
 
 ```powershell
-Set-Location D:\AWS\springboot-learning\terraform\environments\dev\eks
 terraform fmt -recursive ..\..\..\modules\eks
 terraform fmt
 terraform init
 terraform validate
+```
+
+Kết quả cuối cần có:
+
+```text
+Success! The configuration is valid.
+```
+
+`terraform init` tạo hoặc cập nhật file `.terraform.lock.hcl`. File lock này nên được commit.
+
+#### 3.9. Tạo Terraform plan
+
+**Mục đích:** xem chính xác Terraform sẽ tạo những tài nguyên nào trước khi AWS bị thay đổi.
+
+Gõ:
+
+```powershell
 terraform plan -out=eks-dev.tfplan
 terraform show -no-color eks-dev.tfplan
 ```
 
-Kết quả mong đợi: validation thành công; plan chỉ tạo EKS dev và tài nguyên phụ trợ IAM/OIDC/logs/launch template/node group/add-on. Số resource có thể thay đổi theo phiên bản cấu hình; không nghiệm thu chỉ bằng một con số.
+Plan cần tạo các nhóm tài nguyên sau:
 
-Đọc plan và kiểm tra:
+- EKS cluster và CloudWatch log group.
+- IAM role cho cluster.
+- EKS Access Entry cho operator role.
+- OIDC provider và IAM role riêng cho VPC CNI.
+- Launch template và managed node group `system`.
+- Hai node `t3.medium`.
+- Ba add-on `vpc-cni`, `kube-proxy` và `coredns`.
 
-- Account, region, cluster name và subnet thuộc dev.
-- Không tạo lại VPC, không sửa network/shared-services.
-- Private endpoint bật; public CIDR đúng lựa chọn quản trị.
-- Chỉ platform operator được cấp cluster-admin; không có app CI trong Access Entry.
-- Node role không gắn `AmazonEKS_CNI_Policy`.
-- CNI trust giới hạn `kube-system:aws-node` và audience STS.
-- Không có private key/AWS access key/password trong plan.
-- Không có thao tác replace/delete ngoài ý định.
+Plan không được tạo lại:
 
-Trong doanh nghiệp: mở MR cho module/root/lock file, chạy fmt/validate/security checks và review plan; apply do pipeline hạ tầng có quyền phù hợp thực hiện trên revision đã duyệt. Lệnh local bên dưới là cách thực hành cùng quy trình cho lab cá nhân. Pipeline app vẫn chỉ xử lý image/GitOps.
+```text
+aws_vpc
+aws_subnet
+aws_nat_gateway
+aws_db_instance
+aws_elasticache_*
+aws_msk_*
+```
 
+Không apply nếu plan có tài nguyên bị xóa hoặc thay thế ngoài Bước 4.1.
 
-##### 4.9.1. Hiểu từng lệnh và dấu hiệu thành công
+#### 3.10. Tạo EKS dev trên AWS
 
-Chạy từng lệnh, kiểm tra `$LASTEXITCODE` bằng `0` rồi mới chạy lệnh kế tiếp.
-PowerShell không tự dừng một chuỗi lệnh chỉ vì chương trình native trả lỗi.
+**Mục đích:** áp dụng saved plan để AWS tạo cluster, worker node và các add-on cơ bản.
 
-| Lệnh | Nó làm gì | Kết quả mong đợi / điều chưa chứng minh |
-|---|---|---|
-| `terraform fmt -recursive ../../../modules/eks` | Chuẩn hóa HCL module | Có thể in tên file được sửa; không truy cập AWS |
-| `terraform fmt` | Chuẩn hóa root hiện tại | Không đổi ý nghĩa cấu hình |
-| `terraform init` | Kết nối backend, tìm module, cài provider | Báo initialized; chưa tạo EKS |
-| `terraform validate` | Kiểm tra cấu trúc và provider schema | `Success! The configuration is valid.`; không chứng minh quyền/subnet/version AWS hợp lệ |
-| `terraform plan -out=eks-dev.tfplan` | Đọc input/state/AWS và lập thay đổi | Xem action và từng thuộc tính; chưa tạo cluster |
-| `terraform show -no-color eks-dev.tfplan` | Hiển thị saved plan vừa tạo | Đúng plan sẽ đưa vào apply, không phải kết quả apply |
+> **Cảnh báo chi phí:** từ lệnh này AWS bắt đầu tính phí EKS control plane, EC2 node, EBS và CloudWatch Logs. NAT Gateway của các bước network vẫn tính phí riêng.
 
-`(known after apply)` ở endpoint/OIDC/node role là bình thường vì resource chưa
-tồn tại. Nếu backend hỏi migrate state ở lần tạo root mới, dừng kiểm tra working
-directory và `.terraform`: root mới không cần lấy state của network làm state EKS.
-Không dùng `init -upgrade` mỗi lần; chỉ dùng khi có chủ đích nâng provider.
-
-Để chỉ kiểm tra cấu hình mà không kết nối backend, có thể dùng một bản sao root
-và module trong thư mục kiểm tra rồi `terraform init -backend=false` và
-`terraform validate`. Kết quả đó không thay thế plan với backend/input thật.
-
-#### 4.10. Apply đúng saved plan
-
-**Từ đây mới phát sinh tài nguyên tính phí.** Xem giá EKS, EC2, EBS, CloudWatch và network của region trước buổi học; node giảm về 0 vẫn không xóa phí control plane. Nguồn: [Amazon EKS Pricing](https://aws.amazon.com/eks/pricing/).
+Gõ:
 
 ```powershell
 terraform apply eks-dev.tfplan
+```
+
+Không thêm `-target`.
+
+Sau khi Terraform báo `Apply complete!`, xem output:
+
+```powershell
 terraform output
 ```
 
-Nếu thay tfvars hoặc source sau khi plan, tạo và review plan mới. Không dùng `-target` để bỏ qua dependency hay sửa lỗi bootstrap.
+Kết quả có các output:
 
-Theo dõi **EKS -> Clusters -> newgate2601-dev-eks**:
+```text
+cluster_name
+cluster_endpoint
+cluster_security_group_id
+oidc_provider_arn
+node_role_arn
+vpc_cni_role_arn
+```
 
-1. Overview: cluster `Active`.
-2. Compute: node group `system` chuyển `Active`.
-3. Add-ons: VPC CNI, kube-proxy, CoreDNS chuyển `Active`.
-4. Access: có role operator đã chọn.
-5. Networking: subnet và endpoint đúng thiết kế.
-6. Logging/CloudWatch: có log group `/aws/eks/newgate2601-dev-eks/cluster`.
+Nếu apply lỗi giữa chừng, giữ nguyên state, sửa nguyên nhân rồi chạy lại `plan` và `apply`. Không tạo bù tài nguyên bằng AWS Console.
 
-`terraform apply eks-dev.tfplan` thực thi saved plan và không hỏi lại như
-`terraform apply` không truyền file. Chỉ chạy sau khi đã đọc plan. Khi thành công,
-Terraform báo apply complete và in outputs; xác nhận thêm trên AWS/kubectl.
-Nếu apply dở dang, tài nguyên đã tạo có thể vẫn tính phí. Sửa nguyên nhân rồi
-chạy lại plan để Terraform tiếp tục dựa trên state, không xóa state làm lại.
+#### 3.11. Kết nối kubectl vào EKS dev
 
-Apply có thể kéo dài nhiều phút. Khi lỗi, đọc message và trạng thái resource trước khi retry; không tạo một cluster khác bằng Console để thay thế Terraform.
+**Mục đích:** thêm EKS dev vào kubeconfig local và dùng role operator để chạy lệnh Kubernetes.
 
-#### 4.11. Kết nối kubectl bằng role operator
-
-Mở PowerShell khác, dùng profile đã assume đúng role `operator_role_arn`. Ví dụ profile đặt tên `platform-dev`:
+Mở PowerShell mới rồi gõ:
 
 ```powershell
 $env:AWS_PROFILE = "platform-dev"
-aws sts get-caller-identity
 aws eks update-kubeconfig --profile platform-dev --region ap-southeast-1 --name newgate2601-dev-eks --alias newgate2601-dev
-kubectl config current-context
+kubectl config use-context newgate2601-dev
 kubectl cluster-info
-kubectl get nodes -o wide
 ```
 
-Không thêm `--role-arn` trỏ lại chính role mà profile đã assume: điều đó có thể đòi quyền self-assume không được cấp. Tham số `--profile` ở lệnh trên giúp kubeconfig lưu profile dùng lấy token.
+Không commit kubeconfig lên Git.
 
-Nếu profile sử dụng SSO, đăng nhập bằng `aws sso login --profile platform-dev` trước. Profile name chỉ là ví dụ; role thật phải khớp Access Entry. Kubeconfig dùng AWS CLI lấy token theo profile; khi quay lại shell khác cần bảo đảm AWS identity vẫn đúng.
+#### 3.12. Xác nhận worker node đã sẵn sàng
 
-Nguồn: [tạo kubeconfig cho EKS](https://docs.aws.amazon.com/eks/latest/userguide/create-kubeconfig.html).
+**Mục đích:** xác nhận hai EC2 node đã tham gia cluster và có thể nhận Pod.
 
-#### 4.12. Kiểm tra node, DNS và audit
+Gõ:
 
 ```powershell
 kubectl wait --for=condition=Ready nodes --all --timeout=300s
+kubectl get nodes -o wide
 kubectl get nodes -L topology.kubernetes.io/zone
+```
+
+Kết quả cần có:
+
+- Hai node ở trạng thái `Ready`.
+- Cột `EXTERNAL-IP` là `<none>`.
+- Cột zone cho biết node đang chạy ở Availability Zone nào.
+
+#### 3.13. Xác nhận ba add-on đã hoạt động
+
+**Mục đích:** xác nhận mạng Pod, chuyển tiếp Service và DNS trong cluster đã sẵn sàng.
+
+Gõ:
+
+```powershell
 kubectl -n kube-system get pods -o wide
 kubectl -n kube-system rollout status daemonset/aws-node --timeout=300s
 kubectl -n kube-system rollout status daemonset/kube-proxy --timeout=300s
 kubectl -n kube-system rollout status deployment/coredns --timeout=300s
-kubectl auth can-i get nodes
 ```
 
-Mong đợi hai node `Ready`, kiểm tra phân bố AZ thực tế; tất cả Pod nền healthy. `EXTERNAL-IP` của node nên là `<none>`; kiểm chứng thêm ở **EC2 -> Instances -> Networking -> Public IPv4 address** để xác nhận không có public IP.
+Các rollout phải báo thành công.
 
-`kubectl get nodes` kiểm tra worker đã đăng ký; `Ready` không chứng minh ứng dụng
-chạy được. Các lệnh rollout kiểm tra DaemonSet/Deployment đã đạt số replica mong
-muốn. Nếu lỗi, xem `kubectl -n kube-system get events --sort-by=.metadata.creationTimestamp`
-và `kubectl -n kube-system describe pod <ten-pod>` trước khi sửa cấu hình.
+#### 3.14. Thử DNS trong cluster
 
-Test DNS bằng Pod tạm; không dùng image của service vì database chưa sẵn sàng:
+**Mục đích:** tạo một Pod tạm và thử phân giải tên Kubernetes Service qua CoreDNS.
+
+Gõ:
 
 ```powershell
 kubectl run eks-dns-check --image=busybox:1.36.1 --restart=Never --command -- sh -c "nslookup kubernetes.default.svc.cluster.local"
@@ -8794,141 +8090,235 @@ kubectl logs eks-dns-check
 kubectl delete pod eks-dns-check
 ```
 
-Kỳ vọng log trả về địa chỉ service `kubernetes.default.svc.cluster.local` và Pod `Succeeded`. Image test dùng tag phiên bản để thao tác nhanh; môi trường có registry allowlist phải mirror image đã duyệt vào ECR và dùng digest. Đây là Pod kiểm tra tạm, không phải chuẩn chọn image cho workload.
+Log cần có tên:
 
-Pod BusyBox pull từ Docker Hub nên **không chứng minh pull ECR**. Kiểm tra riêng
-quyền node bằng image ECR đã push ở bước 3.7. Lấy URI kèm digest thật từ candidate
-record; không đưa tag/placeholder của tài liệu vào lệnh:
-
-```powershell
-$eksProbeImage = Read-Host "Nhap ECR image URI@sha256:digest da build o buoc 3.7"
-kubectl run eks-ecr-check --image=$eksProbeImage --image-pull-policy=Always --restart=Never --command -- java -version
-kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/eks-ecr-check --timeout=180s
-kubectl logs eks-ecr-check
-kubectl delete pod eks-ecr-check
+```text
+kubernetes.default.svc.cluster.local
 ```
 
-Image của ba service có Java runtime; `java -version` kết thúc mà không khởi động
-Spring Boot/kết nối DB. Thành công chứng minh kubelet lấy image ECR bằng quyền
-node và chạy container được, chưa chứng minh business service healthy. Nếu wait
-lỗi, giữ Pod để đọc `kubectl describe pod eks-ecr-check`, rồi xóa sau khi chẩn đoán.
+Nếu môi trường không cho phép tải image từ Docker Hub, mirror BusyBox vào ECR rồi thay image trong lệnh.
 
-Kiểm tra IRSA:
+#### 3.15. Xác nhận VPC CNI dùng IAM role riêng
+
+**Mục đích:** xác nhận `vpc-cni` không dùng chung quyền IAM của EC2 node.
+
+Trong PowerShell dùng profile hạ tầng, gõ:
 
 ```powershell
-kubectl -n kube-system get serviceaccount aws-node -o yaml
 aws eks describe-addon --profile infra-dev --region ap-southeast-1 --cluster-name newgate2601-dev-eks --addon-name vpc-cni --query "addon.{Status:status,Role:serviceAccountRoleArn,Health:health}" --output json
 ```
 
-Role ARN phải là `newgate2601-dev-eks-vpc-cni`, không phải node role. Trong CloudWatch Logs, kiểm tra log stream audit/authenticator có dữ liệu sau thao tác kubectl; có độ trễ ngắn là bình thường.
+Kết quả cần có:
 
-#### 4.13. Lưu kết quả và kết thúc buổi
+- `Status` là `ACTIVE`.
+- `Role` có tên `newgate2601-dev-eks-vpc-cni`.
+- ARN của `Role` khác `node_role_arn`.
 
-Lưu cluster name, region, version đã chọn, node AZ và kết quả DNS vào ghi chú thực hành. Commit module, root config không chứa secret, và lock file qua MR của repo hạ tầng.
+#### 3.16. Lưu kết quả thực hành
 
-Không chỉnh GitOps digest hay apply Argo CD Application ở bước này. Repo GitOps vẫn dùng branch `master`.
+**Mục đích:** lưu thông tin cần dùng ở Bước 4.2 và khi xử lý lỗi.
 
-Nếu dừng buổi học sau riêng bước 4.1, dùng shell identity hạ tầng:
+Ghi lại:
+
+```text
+AWS account:
+Region:
+Cluster name:
+Kubernetes version:
+Node group:
+Số node Ready:
+AZ của từng node:
+Public endpoint có bật hay không:
+Public CIDR hoặc management security group:
+VPC CNI version:
+kube-proxy version:
+CoreDNS version:
+AMI release:
+Kết quả DNS test:
+```
+
+Có thể commit:
+
+- Các file `.tf`.
+- `terraform.tfvars.example`.
+- `.terraform.lock.hcl`.
+- README và tài liệu không chứa thông tin đăng nhập.
+
+Không commit:
+
+- `terraform.tfvars`.
+- `*.tfstate`.
+- `*.tfplan`.
+- Kubeconfig.
+- Access key hoặc secret key.
+
+#### 3.17. Xóa EKS khi kết thúc buổi học
+
+**Mục đích:** xóa cluster và worker node để dừng chi phí của Bước 4.1.
+
+Chỉ chạy mục này khi chưa cài các thành phần của Bước 4.2 trở đi hoặc các thành phần đó đã được dọn đúng thứ tự.
+
+Gõ:
 
 ```powershell
 $env:AWS_PROFILE = "infra-dev"
 Set-Location D:\AWS\springboot-learning\terraform\environments\dev\eks
-aws sts get-caller-identity
 terraform plan -destroy -out=eks-dev-destroy.tfplan
 terraform show -no-color eks-dev-destroy.tfplan
 terraform apply eks-dev-destroy.tfplan
 ```
 
-Chỉ apply destroy plan sau khi kiểm tra nó xóa đúng EKS dev của buổi học. Network có state riêng nên NAT và các resource network **vẫn còn tính phí**; cleanup network thuộc checklist cuối buổi tương ứng.
+Destroy EKS không xóa network dev vì network nằm trong state riêng. NAT Gateway vẫn tiếp tục tính phí cho đến khi network được destroy.
 
-Nếu đã đi tiếp và có LoadBalancer, Ingress, PVC/EBS hoặc add-on ở state khác, phải dọn workload và dependency trước, rồi mới destroy EKS. Không xóa state hoặc bucket backend để “xóa tài nguyên”.
+Không xóa file state hoặc S3 backend để thay cho `terraform destroy`.
 
-### 5. File/config/lệnh liên quan
+### 4. File/config/lệnh liên quan
 
-| Thành phần | Vai trò |
+| File | Mục đích |
 |---|---|
-| `terraform/modules/eks` | Hợp đồng module dùng chung: IAM, EKS, node group, bootstrap add-on |
-| `terraform/environments/dev/eks` | Ghép network dev, version, capacity và identity |
-| `dev/eks/terraform.tfstate` | State EKS riêng trong backend S3 |
-| `dev/network/terraform.tfstate` | Nguồn output VPC/subnet, chỉ đọc |
-| `terraform.tfvars.example` | Mẫu input được commit |
-| `terraform.tfvars` | Input thật local; không chứa credential, không commit |
-| `.terraform.lock.hcl` | Khóa provider version/checksum đã chọn |
-| `eks-dev.tfplan` | Plan local để review/apply, không commit |
-| Kubeconfig local | Cấu hình truy cập API, không đặt trong GitOps |
+| `terraform/modules/eks/versions.tf` | Khai báo provider mà module EKS cần. |
+| `terraform/modules/eks/variables.tf` | Khai báo input dùng chung của module. |
+| `terraform/modules/eks/main.tf` | Tạo EKS, IAM, OIDC, node group và add-on. |
+| `terraform/modules/eks/outputs.tf` | Trả thông tin cluster và IAM role. |
+| `terraform/environments/dev/eks/backend.tf` | Lưu state EKS tại key `dev/eks/terraform.tfstate`. |
+| `terraform/environments/dev/eks/providers.tf` | Chọn region và giới hạn đúng AWS account. |
+| `terraform/environments/dev/eks/variables.tf` | Khai báo và kiểm tra input riêng của dev. |
+| `terraform/environments/dev/eks/main.tf` | Đọc network state và gọi module EKS. |
+| `terraform/environments/dev/eks/outputs.tf` | Xuất thông tin EKS cho người vận hành và bước sau. |
+| `terraform/environments/dev/eks/terraform.tfvars.example` | File input mẫu có thể commit. |
+| `terraform/environments/dev/eks/terraform.tfvars` | File input thật trên máy local, không commit. |
 
-### 6. Giải thích từng phần quan trọng
+Các lệnh chính:
 
-- **Access Entry và IAM policy là hai lớp.** `eks:DescribeCluster` cho phép gọi AWS API, không tự cấp quyền đọc Pod. Access Policy cấp quyền Kubernetes cho principal cụ thể.
-- **Cluster-admin chỉ cho role platform.** Đây là role đặc quyền để bootstrap/vận hành, không dùng cho developer thường ngày hoặc app CI. Read-only và quyền theo namespace cần bổ sung theo vai trò công việc trước khi mở cluster cho nhóm.
-- **IRSA không phải quyền người dùng.** OIDC trust của CNI chỉ cho service account `aws-node` assume role. Mỗi controller/workload AWS khác cần role riêng.
-- **CoreDNS Pending trước khi node có mặt là khác với lỗi sau bootstrap.** Nghiệm thu chỉ khi node và add-on đã ổn định.
-- **Terraform AWS provider không cần Kubernetes provider để tạo nền này.** Tránh cấu hình Kubernetes/Helm provider trỏ tới cluster chưa tồn tại trong cùng lượt bootstrap.
-- **Pin AMI không có nghĩa ngừng vá.** Pin tạo thay đổi có thể review; cần lên lịch cập nhật bản vá và rolling node group ở bước vận hành.
-- **Namespace, ResourceQuota, LimitRange, Pod Security và workload RBAC** là phần platform baseline sẽ được triển khai ở 4.2/trước 4.8. Chưa đưa workload thật vào cluster chỉ vì node đã Ready.
-- **Mã hóa có nhiều lớp.** Backend dùng KMS hiện có; EBS node bật encrypted; log retention 30 ngày là cấu hình dev. Tổ chức yêu cầu customer-managed KMS key, retention dài hoặc log archive bất biến cần bổ sung policy/key tương ứng trước môi trường quan trọng.
-- **Egress chưa được siết hoàn chỉnh.** NAT và security group bootstrap không thay thế egress policy. NetworkPolicy, endpoint và kiểm soát image thuộc giai đoạn hardening, không được coi là đã có.
+```powershell
+Set-Location D:\AWS\springboot-learning\terraform\environments\dev\eks
+terraform init
+terraform validate
+terraform plan -out=eks-dev.tfplan
+terraform apply eks-dev.tfplan
 
-### 7. Kiểm tra hoàn thành
-
-Chỉ đánh dấu hoàn thành khi có kết quả kiểm tra thật:
-
-```text
-[ ] Terraform module EKS dùng lại được, root dev có state riêng
-[ ] Identity/account/region đúng và plan được review
-[ ] Cluster Active, managed node group Active
-[ ] Hai node Ready; đã kiểm tra AZ và private IP
-[ ] VPC CNI, kube-proxy, CoreDNS Active/healthy
-[ ] DNS test và ECR pull test thành công, hai Pod test đã xóa
-[ ] Operator role truy cập được, creator không được cấp admin tự động
-[ ] App CI không có cluster-admin
-[ ] VPC CNI dùng IRSA role riêng; node role không có CNI policy
-[ ] API endpoint đúng đường quản trị/CIDR đã chọn
-[ ] Audit/authenticator logs có dữ liệu
-[ ] Provider lock được commit; version thực tế đã chọn được ghi trong ghi chú/version record của repo (không chỉ placeholder)
-[ ] Chưa deploy app/Argo CD/data service
-[ ] Đã chốt tiếp tục buổi học hoặc cleanup tài nguyên
+aws eks update-kubeconfig --profile platform-dev --region ap-southeast-1 --name newgate2601-dev-eks --alias newgate2601-dev
+kubectl get nodes
+kubectl -n kube-system get pods
 ```
 
-Đây là checklist để người thực hành điền, không phải xác nhận AWS đã được triển khai khi tài liệu được viết.
+### 5. Giải thích ngắn các phần quan trọng
 
-### 8. Lỗi thường gặp và cách xử lý
+#### 5.1. Module EKS và root dev
 
-| Hiện tượng | Nguyên nhân thường gặp | Cách kiểm tra/xử lý |
+`modules/eks` chứa cách tạo EKS dùng chung.
+
+`environments/dev/eks` cung cấp giá trị riêng của dev như account, region, tên cluster, node size và version.
+
+Khi tạo staging hoặc production, dùng lại module nhưng tạo root, state và input riêng.
+
+#### 5.2. Vì sao EKS dùng state riêng
+
+EKS và network có thời điểm tạo, thay đổi và xóa khác nhau.
+
+State riêng giúp:
+
+- Thay đổi EKS mà không quản lý lại VPC.
+- Destroy EKS nhưng vẫn giữ network.
+- Giảm phạm vi tài nguyên xuất hiện trong mỗi Terraform plan.
+
+#### 5.3. CNI là gì
+
+CNI là viết tắt của Container Network Interface.
+
+Trong EKS, `vpc-cni` thực hiện hai việc chính:
+
+- Kết nối Pod vào mạng VPC.
+- Cấp địa chỉ IP VPC cho Pod.
+
+Không có CNI hoạt động, Pod không có kết nối mạng đúng để liên lạc với Pod khác hoặc AWS service.
+
+#### 5.4. Ba add-on cơ bản
+
+| Add-on | Chức năng |
+|---|---|
+| `vpc-cni` | Cấp mạng và địa chỉ IP VPC cho Pod. |
+| `kube-proxy` | Chuyển kết nối từ Kubernetes Service đến đúng Pod. |
+| `coredns` | Phân giải tên Service trong cluster thành địa chỉ IP. |
+
+Ba add-on này không có phí riêng. Chúng sử dụng CPU và RAM trên worker node.
+
+#### 5.5. OIDC provider và IAM role của VPC CNI
+
+OIDC provider cho phép AWS xác minh ServiceAccount bên trong EKS.
+
+IAM role `newgate2601-dev-eks-vpc-cni` chỉ cấp quyền mạng cần thiết cho ServiceAccount `aws-node` của VPC CNI.
+
+Nhờ đó, quyền quản lý địa chỉ IP và network interface không phải gắn vào IAM role chung của EC2 node.
+
+#### 5.6. Vì sao dùng hai t3.medium
+
+Hai node cho phép thực hành:
+
+- Phân bố Pod lên nhiều node.
+- Rolling update khi một node đang bận.
+- Kiểm tra Pod được tạo lại khi một node có vấn đề.
+
+`t3.medium` có 4 GiB RAM mỗi node. Cấu hình này nhỏ hơn `t3.large` nhưng phù hợp hơn `t3.small` cho bài lab có ba ứng dụng Spring Boot, Argo CD và các controller.
+
+Đây là cấu hình lab theo hướng triển khai nhiều node. Nó không phải kết quả sizing cho production.
+
+#### 5.7. Private node và EKS endpoint
+
+Worker node nằm trong private application subnet và không có public IPv4.
+
+EKS private endpoint luôn bật để node gọi Kubernetes API qua mạng VPC.
+
+Public endpoint chỉ bật khi `admin_public_cidrs` có địa chỉ `/32`. Địa chỉ này chỉ mở đường mạng đến EKS API; người gọi vẫn phải đăng nhập bằng IAM và được EKS cấp quyền.
+
+### 6. Kiểm tra hoàn thành
+
+Hoàn thành Bước 4.1 khi đạt đủ:
+
+```text
+[x] EKS cluster newgate2601-dev-eks ở trạng thái Active
+[x] Managed node group system ở trạng thái Active
+[x] Có hai node t3.medium ở trạng thái Ready
+[x] Node không có public IPv4
+[x] vpc-cni ở trạng thái Active và dùng IAM role riêng
+[x] kube-proxy rollout thành công
+[x] coredns rollout thành công
+[x] DNS test thành công
+[x] Role platform operator chạy được kubectl
+[x] CloudWatch control-plane log group đã được tạo
+[x] Terraform state nằm ở dev/eks/terraform.tfstate
+[x] Plan không tạo lại network dev
+```
+
+### 7. Lỗi thường gặp và cách xử lý
+
+| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
 |---|---|---|
-| AWS CLI không biết `describe-cluster-versions` | CLI cũ | Cập nhật AWS CLI v2; tra version tại EKS Console và tài liệu chính thức |
-| Init báo access denied S3/KMS/lock | Sai profile hoặc thiếu quyền backend | Kiểm tra STS identity, policy của role và key policy |
-| NodeCreationFailure | Route/NAT, subnet, IAM, AMI hoặc CNI lỗi | Xem health node group; kiểm tra route và role CNI trước khi retry |
-| CNI báo AccessDenied | Sai OIDC trust/audience/service account hoặc policy | So role annotation với trust `kube-system:aws-node`; kiểm tra add-on health |
-| kubectl timeout | Private-only nhưng máy không có route, hoặc sai public CIDR | Sửa đường quản trị/CIDR bằng Terraform; không mở toàn Internet |
-| kubectl Unauthorized/Forbidden | Profile sai role hoặc Access Entry chưa đúng | So IAM role ARN với entry; không chép ARN STS session |
-| CoreDNS Pending sau khi apply | Node chưa Ready/thiếu capacity/taint | Xem `kubectl describe pod` và node; giải quyết scheduling |
-| Pod test ImagePullBackOff | Egress/DNS hoặc registry giới hạn | Xem events; kiểm tra NAT và dùng registry/image đã duyệt |
-| Add-on conflict | Có cấu hình cũ do tạo tay | Review khác biệt rồi quản lý bằng Terraform; không mặc định overwrite |
-| AMI/add-on không tương thích | Copy version của minor khác | Tra lại bằng đúng `kubernetes_version` rồi tạo plan mới |
-| Hai node cùng AZ | Phân bố node thực tế chưa đạt kỳ vọng | Kiểm tra subnet/AZ/ASG capacity; chưa đánh dấu HA nếu chưa kiểm chứng |
-| Plan có destroy VPC hoặc đổi môi trường | Chạy nhầm root/state hoặc biến | Dừng apply, kiểm tra backend key và working directory |
-| Ngừng EC2 mà phí còn tăng | EKS control plane/NAT/logs còn tồn tại | Dùng cleanup theo dependency, không chỉ stop EC2 |
+| `NoSuchKey` khi đọc remote state | Network state chưa có hoặc key bị điền sai. | Dùng đúng key `dev/network/terraform.tfstate`. |
+| `AccessDenied` khi tạo EKS hoặc IAM | Profile hạ tầng thiếu quyền. | Bổ sung quyền cho role hạ tầng; không chuyển sang root account. |
+| `InvalidParameterException` về version | Kubernetes, add-on hoặc AMI release không tương thích. | Chạy lại các lệnh lấy version ở mục 3.3 đến 3.5 rồi cập nhật tfvars. |
+| Public endpoint không truy cập được | Public IPv4 hiện tại khác CIDR trong tfvars. | Lấy lại IP, sửa `admin_public_cidrs`, tạo plan mới rồi apply. |
+| `kubectl` báo `Unauthorized` | Đang dùng sai profile hoặc operator role chưa có Access Entry. | Dùng profile `platform-dev` và xem Access Entry trong EKS Console. |
+| Node không chuyển sang `Ready` | Node thiếu egress, IAM hoặc VPC CNI chưa hoạt động. | Xem lỗi node group, `aws-node` và route của private subnet. |
+| CoreDNS ở `Pending` | Node chưa Ready hoặc không đủ tài nguyên. | Xử lý node trước rồi xem event của Pod CoreDNS. |
+| `Error acquiring the state lock` | Terraform run khác đang giữ lock. | Chờ run đó hoàn thành; không force-unlock khi chưa xác định owner. |
+| Chi phí vẫn tăng sau khi stop EC2 | EKS control plane và NAT Gateway vẫn tồn tại. | Dùng Terraform destroy đúng state; stop node không xóa cluster. |
 
-### 9. Kết quả sau bước này
+### 8. Kết quả sau bước này
 
-Sau khi thực hành thành công, ta có nền EKS dev được quản lý bằng Terraform, node private chạy được, IAM tách vai trò và có bằng chứng kiểm tra DNS/audit.
+Sau Bước 4.1, môi trường dev có nền Kubernetes để tiếp tục:
 
-Bước tiếp theo theo V2 là **Bước 4.2 - Cài add-on nền cho EKS dev**: tiếp tục EBS CSI, Metrics Server, identity cho controller và các policy/namespace nền. Argo CD vẫn ở bước 4.7, deploy 3 service ở bước 4.8.
+```text
+EKS dev
+  -> hai private worker node t3.medium
+  -> VPC CNI
+  -> kube-proxy
+  -> CoreDNS
+  -> operator access
+  -> control-plane logs
+```
 
-
----
-
-> **Phạm vi phần tiếp theo:** các file bên dưới đã được chuẩn bị để thực hành; chưa có kết quả apply AWS. Lệnh trong code block là lệnh người học chạy sau khi kiểm tra account, region, context và plan. Không đánh dấu nghiệm thu bằng việc chỉ tạo file.
->
-> **Quy ước đường dẫn:** repo hạ tầng là `D:\AWS\springboot-learning`; GitOps là `D:\AWS\social-media-app-gitops`. Branch GitOps là `master`. Các file `terraform.tfvars.example` phải được copy thành `terraform.tfvars` và thay placeholder trước khi dùng. Không copy state hoặc thư mục `.terraform` giữa các root.
->
-> **Thứ tự state:** network → eks → addons → data → argocd → observability. State của addons/argocd dùng Helm provider nên identity thực thi phải có quyền Kubernetes và đường mạng tới API. Root EKS chỉ dùng AWS/TLS provider; không gộp Helm vào lượt tạo cluster.
->
-> **Giới hạn source hiện tại:** ba app chưa có luồng nghiệp vụ Kafka/S3; upload hiện dùng Cloudinary. Các Job course-probe kiểm tra hạ tầng và bài Kafka/S3 độc lập. UAA/post còn `permitAll()`, schema dev dùng `ddl-auto=update`. Không gọi việc dựng thành công hạ tầng là hoàn tất bảo mật/nghiệp vụ production.
-
-
----
+Bước tiếp theo là Bước 4.2: cài EBS CSI, Metrics Server và các cấu hình nền cho workload.
 
 ## Bước 4.2 - Cài add-on nền cho EKS dev
 
