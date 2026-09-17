@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_CashloanFeatureLab" targetNamespace="http://example.com/cashloan-feature-lab" exporter="Camunda Modeler" exporterVersion="5.47.0">
+  <bpmn:message id="Message_LabSegmentResult" name="LabSegmentResult" />
+  <bpmn:message id="Message_LabSubmitted" name="LabSubmitted" />
+  <bpmn:process id="CAKE_FEATURE_LAB" name="Cashloan feature lab" isExecutable="true" camunda:historyTimeToLive="30">
+    <bpmn:documentation>Flow ngắn để học các tính năng được dùng trong cake-ob-fixed: subprocess, send/receive task, parallel/exclusive gateway, user task, message event, điều kiện nhánh, input mapping, async before và execution listener. Bổ sung output mapping, async after, task listener, documentation và extension properties.</bpmn:documentation>
+    <bpmn:extensionElements>
+      <camunda:properties>
+        <camunda:property name="demoCategory" value="cashloan-feature-lab" />
+        <camunda:property name="owner" value="training" />
+      </camunda:properties>
+      <camunda:executionListener expression="${execution.setVariable(&#39;labLifecycle&#39;, &#39;started&#39;)}" event="start" />
+      <camunda:executionListener expression="${execution.setVariable(&#39;labLifecycle&#39;, &#39;ended&#39;)}" event="end" />
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="lab_start" name="Application init">
+      <bpmn:documentation>Start qua API /lab/start. Dữ liệu mock cho phép thử mọi nhánh mà không gọi hệ thống ngoài.</bpmn:documentation>
+    </bpmn:startEvent>
+    <bpmn:subProcess id="lab_segment" name="Phân loại segment">
+      <bpmn:documentation>Fork tạo hai token: send task gọi worker và receive task chờ message. Join chờ cả hai token. Input/output mapping minh họa phạm vi biến subprocess.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="requestedSegmentType">${mockSegmentType}</camunda:inputParameter>
+          <camunda:outputParameter name="isSegmentEvaluatedSuccess">${isSegmentEvaluatedSuccess}</camunda:outputParameter>
+          <camunda:outputParameter name="segmentType">${segmentType}</camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:executionListener expression="${execution.setVariable(&#39;labSegmentLifecycle&#39;, &#39;started&#39;)}" event="start" />
+        <camunda:executionListener expression="${execution.setVariable(&#39;labSegmentLifecycle&#39;, &#39;ended&#39;)}" event="end" />
+      </bpmn:extensionElements>
+      <bpmn:startEvent id="lab_segment_start" />
+      <bpmn:parallelGateway id="lab_segment_fork" />
+      <bpmn:sendTask id="lab_send_segment" name="Gửi phân loại" camunda:asyncBefore="true" camunda:type="external" camunda:topic="lab-segment">
+        <bpmn:documentation>External task worker chỉ log, hoàn thành task và correlate message LabSegmentResult. asyncBefore tạo job trước điểm này.</bpmn:documentation>
+        <bpmn:extensionElements>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="requestType">${requestedSegmentType}</camunda:inputParameter>
+            <camunda:outputParameter name="segmentWorkerResult">${isSegmentEvaluatedSuccess}</camunda:outputParameter>
+          </camunda:inputOutput>
+          <camunda:properties>
+            <camunda:property name="demoFeature" value="send-task-external" />
+            <camunda:property name="demoOwner" value="segment-worker" />
+          </camunda:properties>
+          <camunda:executionListener expression="${execution.setVariable(&#39;labSendEvent&#39;, &#39;started&#39;)}" event="start" />
+          <camunda:executionListener expression="${execution.setVariable(&#39;labSendEvent&#39;, &#39;ended&#39;)}" event="end" />
+        </bpmn:extensionElements>
+      </bpmn:sendTask>
+      <bpmn:receiveTask id="lab_receive_segment" name="Nhận kết quả" messageRef="Message_LabSegmentResult">
+        <bpmn:documentation>Receive task chờ message tên LabSegmentResult được correlate với process instance.</bpmn:documentation>
+      </bpmn:receiveTask>
+      <bpmn:parallelGateway id="lab_segment_join" />
+      <bpmn:endEvent id="lab_segment_end" />
+      <bpmn:sequenceFlow id="lab_s1" sourceRef="lab_segment_start" targetRef="lab_segment_fork" />
+      <bpmn:sequenceFlow id="lab_s2" sourceRef="lab_segment_fork" targetRef="lab_send_segment" />
+      <bpmn:sequenceFlow id="lab_s3" sourceRef="lab_segment_fork" targetRef="lab_receive_segment" />
+      <bpmn:sequenceFlow id="lab_s4" sourceRef="lab_send_segment" targetRef="lab_segment_join" />
+      <bpmn:sequenceFlow id="lab_s5" sourceRef="lab_receive_segment" targetRef="lab_segment_join" />
+      <bpmn:sequenceFlow id="lab_s6" sourceRef="lab_segment_join" targetRef="lab_segment_end" />
+    </bpmn:subProcess>
+    <bpmn:exclusiveGateway id="lab_segment_ok" name="Segment thành công?" default="lab_segment_no" />
+    <bpmn:endEvent id="lab_rejected_segment" name="Phân loại thất bại">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="status">REJECTED_SEGMENT</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:endEvent>
+    <bpmn:sendTask id="lab_precheck" name="Precheck" camunda:asyncAfter="true" camunda:type="external" camunda:topic="lab-precheck">
+      <bpmn:documentation>External worker log kết quả. Input mapping tạo requestPrecheck; output mapping xuất workerResult. asyncAfter tạo job cho bước sau.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="requestPrecheck">${mockPrecheckPassed}</camunda:inputParameter>
+          <camunda:outputParameter name="workerResult">${isPrecheckPassed}</camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:properties>
+          <camunda:property name="demoFeature" value="async-after-and-output-mapping" />
+        </camunda:properties>
+        <camunda:executionListener expression="${execution.setVariable(&#39;labPrecheckEvent&#39;, &#39;started&#39;)}" event="start" />
+        <camunda:executionListener expression="${execution.setVariable(&#39;labPrecheckEvent&#39;, &#39;ended&#39;)}" event="end" />
+      </bpmn:extensionElements>
+    </bpmn:sendTask>
+    <bpmn:exclusiveGateway id="lab_precheck_ok" name="Precheck đạt?" default="lab_precheck_no" />
+    <bpmn:endEvent id="lab_rejected_precheck" name="Sàng lọc thất bại">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="status">REJECTED_PRECHECK</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="lab_need_scoring" name="Cần chấm điểm?" default="lab_need_scoring_yes">
+      <bpmn:documentation>VTP_OFF_NET đi nhánh bỏ qua; các giá trị khác đi review thủ công.</bpmn:documentation>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="lab_skip_scoring" name="Ngoại mạng: bỏ qua chấm điểm">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="status">SKIPPED_SCORING</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:endEvent>
+    <bpmn:userTask id="lab_manual_review" name="Review chấm điểm" camunda:assignee="demo">
+      <bpmn:documentation>Tasklist sẽ hiện task của demo. Task listener chạy khi tạo và hoàn tất; output mapping ghi reviewCompleted.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="reviewInstruction">Hoàn tất task để đi tới message throw event</camunda:inputParameter>
+          <camunda:outputParameter name="reviewCompleted">true</camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:properties>
+          <camunda:property name="demoFeature" value="user-task-and-task-listeners" />
+        </camunda:properties>
+        <camunda:taskListener expression="${task.setVariable(&#39;labReviewEvent&#39;, &#39;created&#39;)}" event="create" />
+        <camunda:taskListener expression="${task.setVariable(&#39;labReviewEvent&#39;, &#39;completed&#39;)}" event="complete" />
+      </bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:intermediateThrowEvent id="lab_submit_message" name="Submit application">
+      <bpmn:documentation>Message throw event như flow gốc. Expression chỉ đặt biến labMessageThrown=true để dễ kiểm tra trong history.</bpmn:documentation>
+      <bpmn:messageEventDefinition messageRef="Message_LabSubmitted" camunda:expression="${execution.setVariable(&#39;labMessageThrown&#39;, true)}" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="lab_ready_for_scoring" name="Đã tới chấm điểm">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="status">READY_FOR_SCORING</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="lab_f1" sourceRef="lab_start" targetRef="lab_segment" />
+    <bpmn:sequenceFlow id="lab_f2" sourceRef="lab_segment" targetRef="lab_segment_ok" />
+    <bpmn:sequenceFlow id="lab_segment_yes" name="Yes" sourceRef="lab_segment_ok" targetRef="lab_precheck">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${isSegmentEvaluatedSuccess == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="lab_segment_no" name="No" sourceRef="lab_segment_ok" targetRef="lab_rejected_segment" />
+    <bpmn:sequenceFlow id="lab_f3" sourceRef="lab_precheck" targetRef="lab_precheck_ok" />
+    <bpmn:sequenceFlow id="lab_precheck_yes" name="Yes" sourceRef="lab_precheck_ok" targetRef="lab_need_scoring">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${isPrecheckPassed == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="lab_precheck_no" name="No" sourceRef="lab_precheck_ok" targetRef="lab_rejected_precheck" />
+    <bpmn:sequenceFlow id="lab_skip_scoring_flow" name="Ngoại mạng" sourceRef="lab_need_scoring" targetRef="lab_skip_scoring">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${segmentType == 'VTP_OFF_NET'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="lab_need_scoring_yes" name="Có" sourceRef="lab_need_scoring" targetRef="lab_manual_review">
+      <bpmn:extensionElements>
+        <camunda:executionListener expression="${execution.setVariable(&#39;labRoute&#39;, &#39;scoring&#39;)}" event="take" />
+      </bpmn:extensionElements>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="lab_f4" sourceRef="lab_manual_review" targetRef="lab_submit_message" />
+    <bpmn:sequenceFlow id="lab_f5" sourceRef="lab_submit_message" targetRef="lab_ready_for_scoring" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Lab_Diagram">
+    <bpmndi:BPMNPlane id="Lab_Plane" bpmnElement="CAKE_FEATURE_LAB">
+      <bpmndi:BPMNShape id="lab_start_di" bpmnElement="lab_start">
+        <dc:Bounds x="170" y="272" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="153" y="308" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_skip_scoring_di" bpmnElement="lab_skip_scoring">
+        <dc:Bounds x="787" y="122" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="766" y="84.5" width="78" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_segment_ok_di" bpmnElement="lab_segment_ok" isMarkerVisible="true">
+        <dc:Bounds x="410" y="265" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="397" y="236" width="75" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_rejected_segment_di" bpmnElement="lab_rejected_segment">
+        <dc:Bounds x="417" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="392" y="446" width="86" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_precheck_di" bpmnElement="lab_precheck">
+        <dc:Bounds x="510" y="250" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_precheck_ok_di" bpmnElement="lab_precheck_ok" isMarkerVisible="true">
+        <dc:Bounds x="660" y="265" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="649" y="243" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_rejected_precheck_di" bpmnElement="lab_rejected_precheck">
+        <dc:Bounds x="667" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="644" y="446" width="82" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_need_scoring_di" bpmnElement="lab_need_scoring" isMarkerVisible="true">
+        <dc:Bounds x="780" y="265" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="763" y="315" width="84" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_manual_review_di" bpmnElement="lab_manual_review">
+        <dc:Bounds x="880" y="250" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_submit_message_di" bpmnElement="lab_submit_message">
+        <dc:Bounds x="1050" y="272" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1023" y="308" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_ready_for_scoring_di" bpmnElement="lab_ready_for_scoring">
+        <dc:Bounds x="1150" y="272" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1125" y="308" width="87" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_segment_di" bpmnElement="lab_segment" isExpanded="false">
+        <dc:Bounds x="255" y="250" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="lab_f1_di" bpmnElement="lab_f1">
+        <di:waypoint x="206" y="290" />
+        <di:waypoint x="255" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_skip_scoring_flow_di" bpmnElement="lab_skip_scoring_flow">
+        <di:waypoint x="805" y="265" />
+        <di:waypoint x="805" y="158" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="790" y="201" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_f2_di" bpmnElement="lab_f2">
+        <di:waypoint x="365" y="290" />
+        <di:waypoint x="410" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_segment_yes_di" bpmnElement="lab_segment_yes">
+        <di:waypoint x="460" y="290" />
+        <di:waypoint x="510" y="290" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="476" y="265" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_segment_no_di" bpmnElement="lab_segment_no">
+        <di:waypoint x="435" y="315" />
+        <di:waypoint x="435" y="410" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="443" y="333" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_f3_di" bpmnElement="lab_f3">
+        <di:waypoint x="610" y="290" />
+        <di:waypoint x="660" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_precheck_yes_di" bpmnElement="lab_precheck_yes">
+        <di:waypoint x="710" y="290" />
+        <di:waypoint x="780" y="290" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="736" y="265" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_precheck_no_di" bpmnElement="lab_precheck_no">
+        <di:waypoint x="685" y="315" />
+        <di:waypoint x="685" y="410" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="693" y="353" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_need_scoring_yes_di" bpmnElement="lab_need_scoring_yes">
+        <di:waypoint x="830" y="290" />
+        <di:waypoint x="880" y="290" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="848" y="265" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_f4_di" bpmnElement="lab_f4">
+        <di:waypoint x="990" y="290" />
+        <di:waypoint x="1050" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_f5_di" bpmnElement="lab_f5">
+        <di:waypoint x="1086" y="290" />
+        <di:waypoint x="1150" y="290" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="Lab_Segment_Diagram">
+    <bpmndi:BPMNPlane id="Lab_Segment_Plane" bpmnElement="lab_segment">
+      <bpmndi:BPMNShape id="lab_segment_start_di" bpmnElement="lab_segment_start">
+        <dc:Bounds x="100" y="202" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_segment_fork_di" bpmnElement="lab_segment_fork">
+        <dc:Bounds x="200" y="195" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_send_segment_di" bpmnElement="lab_send_segment">
+        <dc:Bounds x="310" y="100" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_receive_segment_di" bpmnElement="lab_receive_segment">
+        <dc:Bounds x="310" y="260" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_segment_join_di" bpmnElement="lab_segment_join">
+        <dc:Bounds x="485" y="195" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lab_segment_end_di" bpmnElement="lab_segment_end">
+        <dc:Bounds x="610" y="202" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="lab_s1_di" bpmnElement="lab_s1">
+        <di:waypoint x="136" y="220" />
+        <di:waypoint x="200" y="220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_s2_di" bpmnElement="lab_s2">
+        <di:waypoint x="225" y="195" />
+        <di:waypoint x="225" y="140" />
+        <di:waypoint x="310" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_s3_di" bpmnElement="lab_s3">
+        <di:waypoint x="225" y="245" />
+        <di:waypoint x="225" y="300" />
+        <di:waypoint x="310" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_s4_di" bpmnElement="lab_s4">
+        <di:waypoint x="420" y="140" />
+        <di:waypoint x="510" y="140" />
+        <di:waypoint x="510" y="195" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_s5_di" bpmnElement="lab_s5">
+        <di:waypoint x="420" y="300" />
+        <di:waypoint x="510" y="300" />
+        <di:waypoint x="510" y="245" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="lab_s6_di" bpmnElement="lab_s6">
+        <di:waypoint x="535" y="220" />
+        <di:waypoint x="610" y="220" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

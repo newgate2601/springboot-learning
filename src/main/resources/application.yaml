@@ -1,9 +1,14 @@
 server:
   port: 8086
+camunda:
+  demo:
+    base-url: http://localhost:8080/engine-rest
+    poll-ms: 100000
 logging:
   level:
     root: INFO
     org.springframework.web: DEBUG
+    org.springframework.web.client.RestTemplate: INFO
     org.hibernate: ERROR
 management:
   endpoints:

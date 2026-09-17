@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_CashloanLearning" targetNamespace="http://example.com/cashloan-learning" exporter="Camunda Modeler" exporterVersion="5.47.0">
+  <bpmn:process id="CAKE_CASHLOAN_LEARNING" name="Cashloan - các bước đầu (demo)" isExecutable="true" camunda:historyTimeToLive="30">
+    <bpmn:startEvent id="application_init" name="Application init" />
+    <bpmn:subProcess id="evaluate_customer_segment" name="Phân loại segment">
+      <bpmn:startEvent id="segment_start" />
+      <bpmn:serviceTask id="send_task.evaluate_customer_segment" name="Phân loại segment (log)" camunda:type="external" camunda:topic="demo-segment" />
+      <bpmn:endEvent id="segment_done" />
+      <bpmn:sequenceFlow id="segment_1" sourceRef="segment_start" targetRef="send_task.evaluate_customer_segment" />
+      <bpmn:sequenceFlow id="segment_2" sourceRef="send_task.evaluate_customer_segment" targetRef="segment_done" />
+    </bpmn:subProcess>
+    <bpmn:exclusiveGateway id="gateway.check_evaluate_customer_segment_success" name="Phân loại thành công?" default="segment_failed_flow" />
+    <bpmn:endEvent id="evaluate_customer_segment_fail" name="Phân loại segment thất bại" />
+    <bpmn:subProcess id="precheck_1" name="Precheck">
+      <bpmn:extensionElements />
+      <bpmn:startEvent id="precheck_start" />
+      <bpmn:serviceTask id="send_task.precheck_1" name="Sàng lọc khách hàng (log)" camunda:type="external" camunda:topic="demo-precheck" />
+      <bpmn:endEvent id="precheck_done" />
+      <bpmn:sequenceFlow id="precheck_1_flow" sourceRef="precheck_start" targetRef="send_task.precheck_1" />
+      <bpmn:sequenceFlow id="precheck_2_flow" sourceRef="send_task.precheck_1" targetRef="precheck_done" />
+    </bpmn:subProcess>
+    <bpmn:exclusiveGateway id="gateway.check_precheck_1_qualified" name="Precheck qualified?" default="precheck_failed_flow" />
+    <bpmn:endEvent id="precheck_1_vds_fail" name="Sàng lọc thất bại" />
+    <bpmn:exclusiveGateway id="gateway.check_need_scoring" name="Cần chấm điểm?" default="need_scoring_flow" />
+    <bpmn:endEvent id="ready_for_scoring" name="Chờ chấm điểm" />
+    <bpmn:endEvent id="skip_scoring" name="Ngoại mạng - bỏ qua chấm điểm" />
+    <bpmn:sequenceFlow id="start_flow" sourceRef="application_init" targetRef="evaluate_customer_segment" />
+    <bpmn:sequenceFlow id="segment_result_flow" sourceRef="evaluate_customer_segment" targetRef="gateway.check_evaluate_customer_segment_success" />
+    <bpmn:sequenceFlow id="segment_success_flow" name="Yes" sourceRef="gateway.check_evaluate_customer_segment_success" targetRef="precheck_1">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${isSegmentEvaluatedSuccess == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="segment_failed_flow" name="No" sourceRef="gateway.check_evaluate_customer_segment_success" targetRef="evaluate_customer_segment_fail" />
+    <bpmn:sequenceFlow id="precheck_result_flow" sourceRef="precheck_1" targetRef="gateway.check_precheck_1_qualified" />
+    <bpmn:sequenceFlow id="precheck_success_flow" name="Yes" sourceRef="gateway.check_precheck_1_qualified" targetRef="gateway.check_need_scoring">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${isPrecheckPassed == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="precheck_failed_flow" name="No" sourceRef="gateway.check_precheck_1_qualified" targetRef="precheck_1_vds_fail" />
+    <bpmn:sequenceFlow id="skip_scoring_flow" name="Ngoại mạng" sourceRef="gateway.check_need_scoring" targetRef="skip_scoring">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${segmentType == 'VTP_OFF_NET'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="need_scoring_flow" name="Có" sourceRef="gateway.check_need_scoring" targetRef="ready_for_scoring" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_CashloanLearning">
+    <bpmndi:BPMNPlane id="Plane_CashloanLearning" bpmnElement="CAKE_CASHLOAN_LEARNING">
+      <bpmndi:BPMNShape id="application_init_di" bpmnElement="application_init">
+        <dc:Bounds x="170" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="153" y="228" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="evaluate_customer_segment_di" bpmnElement="evaluate_customer_segment" isExpanded="false">
+        <dc:Bounds x="260" y="170" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="segment_gateway_di" bpmnElement="gateway.check_evaluate_customer_segment_success" isMarkerVisible="true">
+        <dc:Bounds x="425" y="185" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="412" y="235" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="segment_fail_di" bpmnElement="evaluate_customer_segment_fail">
+        <dc:Bounds x="432" y="325" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="409" y="361" width="82" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="precheck_1_di" bpmnElement="precheck_1" isExpanded="false">
+        <dc:Bounds x="525" y="170" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="precheck_gateway_di" bpmnElement="gateway.check_precheck_1_qualified" isMarkerVisible="true">
+        <dc:Bounds x="690" y="185" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="691" y="235" width="48" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="precheck_fail_di" bpmnElement="precheck_1_vds_fail">
+        <dc:Bounds x="697" y="325" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="674" y="361" width="82" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="need_scoring_gateway_di" bpmnElement="gateway.check_need_scoring" isMarkerVisible="true">
+        <dc:Bounds x="805" y="185" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="788" y="235" width="84" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ready_for_scoring_di" bpmnElement="ready_for_scoring">
+        <dc:Bounds x="940" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="919" y="228" width="79" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="skip_scoring_di" bpmnElement="skip_scoring">
+        <dc:Bounds x="812" y="75" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="789" y="111" width="82" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="start_flow_di" bpmnElement="start_flow">
+        <di:waypoint x="206" y="210" />
+        <di:waypoint x="260" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="segment_result_flow_di" bpmnElement="segment_result_flow">
+        <di:waypoint x="370" y="210" />
+        <di:waypoint x="425" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="segment_success_flow_di" bpmnElement="segment_success_flow">
+        <di:waypoint x="475" y="210" />
+        <di:waypoint x="525" y="210" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="491" y="185" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="segment_failed_flow_di" bpmnElement="segment_failed_flow">
+        <di:waypoint x="450" y="235" />
+        <di:waypoint x="450" y="325" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="458" y="270" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="precheck_result_flow_di" bpmnElement="precheck_result_flow">
+        <di:waypoint x="635" y="210" />
+        <di:waypoint x="690" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="precheck_success_flow_di" bpmnElement="precheck_success_flow">
+        <di:waypoint x="740" y="210" />
+        <di:waypoint x="805" y="210" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="764" y="185" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="precheck_failed_flow_di" bpmnElement="precheck_failed_flow">
+        <di:waypoint x="715" y="235" />
+        <di:waypoint x="715" y="325" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="723" y="270" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="skip_scoring_flow_di" bpmnElement="skip_scoring_flow">
+        <di:waypoint x="830" y="185" />
+        <di:waypoint x="830" y="111" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="815" y="138" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="need_scoring_flow_di" bpmnElement="need_scoring_flow">
+        <di:waypoint x="855" y="210" />
+        <di:waypoint x="940" y="210" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="890" y="185" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="Segment_Diagram">
+    <bpmndi:BPMNPlane id="Segment_Plane" bpmnElement="evaluate_customer_segment">
+      <bpmndi:BPMNShape id="segment_start_di" bpmnElement="segment_start">
+        <dc:Bounds x="100" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="segment_task_di" bpmnElement="send_task.evaluate_customer_segment">
+        <dc:Bounds x="200" y="170" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="segment_done_di" bpmnElement="segment_done">
+        <dc:Bounds x="390" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="segment_1_di" bpmnElement="segment_1">
+        <di:waypoint x="136" y="210" />
+        <di:waypoint x="200" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="segment_2_di" bpmnElement="segment_2">
+        <di:waypoint x="320" y="210" />
+        <di:waypoint x="390" y="210" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="Precheck_Diagram">
+    <bpmndi:BPMNPlane id="Precheck_Plane" bpmnElement="precheck_1">
+      <bpmndi:BPMNShape id="precheck_start_di" bpmnElement="precheck_start">
+        <dc:Bounds x="100" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="precheck_task_di" bpmnElement="send_task.precheck_1">
+        <dc:Bounds x="200" y="170" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="precheck_done_di" bpmnElement="precheck_done">
+        <dc:Bounds x="390" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="precheck_1_flow_di" bpmnElement="precheck_1_flow">
+        <di:waypoint x="136" y="210" />
+        <di:waypoint x="200" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="precheck_2_flow_di" bpmnElement="precheck_2_flow">
+        <di:waypoint x="320" y="210" />
+        <di:waypoint x="390" y="210" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
