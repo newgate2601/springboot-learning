@@ -1,14 +1,24 @@
 server:
   port: 8086
 camunda:
-  demo:
-    base-url: http://localhost:8080/engine-rest
-    poll-ms: 100000
+  bpm:
+    database:
+      schema-update: true
+    history-level: full
+    deployment-resource-pattern: classpath*:processes/*.bpmn
+    webapp:
+      application-path: /camunda
+    admin-user:
+      id: admin
+      password: Admin@12345
+      first-name: Cashloan
+      last-name: Demo
+    filter:
+      create: All tasks
 logging:
   level:
     root: INFO
     org.springframework.web: DEBUG
-    org.springframework.web.client.RestTemplate: INFO
     org.hibernate: ERROR
 management:
   endpoints:

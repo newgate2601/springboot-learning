@@ -23,8 +23,7 @@ public class CashloanDemoController {
     @PostMapping("/lab/start")
     public Map<String, Object> startLab(@RequestBody(required = false) StartRequest input) {
         if (input == null) input = new StartRequest();
-        String id = demo.startLab(input.segmentSuccess, input.precheckPassed,
-                input.segmentType, input.autoCorrelate);
+        String id = demo.startLab(input.segmentSuccess, input.precheckPassed, input.segmentType);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("processInstanceId", id);
         response.put("statusUrl", "/api/v1/camunda-demo/lab/" + id);
@@ -36,9 +35,9 @@ public class CashloanDemoController {
         return demo.labStatus(id);
     }
 
-    @PostMapping("/lab/{id}/complete-review")
-    public Map<String, Object> completeLabReview(@PathVariable String id) {
-        demo.completeLabReview(id);
+    @PostMapping("/lab/{id}/process-segment")
+    public Map<String, Object> processLabSegment(@PathVariable String id) {
+        demo.processLabSegment(id);
         return demo.labStatus(id);
     }
 
@@ -48,11 +47,22 @@ public class CashloanDemoController {
         return demo.labStatus(id);
     }
 
+    @PostMapping("/lab/{id}/process-precheck")
+    public Map<String, Object> processLabPrecheck(@PathVariable String id) {
+        demo.processLabPrecheck(id);
+        return demo.labStatus(id);
+    }
+
+    @PostMapping("/lab/{id}/complete-review")
+    public Map<String, Object> completeLabReview(@PathVariable String id) {
+        demo.completeLabReview(id);
+        return demo.labStatus(id);
+    }
+
     public static class StartRequest {
         public Boolean segmentSuccess;
         public Boolean precheckPassed;
         public String segmentType;
-        public Boolean autoCorrelate;
 
         @JsonAnySetter
         public void rejectUnknownField(String name, Object value) {

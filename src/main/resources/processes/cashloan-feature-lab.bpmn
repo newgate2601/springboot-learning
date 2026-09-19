@@ -29,11 +29,10 @@
       <bpmn:startEvent id="lab_segment_start" />
       <bpmn:parallelGateway id="lab_segment_fork" />
       <bpmn:sendTask id="lab_send_segment" name="Gửi phân loại" camunda:asyncBefore="true" camunda:type="external" camunda:topic="lab-segment">
-        <bpmn:documentation>External task worker chỉ log, hoàn thành task và correlate message LabSegmentResult. asyncBefore tạo job trước điểm này.</bpmn:documentation>
+        <bpmn:documentation>API process-segment khóa và hoàn thành external task này. Message LabSegmentResult được gửi riêng qua API correlate-segment. asyncBefore tạo job trước điểm này.</bpmn:documentation>
         <bpmn:extensionElements>
           <camunda:inputOutput>
             <camunda:inputParameter name="requestSegmentSuccess">${segmentSuccess}</camunda:inputParameter>
-            <camunda:inputParameter name="requestAutoCorrelate">${autoCorrelate}</camunda:inputParameter>
             <camunda:inputParameter name="requestType">${requestedSegmentType}</camunda:inputParameter>
             <camunda:outputParameter name="segmentWorkerResult">${isSegmentEvaluatedSuccess}</camunda:outputParameter>
           </camunda:inputOutput>
@@ -66,7 +65,7 @@
       </bpmn:extensionElements>
     </bpmn:endEvent>
     <bpmn:sendTask id="lab_precheck" name="Precheck" camunda:asyncAfter="true" camunda:type="external" camunda:topic="lab-precheck">
-      <bpmn:documentation>External worker log kết quả. Input mapping tạo requestPrecheck; output mapping xuất workerResult. asyncAfter tạo job cho bước sau.</bpmn:documentation>
+      <bpmn:documentation>API process-precheck khóa và hoàn thành external task này. Input mapping tạo requestPrecheck; output mapping xuất workerResult. asyncAfter tạo job cho bước sau.</bpmn:documentation>
       <bpmn:extensionElements>
         <camunda:inputOutput>
           <camunda:inputParameter name="requestPrecheck">${precheckPassed}</camunda:inputParameter>

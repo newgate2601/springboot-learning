@@ -18,8 +18,7 @@ class CashloanDemoControllerTests {
                 {
                   "segmentSuccess": false,
                   "precheckPassed": true,
-                  "segmentType": "VTP_OFF_NET",
-                  "autoCorrelate": false
+                  "segmentType": "VTP_OFF_NET"
                 }
                 """;
 
@@ -29,7 +28,6 @@ class CashloanDemoControllerTests {
         assertFalse(request.segmentSuccess);
         assertTrue(request.precheckPassed);
         assertEquals("VTP_OFF_NET", request.segmentType);
-        assertFalse(request.autoCorrelate);
     }
 
     @Test

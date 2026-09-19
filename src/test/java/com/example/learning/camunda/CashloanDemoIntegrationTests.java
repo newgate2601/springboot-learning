@@ -24,6 +24,9 @@ class CashloanDemoIntegrationTests {
         assertLabOutcome(true, true, "VTP_OFF_NET", "lab_skip_scoring");
 
         String id = demo.startLab(true, true, "VTP_ON_NET");
+        processSegment(id);
+        demo.correlateLabSegment(id);
+        processPrecheck(id);
         Map<String, Object> waiting = waitForLab(id, "lab_manual_review");
         assertNotNull(waiting.get("waitingTaskId"), waiting.toString());
         assertEquals("created", waiting.get("variables") instanceof Map ? ((Map<?, ?>) waiting.get("variables")).get("labReviewEvent").toString().replace("\"", "") : null);
@@ -36,25 +39,19 @@ class CashloanDemoIntegrationTests {
         assertEquals("true", variables.get("workerResult").toString());
         assertEquals("ended", variables.get("labLifecycle").toString().replace("\"", ""));
         assertEquals("completed", variables.get("labReviewEvent").toString().replace("\"", ""));
-        assertEquals("async-after-and-output-mapping", variables.get("labExtensionFeature").toString().replace("\"", ""));
     }
 
     @Test
     void featureLabCanWaitForManualMessageCorrelation() throws InterruptedException {
-        String id = demo.startLab(true, true, "VTP_ON_NET", false);
-        Map<String, Object> waiting = null;
-        for (int i = 0; i < 100; i++) {
-            demo.work();
-            waiting = demo.labStatus(id);
-            if (waiting.get("visitedActivities").toString().contains("lab_receive_segment")) break;
-            Thread.sleep(100);
-        }
-        assertNotNull(waiting);
+        String id = demo.startLab(true, true, "VTP_ON_NET");
+        processSegment(id);
+        Map<String, Object> waiting = waitForActivity(id, "lab_receive_segment");
         assertTrue(waiting.get("visitedActivities").toString().contains("lab_receive_segment"), waiting.toString());
         assertEquals("RUNNING", waiting.get("outcome"));
         assertFalse(waiting.get("visitedActivities").toString().contains("lab_precheck"), waiting.toString());
 
         demo.correlateLabSegment(id);
+        processPrecheck(id);
         Map<String, Object> review = waitForLab(id, "lab_manual_review");
         assertNotNull(review.get("waitingTaskId"));
         demo.completeLabReview(id);
@@ -62,13 +59,15 @@ class CashloanDemoIntegrationTests {
     }
 
     private void assertLabOutcome(boolean segment, boolean precheck, String type, String expected) throws InterruptedException {
-        Map<String, Object> state = waitForLab(demo.startLab(segment, precheck, type), expected);
-        assertFalse(state.get("variables").toString().contains("labExtensionFeature=\"missing\""), state.toString());
+        String id = demo.startLab(segment, precheck, type);
+        processSegment(id);
+        demo.correlateLabSegment(id);
+        if (segment) processPrecheck(id);
+        assertEquals(expected, waitForLab(id, expected).get("outcome"));
     }
 
     private Map<String, Object> waitForLab(String id, String expected) throws InterruptedException {
         for (int i = 0; i < 100; i++) {
-            demo.work();
             Map<String, Object> state = demo.labStatus(id);
             if (expected.equals(state.get("outcome")) ||
                     ("lab_manual_review".equals(expected) && state.get("waitingTaskId") != null)) return state;
@@ -77,6 +76,39 @@ class CashloanDemoIntegrationTests {
         Map<String, Object> state = demo.labStatus(id);
         assertEquals(expected, state.get("outcome"), state.toString());
         return state;
+    }
+
+    private Map<String, Object> waitForActivity(String id, String activityId) throws InterruptedException {
+        for (int i = 0; i < 100; i++) {
+            Map<String, Object> state = demo.labStatus(id);
+            if (state.get("visitedActivities").toString().contains(activityId)) return state;
+            Thread.sleep(100);
+        }
+        Map<String, Object> state = demo.labStatus(id);
+        assertTrue(state.get("visitedActivities").toString().contains(activityId), state.toString());
+        return state;
+    }
+
+    private void processSegment(String id) throws InterruptedException {
+        retryExternalTask(() -> demo.processLabSegment(id));
+    }
+
+    private void processPrecheck(String id) throws InterruptedException {
+        retryExternalTask(() -> demo.processLabPrecheck(id));
+    }
+
+    private void retryExternalTask(Runnable action) throws InterruptedException {
+        IllegalStateException last = null;
+        for (int i = 0; i < 100; i++) {
+            try {
+                action.run();
+                return;
+            } catch (IllegalStateException e) {
+                last = e;
+                Thread.sleep(100);
+            }
+        }
+        throw last == null ? new IllegalStateException("External task was not created") : last;
     }
 
 }
