@@ -13,13 +13,13 @@
       <camunda:executionListener expression="${execution.setVariable(&#39;labLifecycle&#39;, &#39;ended&#39;)}" event="end" />
     </bpmn:extensionElements>
     <bpmn:startEvent id="lab_start" name="Application init">
-      <bpmn:documentation>Start qua API /lab/start. Dữ liệu mock cho phép thử mọi nhánh mà không gọi hệ thống ngoài.</bpmn:documentation>
+      <bpmn:documentation>Start qua API /lab/start. Dữ liệu đầu vào điều khiển các nhánh của flow.</bpmn:documentation>
     </bpmn:startEvent>
     <bpmn:subProcess id="lab_segment" name="Phân loại segment">
       <bpmn:documentation>Fork tạo hai token: send task gọi worker và receive task chờ message. Join chờ cả hai token. Input/output mapping minh họa phạm vi biến subprocess.</bpmn:documentation>
       <bpmn:extensionElements>
         <camunda:inputOutput>
-          <camunda:inputParameter name="requestedSegmentType">${mockSegmentType}</camunda:inputParameter>
+          <camunda:inputParameter name="requestedSegmentType">${segmentType}</camunda:inputParameter>
           <camunda:outputParameter name="isSegmentEvaluatedSuccess">${isSegmentEvaluatedSuccess}</camunda:outputParameter>
           <camunda:outputParameter name="segmentType">${segmentType}</camunda:outputParameter>
         </camunda:inputOutput>
@@ -32,6 +32,8 @@
         <bpmn:documentation>External task worker chỉ log, hoàn thành task và correlate message LabSegmentResult. asyncBefore tạo job trước điểm này.</bpmn:documentation>
         <bpmn:extensionElements>
           <camunda:inputOutput>
+            <camunda:inputParameter name="requestSegmentSuccess">${segmentSuccess}</camunda:inputParameter>
+            <camunda:inputParameter name="requestAutoCorrelate">${autoCorrelate}</camunda:inputParameter>
             <camunda:inputParameter name="requestType">${requestedSegmentType}</camunda:inputParameter>
             <camunda:outputParameter name="segmentWorkerResult">${isSegmentEvaluatedSuccess}</camunda:outputParameter>
           </camunda:inputOutput>
@@ -67,7 +69,7 @@
       <bpmn:documentation>External worker log kết quả. Input mapping tạo requestPrecheck; output mapping xuất workerResult. asyncAfter tạo job cho bước sau.</bpmn:documentation>
       <bpmn:extensionElements>
         <camunda:inputOutput>
-          <camunda:inputParameter name="requestPrecheck">${mockPrecheckPassed}</camunda:inputParameter>
+          <camunda:inputParameter name="requestPrecheck">${precheckPassed}</camunda:inputParameter>
           <camunda:outputParameter name="workerResult">${isPrecheckPassed}</camunda:outputParameter>
         </camunda:inputOutput>
         <camunda:properties>

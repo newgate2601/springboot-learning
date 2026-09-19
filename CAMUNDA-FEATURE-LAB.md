@@ -1,16 +1,84 @@
 # Camunda 7 feature lab: đọc Modeler và chạy từng bước
 
-Mở [`src/main/resources/processes/cashloan-feature-lab.bpmn`](src/main/resources/processes/cashloan-feature-lab.bpmn) bằng Camunda Modeler. Process ID là `CAKE_FEATURE_LAB`, tên hiển thị trong Cockpit là **Cashloan feature lab**. Đây là flow học tập độc lập với `CAKE_CASHLOAN` và `CAKE_CASHLOAN_LEARNING`: worker chỉ log và trả kết quả giả lập, flow dừng ở bước chuẩn bị chấm điểm.
+Mở [`src/main/resources/processes/cashloan-feature-lab.bpmn`](src/main/resources/processes/cashloan-feature-lab.bpmn) bằng Camunda Modeler. Process ID là `CAKE_FEATURE_LAB`, tên hiển thị trong Cockpit là **Cashloan feature lab**. Worker chỉ log và trả kết quả giả lập; flow dừng ở bước chuẩn bị chấm điểm.
 
 ## Chuẩn bị
 
 1. Bật Camunda Run 7 tại `http://localhost:8080` và PostgreSQL của app tại cổng 5432.
-2. Chạy `LearningApplication` với JDK 21 trong IDE hoặc dùng `.\mvnw.cmd spring-boot:run`. App dùng cổng 8086, tự deploy BPMN khi khởi động và poll external tasks mỗi khoảng 1 giây. Nếu Camunda Run khởi động sau app, khởi động lại app để deploy.
+2. Chạy `LearningApplication` với JDK 21 trong IDE hoặc dùng `.\mvnw.cmd spring-boot:run`. App dùng cổng 8086, tự deploy BPMN khi khởi động và poll external tasks theo `camunda.demo.poll-ms`. Cấu hình hiện tại là `100000` ms (100 giây). Nếu Camunda Run khởi động sau app, khởi động lại app để deploy.
 3. Trong Postman, chọn **Import → Raw text**, copy **một lệnh cURL** trong tài liệu, rồi chọn **Continue → Import**. Các lệnh gọi app `:8086`; app gọi Camunda REST `:8080/engine-rest`. Giữ app chạy để worker có thể xử lý.
 
 Nếu muốn chạy test tự động với Camunda Run đang bật, đặt `CAMUNDA_DEMO_IT=true` rồi chạy `.\mvnw.cmd test`. Test tạo instance thật cho các nhánh segment fail, Precheck fail, ngoại mạng, review và message thủ công.
 
-Mỗi request Start tạo **một process instance mới** và trả JSON dạng:
+## Service Overview
+
+`CashloanDemoController` cung cấp API để tạo và điều khiển instance của process `CAKE_FEATURE_LAB`. Base URL của app khi chạy local là:
+
+```text
+http://localhost:8086/api/v1/camunda-demo
+```
+
+App không chạy Camunda engine bên trong. Mỗi API gọi tiếp sang Camunda 7 REST API tại `http://localhost:8080/engine-rest`. Vì vậy phải bật Camunda Run trước khi sử dụng API. Code hiện không cấu hình authentication/authorization cho các endpoint lab.
+
+## Entry Points
+
+- `CashloanDemoController`: bốn HTTP API được mô tả bên dưới.
+- `CashloanDemo.deployOnStartup()`: chạy khi Spring Boot phát sự kiện `ApplicationReadyEvent`, đọc BPMN và deploy sang Camunda.
+- `CashloanDemo.work()`: scheduled worker fetch và xử lý external task theo `camunda.demo.poll-ms`.
+
+## API Specifications
+
+| Method | Endpoint | Khi nào gọi | Tác dụng |
+|---|---|---|---|
+| `POST` | `/lab/start` | Bắt đầu một case mới | Tạo một process instance `CAKE_FEATURE_LAB` với các biến đầu vào |
+| `GET` | `/lab/{id}` | Sau Start và trong lúc theo dõi flow | Đọc activity đã đi qua, outcome, user task đang chờ và process variables |
+| `POST` | `/lab/{id}/correlate-segment` | Chỉ khi Start với `autoCorrelate=false` và token đang chờ ở `lab_receive_segment` | Gửi message `LabSegmentResult` để receive task được đi tiếp |
+| `POST` | `/lab/{id}/complete-review` | Chỉ khi status có `waitingTaskId` của task `lab_manual_review` | Hoàn tất bước review thủ công để flow đi tới chấm điểm |
+
+### 1. Tạo process instance
+
+```http
+POST /api/v1/camunda-demo/lab/start
+Content-Type: application/json
+```
+
+Body không bắt buộc. Nếu không gửi body, gửi `{}`, hoặc trường có giá trị `null`, app dùng giá trị mặc định.
+
+| Trường | Kiểu | Mặc định | Tác dụng |
+|---|---|---:|---|
+| `segmentSuccess` | Boolean | `true` | Worker `lab-segment` trả kết quả phân loại thành công hay thất bại |
+| `precheckPassed` | Boolean | `true` | Worker `lab-precheck` trả kết quả Precheck đạt hay không đạt |
+| `segmentType` | String | `VTP_ON_NET` | `VTP_OFF_NET` đi nhánh bỏ qua chấm điểm; giá trị khác đi nhánh cần chấm điểm |
+| `autoCorrelate` | Boolean | `true` | `true`: worker tự gửi `LabSegmentResult`; `false`: flow chờ API correlate thủ công |
+
+Contract biến giữa API, BPMN và worker:
+
+| JSON request / process variable | Input mapping trong BPMN | Biến worker trả về | Nơi sử dụng tiếp |
+|---|---|---|---|
+| `segmentSuccess` | `requestSegmentSuccess` | `isSegmentEvaluatedSuccess` | Gateway `lab_segment_ok` |
+| `segmentType` | `requestedSegmentType` → `requestType` | `segmentType` | Gateway `lab_need_scoring` |
+| `precheckPassed` | `requestPrecheck` | `isPrecheckPassed` | Gateway `lab_precheck_ok` |
+| `autoCorrelate` | `requestAutoCorrelate` | Không có output | Quyết định tự gửi `LabSegmentResult` hay chờ API thủ công |
+
+Các tên khác nhau sau input mapping hoặc ở output là có chủ đích: chúng thuộc các scope/giai đoạn khác nhau của BPMN. Bốn field JSON đầu vào trùng chính xác với bốn process variable mà BPMN và worker sử dụng.
+
+Ví dụ case mặc định:
+
+```bash
+curl --location 'http://localhost:8086/api/v1/camunda-demo/lab/start' \
+  --header 'Content-Type: application/json' \
+  --data '{}'
+```
+
+Ví dụ case buộc chờ message thủ công:
+
+```bash
+curl --location 'http://localhost:8086/api/v1/camunda-demo/lab/start' \
+  --header 'Content-Type: application/json' \
+  --data '{"segmentSuccess":true,"precheckPassed":true,"segmentType":"VTP_ON_NET","autoCorrelate":false}'
+```
+
+Response thành công:
 
 ```json
 {
@@ -19,7 +87,170 @@ Mỗi request Start tạo **một process instance mới** và trả JSON dạng
 }
 ```
 
-Start trả ID sau khi engine tạo instance, không đợi mọi bước hoàn tất. Trong các cURL sau, thay `INSTANCE_ID` bằng `processInstanceId` của **đúng instance đang thử**. Nếu Get status còn `RUNNING`, đợi khoảng 1–2 giây rồi gọi lại. `outcome` là trường app suy ra từ end event đã đi qua; trong BPMN không có biến tên `outcome`.
+API trả ID ngay sau khi Camunda tạo instance, không đợi worker hoặc toàn bộ flow hoàn tất. Mỗi lần gọi tạo một instance mới. Tên bốn field trong request chính là tên process variable gửi sang Camunda: `segmentSuccess`, `precheckPassed`, `segmentType` và `autoCorrelate`.
+
+### 2. Xem trạng thái process instance
+
+```http
+GET /api/v1/camunda-demo/lab/{id}
+```
+
+Gọi API này sau Start để biết token đã đi qua đâu, flow đã kết thúc chưa và có đang chờ user task hay không.
+
+```bash
+curl --location 'http://localhost:8086/api/v1/camunda-demo/lab/INSTANCE_ID'
+```
+
+Response mẫu khi đang chờ review:
+
+```json
+{
+  "processInstanceId": "INSTANCE_ID",
+  "outcome": "RUNNING",
+  "visitedActivities": ["lab_start", "lab_segment", "lab_precheck", "lab_manual_review"],
+  "waitingTaskId": "TASK_ID",
+  "waitingTaskName": "Review chấm điểm",
+  "variables": {
+    "segmentSuccess": true,
+    "precheckPassed": true,
+    "segmentType": "VTP_ON_NET",
+    "autoCorrelate": true
+  }
+}
+```
+
+| Trường response | Luôn có | Ý nghĩa |
+|---|---|---|
+| `processInstanceId` | Có | ID nhận từ path |
+| `outcome` | Có | `RUNNING` hoặc ID của end event mà app nhận diện |
+| `visitedActivities` | Có | Danh sách activity lấy từ Camunda History; có thể chứa một activity nhiều lần |
+| `waitingTaskId` | Không | Chỉ có khi Camunda trả về ít nhất một user task đang chờ |
+| `waitingTaskName` | Không | Tên của user task đang chờ |
+| `variables` | Có | Các biến lịch sử của instance; nếu trùng tên, giá trị được đọc sau cùng sẽ ghi đè trong map |
+
+Các giá trị `outcome` có thể trả về:
+
+| Outcome | Ý nghĩa |
+|---|---|
+| `RUNNING` | Chưa đi qua end event mà app nhận diện; cũng có thể là ID không tồn tại vì code chưa phân biệt trường hợp này |
+| `lab_rejected_segment` | Phân loại segment thất bại |
+| `lab_rejected_precheck` | Precheck không đạt |
+| `lab_skip_scoring` | Khách hàng ngoại mạng, bỏ qua chấm điểm |
+| `lab_ready_for_scoring` | Review hoàn tất, flow đã tới bước chấm điểm |
+
+### 3. Gửi message kết quả segment thủ công
+
+```http
+POST /api/v1/camunda-demo/lab/{id}/correlate-segment
+```
+
+Chỉ gọi khi instance được Start với `autoCorrelate=false` và status cho thấy `visitedActivities` đã có `lab_receive_segment` nhưng chưa có `lab_precheck`. API gửi message `LabSegmentResult` kèm đúng `processInstanceId` sang Camunda.
+
+```bash
+curl --location --request POST \
+  'http://localhost:8086/api/v1/camunda-demo/lab/INSTANCE_ID/correlate-segment'
+```
+
+Response có cùng cấu trúc với API Get status. Nếu worker ở nhánh song song đã hoàn tất, parallel gateway hội tụ và flow tiếp tục sang Precheck. Nếu gọi khi instance không chờ đúng message, Camunda từ chối correlation và app hiện trả lỗi HTTP 500.
+
+### 4. Hoàn tất review thủ công
+
+```http
+POST /api/v1/camunda-demo/lab/{id}/complete-review
+```
+
+Chỉ gọi sau khi Get status trả `waitingTaskId` và `waitingTaskName="Review chấm điểm"`. App tìm task có definition key `lab_manual_review`, hoàn tất task đầu tiên tìm thấy, rồi đọc và trả trạng thái mới.
+
+```bash
+curl --location --request POST \
+  'http://localhost:8086/api/v1/camunda-demo/lab/INSTANCE_ID/complete-review'
+```
+
+Với flow bình thường, response sau khi hoàn tất có `outcome=lab_ready_for_scoring`. Nếu chưa tới review, instance đã kết thúc ở nhánh khác, ID sai, hoặc API được gọi lần thứ hai, app ném `IllegalStateException` và hiện trả HTTP 500 với thông báo `No review task for process ...`.
+
+### Validation và lỗi chung
+
+- Controller không dùng `@Valid` và request DTO không có validation annotation. `segmentType` bất kỳ đều được nhận; chỉ đúng `VTP_OFF_NET` mới chọn nhánh ngoại mạng.
+- Field không thuộc bốn tên `segmentSuccess`, `precheckPassed`, `segmentType`, `autoCorrelate` bị từ chối với HTTP 400, tránh trường hợp gõ sai nhưng app âm thầm dùng giá trị mặc định.
+- JSON sai cú pháp hoặc sai kiểu dữ liệu có thể trả HTTP 400 trước khi vào business logic.
+- Camunda chưa chạy, process chưa được deploy, hoặc Camunda REST trả lỗi sẽ làm API tương ứng trả HTTP 500 vì code chưa có exception handler riêng cho module này.
+- Get status với ID không tồn tại hiện có thể trả `outcome=RUNNING`, `visitedActivities=[]`, `variables={}`; không nên dùng `RUNNING` một mình để kết luận ID hợp lệ.
+- Các API không khai báo transaction database và không ghi entity/repository của ứng dụng.
+- Worker complete external task và correlate message bằng hai Camunda REST request độc lập. Nếu complete thành công nhưng auto-correlation lỗi, instance sẽ chờ ở `lab_receive_segment`; dùng API `/correlate-segment` để tiếp tục.
+
+## Call Stack Trace
+
+```text
+POST /lab/start
+└── CashloanDemoController.startLab()
+    └── CashloanDemo.startLab()
+        └── POST Camunda /process-definition/key/CAKE_FEATURE_LAB/start
+
+GET /lab/{id}
+└── CashloanDemoController.labStatus()
+    └── CashloanDemo.labStatus()
+        ├── CashloanDemo.status()
+        │   └── GET Camunda /history/activity-instance
+        ├── GET Camunda /task
+        └── GET Camunda /history/variable-instance
+
+POST /lab/{id}/correlate-segment
+└── CashloanDemoController.correlateLabSegment()
+    ├── CashloanDemo.correlateLabSegment()
+    │   └── POST Camunda /message
+    └── CashloanDemo.labStatus()
+
+POST /lab/{id}/complete-review
+└── CashloanDemoController.completeLabReview()
+    ├── CashloanDemo.completeLabReview()
+    │   ├── GET Camunda /task?taskDefinitionKey=lab_manual_review
+    │   └── POST Camunda /task/{taskId}/complete
+    └── CashloanDemo.labStatus()
+```
+
+## Entity Design
+
+Feature lab không có `@Entity`, DTO persistence hoặc repository riêng. Trạng thái process, task và variables nằm trong Camunda; app chỉ đọc/ghi chúng qua Camunda REST API. `StartRequest` là request model nội bộ của controller, không phải database entity.
+
+## Transaction Analysis
+
+Module không dùng `@Transactional`. Mỗi lần gọi Camunda REST là một transaction độc lập ở phía Camunda. Đặc biệt, complete `lab-segment` và correlate `LabSegmentResult` không atomic: bước đầu có thể thành công trong khi bước sau thất bại.
+
+## Business Flow
+
+1. Gọi Start để tạo instance và lấy `processInstanceId`.
+2. Worker poll hai topic `lab-segment` và `lab-precheck`; khoảng poll hiện do `camunda.demo.poll-ms=100000` quyết định.
+3. Nếu `autoCorrelate=true`, worker tự correlate kết quả segment. Nếu là `false`, gọi API correlate khi receive task đang chờ.
+4. Gọi Get status để theo dõi. Với nhánh cần chấm điểm, chờ đến khi response có `waitingTaskId`.
+5. Gọi Complete review. Sau đó gọi Get status lần cuối để xác nhận outcome.
+
+## Data Flow
+
+```text
+Client/Postman
+  -> CashloanDemoController
+  -> CashloanDemo
+  -> Camunda 7 REST API
+  -> process CAKE_FEATURE_LAB
+  -> external task worker trong CashloanDemo
+  -> Camunda History/Task/Message API
+  -> JSON response về client
+```
+
+## Side Effects
+
+- Tạo deployment và process instance trong Camunda.
+- Lock/complete external task `lab-segment` và `lab-precheck`.
+- Correlate message `LabSegmentResult` và complete user task `lab_manual_review`.
+- Ghi process variables, activity history và log ứng dụng.
+- Không insert/update/delete entity của database Spring Boot trong module này.
+
+## Assumptions
+
+- `INSTANCE_ID` trong các lệnh cURL phải được thay bằng ID của đúng case đang thử.
+- Camunda Run dùng cổng 8080, Spring Boot app dùng cổng 8086 theo cấu hình hiện tại.
+- Tài liệu mô tả đúng hành vi code hiện tại, bao gồm cả việc chưa có validation và error mapping riêng.
+- Nếu muốn quan sát nhanh khi học, có thể giảm `camunda.demo.poll-ms`; nếu giữ `100000`, một external task có thể chờ tới khoảng 100 giây giữa hai lần poll.
 
 **Thứ tự học:** chạy case mặc định từ mục 1 đến mục 6; thử các nhánh thất bại ở mục 3, 4 và nhánh ngoại mạng ở mục 5 bằng instance mới. Cuối cùng thử receive task chờ message thủ công ở mục 2.
 
@@ -35,18 +266,18 @@ Process có Documentation giải thích mục tiêu học tập, cùng extension
 
 **Vì sao có listener và property ở đây?** Execution listener là callback gắn vào vòng đời process/activity/đường nối: `start` khi vào, `end` khi rời, `take` khi đi qua đường nối. Nó có thể ghi audit hoặc khởi tạo biến; lab chỉ ghi `labLifecycle` để bạn quan sát. Nếu xóa listener, các gateway vẫn chọn cùng nhánh nhưng không còn dấu vết này. Extension properties là cặp key/value tùy ý; Camunda không tự hiểu `demoCategory` hay `owner` là luật nghiệp vụ. Chúng chỉ có tác dụng nếu code chủ động đọc. Documentation cũng chỉ lưu lời giải thích trong BPMN. History TTL `30` phục vụ dọn dẹp lịch sử sau khi instance kết thúc nếu engine bật cleanup; nó không tạo timer hay ép task hoàn tất. [History cleanup](https://docs.camunda.org/manual/7.24/user-guide/process-engine/history/history-cleanup/).
 
-**Click Start Event** `lab_start`: trong file BPMN, ô này chỉ có ID, tên **Application init** và Documentation. Nó **không khai báo** `mockSegmentSuccess`, `mockPrecheckPassed`, `mockSegmentType`, `mockAutoCorrelate`; cũng không có form hoặc Input/Output mapping. Vì vậy bạn không thấy bốn tên `mock...` trong ô Start Event là đúng.
+**Click Start Event** `lab_start`: trong file BPMN, ô này chỉ có ID, tên **Application init** và Documentation. Nó không có form hoặc Input/Output mapping; bốn process variable đầu vào được API gửi cùng lúc tạo instance.
 
 Panel **Process variables** trong ảnh của bạn đang liệt kê 5 tên `isSegmentEvaluatedSuccess`, `reviewCompleted`, `segmentType`, `segmentWorkerResult`, `workerResult`. Chúng trùng với các **output parameter** khai báo ở subprocess/task trong BPMN. Đây là danh sách Modeler đọc được từ mô hình lúc thiết kế; nó **không phải** danh sách đầy đủ biến của một instance đang chạy. Biến được app truyền qua REST khi Start và biến listener ghi lúc chạy có thể không hiện trong danh sách đó.
 
-**Nguồn của bốn biến mock là Spring Boot app**, không phải cấu hình của ô Application init: controller nhận body cURL, rồi `CashloanDemo.startProcess()` tạo `variables` trong request gọi Camunda `/process-definition/key/CAKE_FEATURE_LAB/start`. Các trường được chuyển như sau:
+**Nguồn của bốn biến đầu vào là Spring Boot app**: controller nhận body cURL, rồi `CashloanDemo.startLab()` tạo `variables` trong request gọi Camunda `/process-definition/key/CAKE_FEATURE_LAB/start`. Các trường được chuyển như sau:
 
-- `segmentSuccess` → Boolean `mockSegmentSuccess`, mặc định `true`. Worker phân loại dùng nó để giả lập thành công/thất bại.
-- `precheckPassed` → Boolean `mockPrecheckPassed`, mặc định `true`. Worker Precheck dùng nó để giả lập đạt/không đạt.
-- `segmentType` → String `mockSegmentType`, mặc định `VTP_ON_NET`. Giá trị `VTP_OFF_NET` sẽ chọn nhánh ngoại mạng.
-- `autoCorrelate` → Boolean `mockAutoCorrelate`, mặc định `true`. `false` buộc receive task chờ bạn tự gửi message.
+- `segmentSuccess`: Boolean, mặc định `true`. Worker phân loại dùng nó để xác định thành công/thất bại.
+- `precheckPassed`: Boolean, mặc định `true`. Worker Precheck dùng nó để xác định đạt/không đạt.
+- `segmentType`: String, mặc định `VTP_ON_NET`. Giá trị `VTP_OFF_NET` sẽ chọn nhánh ngoại mạng.
+- `autoCorrelate`: Boolean, mặc định `true`. `false` buộc receive task chờ bạn tự gửi message.
 
-**Cách đọc expression trước khi chạy:** Camunda 7 dùng Expression Language (JUEL), không phải JavaScript trong Postman. Engine đánh giá `${...}` đúng lúc token tới vị trí có cấu hình. Tên biến trong scope hiện tại có thể dùng trực tiếp; `execution` là đối tượng thực thi BPMN, còn `task` là user task trong task listener. Cú pháp này có thể **đọc giá trị** (`${mockSegmentType}`), **trả Boolean để chọn nhánh** (`${isPrecheckPassed == true}`), hoặc **gọi phương thức ghi biến** (`${execution.setVariable('labLifecycle', 'started')}`). Vì vậy phải xem expression nằm ở input mapping, condition hay listener trước khi hiểu nó làm gì. [Expression Language](https://docs.camunda.org/manual/7.24/user-guide/process-engine/expression-language/unified-expression-language/).
+**Cách đọc expression trước khi chạy:** Camunda 7 dùng Expression Language (JUEL), không phải JavaScript trong Postman. Engine đánh giá `${...}` đúng lúc token tới vị trí có cấu hình. Tên biến trong scope hiện tại có thể dùng trực tiếp; `execution` là đối tượng thực thi BPMN, còn `task` là user task trong task listener. Cú pháp này có thể **đọc giá trị** (`${segmentType}`), **trả Boolean để chọn nhánh** (`${isPrecheckPassed == true}`), hoặc **gọi phương thức ghi biến** (`${execution.setVariable('labLifecycle', 'started')}`). Vì vậy phải xem expression nằm ở input mapping, condition hay listener trước khi hiểu nó làm gì. [Expression Language](https://docs.camunda.org/manual/7.24/user-guide/process-engine/expression-language/unified-expression-language/).
 
 Tạo case mặc định:
 
@@ -54,29 +285,29 @@ Tạo case mặc định:
 curl --location 'http://localhost:8086/api/v1/camunda-demo/lab/start' --header 'Content-Type: application/json' --data '{}'
 ```
 
-Camunda nhận và lưu bốn biến mock **cùng lúc tạo instance**, process listener đặt `labLifecycle=started`, rồi token từ Start Event đi vào subprocess. Response cURL này chỉ có `processInstanceId` và `statusUrl`. Dùng cURL Get status ở mục 6 để xem `variables.mockSegmentSuccess`, `variables.mockPrecheckPassed`, `variables.mockSegmentType`, `variables.mockAutoCorrelate` ở **runtime**; các giá trị đó không cần xuất hiện trong panel Process variables của Modeler. Mình đã kiểm tra một instance thật trong Camunda History: cả bốn biến mock đều được lưu.
+Camunda nhận và lưu bốn biến đầu vào **cùng lúc tạo instance**, process listener đặt `labLifecycle=started`, rồi token từ Start Event đi vào subprocess. Response cURL này chỉ có `processInstanceId` và `statusUrl`. Dùng cURL Get status ở mục 6 để xem `variables.segmentSuccess`, `variables.precheckPassed`, `variables.segmentType`, `variables.autoCorrelate` ở runtime.
 
 Từ đây, mở ô **Phân loại segment** trong Modeler để theo token vào nhóm bước đầu tiên.
 
 ### 2. Subprocess “Phân loại segment”: fork, Send Task, Receive Task và join
 
-**Chọn subprocess `lab_segment`.** Nó gom các bước phân loại trong cùng một phạm vi, không phải một worker task tự thân. Input mapping `requestedSegmentType = ${mockSegmentType}` chạy **lúc vào**: nếu request gửi `VTP_OFF_NET`, biến `requestedSegmentType` trong phạm vi subprocess nhận đúng giá trị đó. Có `${...}` nghĩa là **đọc biến**; viết chữ `mockSegmentType` không có `${...}` sẽ tạo literal String `"mockSegmentType"`. Output mapping chạy **lúc rời** subprocess: `isSegmentEvaluatedSuccess = ${isSegmentEvaluatedSuccess}` và `segmentType = ${segmentType}` đưa hai kết quả ra ngoài để gateway trên sơ đồ chính đọc. Listener start/end ghi `labSegmentLifecycle=started/ended`. Listener end chỉ chạy khi subprocess hoàn tất. Documentation giải thích cặp nhánh song song.
+**Chọn subprocess `lab_segment`.** Nó gom các bước phân loại trong cùng một phạm vi, không phải một worker task tự thân. Input mapping `requestedSegmentType = ${segmentType}` chạy **lúc vào**: nếu request gửi `VTP_OFF_NET`, biến `requestedSegmentType` trong phạm vi subprocess nhận đúng giá trị đó. Có `${...}` nghĩa là **đọc biến**; viết chữ `segmentType` không có `${...}` sẽ tạo literal String `"segmentType"`. Output mapping chạy **lúc rời** subprocess: `isSegmentEvaluatedSuccess = ${isSegmentEvaluatedSuccess}` và `segmentType = ${segmentType}` đưa hai kết quả ra ngoài để gateway trên sơ đồ chính đọc. Listener start/end ghi `labSegmentLifecycle=started/ended`. Listener end chỉ chạy khi subprocess hoàn tất. Documentation giải thích cặp nhánh song song.
 
 **Mở subprocess**, đi từ start event con đến Parallel Gateway `lab_segment_fork`. Gateway này không đọc biến và không kiểm tra điều kiện; nó tách một token thành hai nhánh cùng hoạt động:
 
 1. **Send Task “Gửi phân loại”** (`lab_send_segment`) có Implementation = External và Topic `lab-segment`. Engine tạo external task; Spring Boot worker fetch đúng topic, log và gọi Complete qua REST. `Async before=true` tạo một **job trước khi vào task**; job executor của Camunda tiếp tục token tới việc tạo external task. Mục đích của async là tạo ranh giới giao dịch và điểm retry, nên Start có thể trả ID trước khi worker log. Job executor của Camunda và external worker Spring Boot là hai thành phần khác nhau.
 
-   Input mapping của send task là `requestType = ${requestedSegmentType}`: copy giá trị từ subprocess để worker thấy tên input dành cho task. Worker log `mappedInput=requestType`, đồng thời đọc `mockSegmentSuccess` và `mockSegmentType` để giả lập kết quả; nó trả Boolean `isSegmentEvaluatedSuccess` và String `segmentType`. Không có thuật toán phân loại thật. Output mapping `segmentWorkerResult = ${isSegmentEvaluatedSuccess}` sao chép Boolean đã trả để bạn quan sát mapping; gateway không đọc `segmentWorkerResult`.
+Input mapping của send task tạo ba task input: `requestSegmentSuccess = ${segmentSuccess}`, `requestAutoCorrelate = ${autoCorrelate}` và `requestType = ${requestedSegmentType}`. Worker đọc đúng ba input đã map để xác định kết quả, loại segment và việc tự correlate; nó trả Boolean `isSegmentEvaluatedSuccess` và String `segmentType`. Output mapping `segmentWorkerResult = ${isSegmentEvaluatedSuccess}` sao chép Boolean đã trả để bạn quan sát mapping; gateway không đọc `segmentWorkerResult`.
 
-   Extension properties của task là `demoFeature=send-task-external`, `demoOwner=segment-worker`. Worker yêu cầu `includeExtensionProperties`, log map này và ghi biến `labExtensionFeature=send-task-external`. Đây là ví dụ property **được code sử dụng**, khác hai property ở process. Execution listeners start/end ghi `labSendEvent=started/ended`. Documentation nói task chỉ log, complete và correlate message. Sau khi hoàn thành external task, worker tự gửi message `LabSegmentResult` nếu `mockAutoCorrelate=true`; nếu `false`, nó log đang chờ.
+Extension properties của task là `demoFeature=send-task-external`, `demoOwner=segment-worker`. Worker yêu cầu `includeExtensionProperties`, log map này và ghi biến `labExtensionFeature=send-task-external`. Đây là ví dụ property **được code sử dụng**, khác hai property ở process. Execution listeners start/end ghi `labSendEvent=started/ended`. Documentation nói task chỉ log, complete và correlate message. Sau khi hoàn thành external task, worker tự gửi message `LabSegmentResult` nếu `autoCorrelate=true`; nếu `false`, nó log đang chờ.
 
-2. **Receive Task “Nhận kết quả”** (`lab_receive_segment`) có Message reference `Message_LabSegmentResult`; tên message dùng khi correlate là `LabSegmentResult`. Token đứng đây cho tới khi nhận đúng message của đúng `processInstanceId`. Nó không tự kiểm tra `mockSegmentSuccess`, không phải user task và không có `waitingTaskId` trong Tasklist. Documentation mô tả điểm chờ. Message tới thì token đi tiếp, không tạo biến kết quả mới; kết quả segment đã được worker trả ở nhánh send.
+2. **Receive Task “Nhận kết quả”** (`lab_receive_segment`) có Message reference `Message_LabSegmentResult`; tên message dùng khi correlate là `LabSegmentResult`. Token đứng đây cho tới khi nhận đúng message của đúng `processInstanceId`. Nó không tự kiểm tra `segmentSuccess`, không phải user task và không có `waitingTaskId` trong Tasklist. Documentation mô tả điểm chờ. Message tới thì token đi tiếp, không tạo biến kết quả mới; kết quả segment đã được worker trả ở nhánh send.
 
 **Parallel Gateway `lab_segment_join`** có hai đường vào, phải đợi cả token send và token receive. Worker hoàn thành task nhưng chưa có message thì vẫn chưa sang Precheck; message tới nhưng worker chưa xong cũng vẫn đợi. End Event con `lab_segment_end` chỉ kết thúc subprocess, không phải toàn process. Khi đó output mapping của subprocess đưa kết quả ra gateway kế tiếp.
 
-**Vì sao cần Input/Output mapping?** Trong `camunda:inputParameter`, `name` là tên biến **bên trong activity**, còn value có thể là literal hoặc expression đọc scope bên ngoài. Mapping chạy khi token **vào**. Trong `camunda:outputParameter`, `name` là biến cần ghi ở scope **bên ngoài**, còn value được lấy/tính từ activity khi token **rời**. Cơ chế này cho phép cùng một task dùng tên input `requestType` trong nhiều process, dù nơi gọi đặt biến gốc khác nhau. Ở lab, đường đi là `mockSegmentType → requestedSegmentType → requestType`; worker trả `isSegmentEvaluatedSuccess`, output mapping tạo thêm `segmentWorkerResult`, rồi subprocess đưa kết quả ra gateway. `segmentWorkerResult` là bản sao để quan sát, không phải biến điều kiện của gateway. Value có `${...}` đọc/tính expression; value như `REJECTED_SEGMENT` không có `${...}` là literal. History API có thể còn hiển thị dấu vết biến từ scope đã kết thúc, nên xem cùng `visitedActivities` để biết biến được tạo ở bước nào. [Input/output mapping](https://docs.camunda.org/manual/7.24/user-guide/process-engine/variables/#inputoutput-variable-mapping).
+**Vì sao cần Input/Output mapping?** Trong `camunda:inputParameter`, `name` là tên biến **bên trong activity**, còn value có thể là literal hoặc expression đọc scope bên ngoài. Mapping chạy khi token **vào**. Trong `camunda:outputParameter`, `name` là biến cần ghi ở scope **bên ngoài**, còn value được lấy/tính từ activity khi token **rời**. Cơ chế này cho phép cùng một task dùng tên input `requestType` trong nhiều process, dù nơi gọi đặt biến gốc khác nhau. Ở lab, đường đi là `segmentType → requestedSegmentType → requestType`; worker trả `isSegmentEvaluatedSuccess`, output mapping tạo thêm `segmentWorkerResult`, rồi subprocess đưa kết quả ra gateway. `segmentWorkerResult` là bản sao để quan sát, không phải biến điều kiện của gateway. Value có `${...}` đọc/tính expression; value như `REJECTED_SEGMENT` không có `${...}` là literal. History API có thể còn hiển thị dấu vết biến từ scope đã kết thúc, nên xem cùng `visitedActivities` để biết biến được tạo ở bước nào. [Input/output mapping](https://docs.camunda.org/manual/7.24/user-guide/process-engine/variables/#inputoutput-variable-mapping).
 
-**Vì sao vừa External Task vừa Async?** External Task là công việc Camunda giao cho **worker ở ngoài engine**. Implementation `External` tạo task; Topic `lab-segment` là tên worker phải đăng ký để fetch. Nếu sửa Topic trên Modeler nhưng không sửa worker, task sẽ chờ mãi. Async before là một **ranh giới giao dịch bên trong engine**: Camunda lưu trạng thái, tạo job trước Send Task, rồi job executor tiếp tục. Nó cho điểm lưu/retry và có thể làm Start trả ID trước khi task xuất hiện. Async không tự xử lý external task; job executor Camunda khác worker Spring Boot. Flow gốc `cake-ob-fixed` dùng `camunda:class`, nghĩa là engine cần Java class trên classpath của chính engine. Lab dùng External vì Camunda Run và app chạy riêng. [External tasks](https://docs.camunda.org/manual/7.24/user-guide/process-engine/external-tasks/) và [async continuations](https://docs.camunda.org/manual/7.24/user-guide/process-engine/transactions-in-processes/#asynchronous-continuations).
+**Vì sao vừa External Task vừa Async?** External Task là công việc Camunda giao cho **worker ở ngoài engine**. Implementation `External` tạo task; Topic `lab-segment` là tên worker phải đăng ký để fetch. Nếu sửa Topic trên Modeler nhưng không sửa worker, task sẽ chờ mãi. Async before là một **ranh giới giao dịch bên trong engine**: Camunda lưu trạng thái, tạo job trước Send Task, rồi job executor tiếp tục. Nó cho điểm lưu/retry và có thể làm Start trả ID trước khi task xuất hiện. Async không tự xử lý external task; job executor Camunda khác worker Spring Boot. Lab dùng External vì Camunda Run và app chạy riêng. [External tasks](https://docs.camunda.org/manual/7.24/user-guide/process-engine/external-tasks/) và [async continuations](https://docs.camunda.org/manual/7.24/user-guide/process-engine/transactions-in-processes/#asynchronous-continuations).
 
 **Vì sao có Receive Task và correlation?** BPMN message có ID `Message_LabSegmentResult` để file BPMN tham chiếu, còn name `LabSegmentResult` là giá trị runtime gửi tới Camunda Message Correlation API. App phải gửi đúng `messageName` và `processInstanceId` để đánh thức đúng execution đang chờ. Đây là cách một sự kiện bên ngoài báo “kết quả đã về”; nó không tự đọc biến rồi tiếp tục. Hai nhánh send/receive cùng phải xong trước join: chỉ có kết quả worker mà thiếu message thì chưa chạy Precheck. Message `LabSubmitted` gần cuối là message khác, không đánh thức receive task này.
 
@@ -98,7 +329,7 @@ Khi hai nhánh đã hội tụ, output mapping của subprocess đưa kết qu�
 
 ### 3. Gateway “Segment thành công?” và end event phân loại thất bại
 
-**Chọn Exclusive Gateway `lab_segment_ok`**, rồi chọn riêng đường **Yes**: condition của đường nối là `${isSegmentEvaluatedSuccess == true}`. Expression này trả Boolean; `==` là so sánh, không phải gán giá trị. Biến được đọc là kết quả worker đã qua output mapping của subprocess, **không phải** `mockSegmentSuccess` đầu vào. Đường **No** (`lab_segment_no`) là Default flow: khi Yes không đúng, engine đi No. Gateway không tự tạo biến.
+**Chọn Exclusive Gateway `lab_segment_ok`**, rồi chọn riêng đường **Yes**: condition của đường nối là `${isSegmentEvaluatedSuccess == true}`. Expression này trả Boolean; `==` là so sánh, không phải gán giá trị. Biến được đọc là kết quả worker đã qua output mapping của subprocess, **không phải** `segmentSuccess` đầu vào. Đường **No** (`lab_segment_no`) là Default flow: khi Yes không đúng, engine đi No. Gateway không tự tạo biến.
 
 **Gateway để làm gì?** Parallel Gateway ở mục 2 không đọc biến: fork tạo hai token, join đợi đủ hai token. Exclusive Gateway ở đây thì chọn **một** đường theo condition expression đặt trên **sequence flow**, không đặt trong worker. Worker chỉ tạo biến cho expression đọc. Default flow là đường dự phòng khi các condition khác không đúng, vì thế No không cần thêm `${isSegmentEvaluatedSuccess == false}`. `==` so sánh, còn một expression như `${execution.setVariable(...)}` ở listener **ghi biến**; cùng cú pháp `${...}` nhưng mục đích khác. Nếu tên biến trong condition sai hoặc không có, engine có thể lỗi hoặc đi khác dự kiến; kiểm tra biến worker trả và job/incident trong Cockpit khi sửa flow.
 
@@ -114,7 +345,7 @@ Với giá trị mặc định `segmentSuccess=true`, đường Yes được ch�
 
 ### 4. Send Task “Precheck” và gateway “Precheck đạt?”
 
-Chỉ instance có `isSegmentEvaluatedSuccess=true` mới tới Send Task `lab_precheck`. Nó có Implementation = External, Topic `lab-precheck`: worker app fetch theo topic, log và complete. Input mapping `requestPrecheck = ${mockPrecheckPassed}` chuẩn bị Boolean lúc vào task. Worker log `mappedInput=requestPrecheck`, đọc `mockPrecheckPassed` và trả Boolean `isPrecheckPassed`. Output mapping `workerResult = ${isPrecheckPassed}` sao chép kết quả để quan sát; gateway phía sau dùng `isPrecheckPassed`, không dùng `workerResult`.
+Chỉ instance có `isSegmentEvaluatedSuccess=true` mới tới Send Task `lab_precheck`. Nó có Implementation = External, Topic `lab-precheck`: worker app fetch theo topic, log và complete. Input mapping `requestPrecheck = ${precheckPassed}` chuẩn bị Boolean lúc vào task. Worker đọc đúng input đã map `requestPrecheck` và trả Boolean `isPrecheckPassed`. Output mapping `workerResult = ${isPrecheckPassed}` sao chép kết quả để quan sát; gateway phía sau dùng `isPrecheckPassed`, không dùng `workerResult`.
 
 Task này có `Async after=true`: sau khi task hoàn tất, Camunda tạo job **trước khi đi đường ra tới gateway**. Mục đích vẫn là ranh giới giao dịch/điểm retry, nhưng nằm **sau** task, khác Async before của send segment. Worker đã log `Completed lab-precheck` mà Get status chưa có end event thì có thể job executor còn đang tiếp tục. Extension property `demoFeature=async-after-and-output-mapping` được worker đọc và ghi vào `labExtensionFeature`; nó ghi đè giá trị `send-task-external` của bước trước. Execution listeners start/end ghi `labPrecheckEvent=started/ended`. Documentation mô tả input/output/async.
 

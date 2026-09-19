@@ -18,14 +18,6 @@ class CashloanDemoIntegrationTests {
     @Autowired private CashloanDemo demo;
 
     @Test
-    void routesAllFirstStepOutcomes() throws InterruptedException {
-        assertOutcome(false, true, "VTP_ON_NET", "evaluate_customer_segment_fail");
-        assertOutcome(true, false, "VTP_ON_NET", "precheck_1_vds_fail");
-        assertOutcome(true, true, "VTP_OFF_NET", "skip_scoring");
-        assertOutcome(true, true, "VTP_ON_NET", "ready_for_scoring");
-    }
-
-    @Test
     void featureLabCoversMessagesMappingsListenersAndUserTask() throws InterruptedException {
         assertLabOutcome(false, true, "VTP_ON_NET", "lab_rejected_segment");
         assertLabOutcome(true, false, "VTP_ON_NET", "lab_rejected_precheck");
@@ -87,17 +79,4 @@ class CashloanDemoIntegrationTests {
         return state;
     }
 
-    private void assertOutcome(boolean segment, boolean precheck, String type, String expected) throws InterruptedException {
-        String id = demo.start(segment, precheck, type);
-        for (int i = 0; i < 40; i++) {
-            demo.work();
-            Map<String, Object> state = demo.status(id);
-            if (!"RUNNING".equals(state.get("outcome"))) {
-                assertEquals(expected, state.get("outcome"), state.toString());
-                return;
-            }
-            Thread.sleep(100);
-        }
-        assertEquals(expected, demo.status(id).get("outcome"), "Process did not finish: " + id);
-    }
 }

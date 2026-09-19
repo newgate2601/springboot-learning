@@ -1,5 +1,6 @@
 package com.example.learning.camunda;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,25 +20,11 @@ public class CashloanDemoController {
         this.demo = demo;
     }
 
-    @PostMapping("/start")
-    public Map<String, Object> start(@RequestBody(required = false) StartRequest input) {
-        if (input == null) input = new StartRequest();
-        String id = demo.start(input.segmentSuccess, input.precheckPassed, input.segmentType);
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("processInstanceId", id);
-        response.put("statusUrl", "/api/v1/camunda-demo/" + id);
-        return response;
-    }
-
-    @GetMapping("/{id}")
-    public Map<String, Object> status(@PathVariable String id) {
-        return demo.status(id);
-    }
-
     @PostMapping("/lab/start")
     public Map<String, Object> startLab(@RequestBody(required = false) StartRequest input) {
         if (input == null) input = new StartRequest();
-        String id = demo.startLab(input.segmentSuccess, input.precheckPassed, input.segmentType, input.autoCorrelate);
+        String id = demo.startLab(input.segmentSuccess, input.precheckPassed,
+                input.segmentType, input.autoCorrelate);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("processInstanceId", id);
         response.put("statusUrl", "/api/v1/camunda-demo/lab/" + id);
@@ -66,5 +53,10 @@ public class CashloanDemoController {
         public Boolean precheckPassed;
         public String segmentType;
         public Boolean autoCorrelate;
+
+        @JsonAnySetter
+        public void rejectUnknownField(String name, Object value) {
+            throw new IllegalArgumentException("Unknown request field: " + name);
+        }
     }
 }
