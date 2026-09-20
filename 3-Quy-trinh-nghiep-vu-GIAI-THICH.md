@@ -360,6 +360,233 @@ Nếu khách đồng ý, khách chọn **Ký hợp đồng** (`6.2`). Hệ thố
 
 Sau khi OTP xác thực thành công, hệ thống tách theo đối tác: **Cake** chuyển ví sang trạng thái "Chờ phê duyệt **lần 2** - Signed" (`12.1`), còn **VietCredit** chuyển sang "Chờ phê duyệt - Signed" (`12.2`, không có "lần 2"). Tên trạng thái khác nhau này khớp với điều đã thấy ở mục 3.2: chỉ Cake có thêm một bước "phê duyệt lần 1 (unsigned)" trước khi ký (`17.1` ở mục 3.2), nên tới đây mới gọi là "lần 2"; VietCredit không có bước phê duyệt trước ký nên chỉ có một lần phê duyệt duy nhất, xảy ra sau khi ký. Cuối cùng, đối tác gọi callback để phê duyệt (lần phê duyệt cuối) và báo trạng thái ví đã **Active** (`13`), hệ thống cập nhật lại cho khách biết ví đã sẵn sàng sử dụng (`14`).
 
+## 4. Biểu đồ trạng thái
+
+Mục 3 ở trên mô tả các **service gọi nhau như thế nào** (Miniapp gọi Lending, Lending gọi Lender, Lender gọi đối tác...). Mục này mô tả một góc khác: **một khoản vay đi qua những trạng thái (status) nào** trong suốt "đường đời" của nó, từ lúc khách bắt đầu đăng ký tới khi khoản vay kết thúc (đóng, quá hạn, hoặc bị từ chối/hủy ở đâu đó giữa đường). Có hai sơ đồ trạng thái riêng cho VC (VietCredit) và Cake, vì hai đối tác này **thẩm định và ký hợp đồng theo thứ tự khác nhau** — điều này đã được nhắc ở mục 3.3, và sơ đồ trạng thái dưới đây cho thấy rõ hơn tại sao lại khác.
+
+Tin vui là phần đầu — từ lúc khách bấm đăng ký tới lúc `SUBMIT` — **giống nhau hoàn toàn giữa VC và Cake** (cùng một chuỗi lọc điều kiện), nên chỉ cần một sơ đồ chung. Hai sơ đồ chỉ tách ra **sau** `SUBMIT`.
+
+### 4.1. Giai đoạn 1 — Lọc điều kiện (chung cho cả VC và Cake)
+
+**Phần 1a — Lọc segment, VDS, credit, lender (trước eKYC):**
+
+<img src="./images/4.1a-loc-dieu-kien-phan1.png" alt="Giai đoạn 1a: lọc điều kiện phần 1" width="1300" />
+
+<details>
+<summary>Xem mã Mermaid (nếu muốn sửa lại sơ đồ)</summary>
+
+```mermaid
+flowchart LR
+    start((KH chọn<br/>đăng ký vay)) --> init1["INIT<br/>(sub_status = null)"]
+    init1 --> seg{"Thỏa<br/>segment?"}
+    seg -- không --> rej1(["REJECTED<br/>unsuitable_segment"])
+    seg -- có --> vds{"Precheck<br/>VDS?"}
+    vds -- không --> rej2(["REJECTED<br/>pre_screening_vds_fail"])
+    vds -- có --> credit{"Đạt điểm<br/>credit?"}
+    credit -- không --> rej3(["REJECTED<br/>credit_fail"])
+    credit -- có --> lender{"Precheck<br/>lender?"}
+    lender -- không --> rej4(["REJECTED<br/>pre_screening_lender_fail"])
+    lender -- có --> init2["INIT<br/>(pre_screening_pass)"]
+```
+
+</details>
+
+**Phần 1b — eKYC, xác nhận khoản vay & Submit:**
+
+<img src="./images/4.1b-loc-dieu-kien-phan2.png" alt="Giai đoạn 1b: eKYC, xác nhận vay và Submit" width="1300" />
+
+<details>
+<summary>Xem mã Mermaid (nếu muốn sửa lại sơ đồ)</summary>
+
+```mermaid
+flowchart LR
+    init2["INIT<br/>(pre_screening_pass)"] --> ekyc{"eKYC<br/>pass?"}
+    ekyc -- không --> rej5(["REJECTED<br/>ekyc_fail"])
+    ekyc -- có --> init3["INIT<br/>(ekyc_pass)"]
+    init3 --> confirm["KH xác nhận<br/>thông tin khoản vay"]
+    confirm -- "back / hủy" --> cancel1(["CANCELLED<br/>cancelled_init_by_customer"])
+    confirm -- xác nhận --> decision{"Decision<br/>making?"}
+    decision -- không --> rej6(["REJECTED<br/>reject_by_vds"])
+    decision -- có --> submit["SUBMIT"]
+```
+
+</details>
+
+#### Trạng thái INIT — vừa mới bắt đầu
+
+Ngay khi khách chọn đăng ký vay và thỏa hạn mức tối thiểu, hệ thống tạo một khoản vay ở trạng thái `INIT` (`sub_status = null`) — đây chỉ là "đặt cọc chỗ" trong hệ thống, chưa có gì được thẩm định cả.
+
+#### Bốn lớp lọc sơ bộ: segment → precheck VDS → credit → precheck lender
+
+Bốn bước này chính là các bước *precheck* và *chấm điểm credit* đã nói ở mục 3.2 (Giai đoạn 1, phần 1), nhìn từ góc độ trạng thái: mỗi lớp fail sẽ đẩy khoản vay sang `REJECTED` với một `sub_status` riêng để biết chính xác fail ở đâu (`unsuitable_segment`, `pre_screening_vds_fail`, `credit_fail`, `pre_screening_lender_fail`). Qua hết cả bốn lớp thì khoản vay vẫn ở `INIT`, chỉ đổi `sub_status` thành `pre_screening_pass` để đánh dấu "đã qua vòng lọc sơ bộ".
+
+#### eKYC pass — xác thực danh tính
+
+Khách phải xác thực danh tính (chụp giấy tờ, chụp mặt) — nếu không đạt, `REJECTED (ekyc_fail)`; nếu đạt, `INIT` chuyển `sub_status` thành `ekyc_pass`. Đây là cùng bước eKYC đã nói ở mục 3.2 (bước 10-12), chỉ khác là ở đây nhìn theo góc trạng thái thay vì theo góc "service nào gọi service nào".
+
+#### KH xác nhận thông tin khoản vay
+
+Khách xem lại thông tin khoản vay (số tiền, kỳ hạn...) trước khi gửi đi thật. Nếu khách bấm back/hủy ở bước này, khoản vay chuyển `CANCELLED (cancelled_init_by_customer)` — khách tự hủy, không phải bị từ chối.
+
+#### Decision making — chốt lần cuối trước khi Submit
+
+Một lượt kiểm tra cuối (`decision`) trước khi chính thức gửi đi; nếu không đạt thì `REJECTED (reject_by_vds)`, nếu đạt thì chuyển sang `SUBMIT` — đánh dấu hồ sơ đã chính thức được gửi, chuẩn bị chuyển sang giai đoạn xử lý ở đối tác.
+
+### 4.2. Giai đoạn 2 (VC) — ký hợp đồng trước, thẩm định sau
+
+<img src="./images/4.2-giai-doan-2-vc.png" alt="Giai đoạn 2 của VC: ký hợp đồng trước, thẩm định sau" width="1300" />
+
+<details>
+<summary>Xem mã Mermaid (nếu muốn sửa lại sơ đồ)</summary>
+
+```mermaid
+flowchart LR
+    submit["SUBMIT"] --> checksend{"Gửi khoản vay<br/>sang đối tác OK?"}
+    checksend -- "thất bại / quá hạn" --> fail1(["CANCELLED / REJECTED<br/>send_fail, expired_contract..."])
+    checksend -- thành công --> esign["PENDING_ESIGNING<br/>(ký hợp đồng + OTP)"]
+    esign -- "sai OTP quá số lần" --> rej7(["REJECTED<br/>reject_by_lender"])
+    esign -- "verify OTP OK" --> underwriting["PENDING_UNDERWRITING<br/>(gửi thẩm định)"]
+    underwriting --> result{"Kết quả<br/>thẩm định?"}
+    result -- "từ chối / hủy" --> rej8(["REJECTED / CANCELLED<br/>by lender"])
+    result -- "chấp thuận" --> approval["APPROVAL"]
+    approval --> active["ACTIVED"]
+    active -- "quá hạn" --> overdue["OVERDUE<br/>(null / temp_lock / perm_lock)"]
+    overdue -- "thanh toán" --> active
+    active -- "KH hủy hạn mức" --> closed["CLOSED"]
+```
+
+</details>
+
+#### Gửi khoản vay sang đối tác
+
+Sau `SUBMIT`, Lender gửi hồ sơ khoản vay sang VietCredit. Nếu gửi thất bại hoặc quá hạn xử lý, khoản vay bị `CANCELLED`/`REJECTED` luôn tại đây (`send_fail`, `expired_contract_by_customer`...) — chưa kịp tới bước ký hợp đồng. Nếu gửi thành công, chuyển sang `PENDING_ESIGNING`.
+
+#### PENDING_ESIGNING — ký hợp đồng trước
+
+Đây là điểm khác biệt lớn nhất so với Cake: **VietCredit cho ký hợp đồng ngay, trước khi thẩm định**. Khách lấy hợp đồng, nhận OTP, nhập OTP để xác thực chữ ký số (giống hệt cơ chế đã nói ở mục 3.3). Nếu nhập sai OTP quá số lần cho phép, hồ sơ bị `REJECTED (reject_by_lender)`. Nếu verify OTP thành công, khoản vay chuyển sang `PENDING_UNDERWRITING`.
+
+#### PENDING_UNDERWRITING — thẩm định sau khi đã ký
+
+VietCredit thẩm định hồ sơ (đối tác có thể trả kết quả ngay, hoặc trả kết quả "tạm" rồi Viettel phải gọi API hỏi lại kết quả sau — xem ghi chú bên dưới). Nếu bị từ chối/hủy, khoản vay chuyển `REJECTED`/`CANCELLED`. Nếu được chấp thuận, chuyển `APPROVAL` rồi `ACTIVED` ngay — **chỉ một lần phê duyệt duy nhất**, đúng như đã nói ở mục 3.3.
+
+> **Ghi chú nhỏ:** sơ đồ gốc có một nhánh ghi "trường hợp đối tác trả kết quả thẩm định TB (tạm biết/tạm báo), Viettel phải gọi API truy vấn kết quả" — nghĩa là đôi khi VietCredit không trả kết quả thẩm định ngay trong cùng một lượt gọi, mà Viettel phải chủ động hỏi lại sau. Đây giống một dạng xử lý bất đồng bộ (polling), nên hỏi lại BA về tần suất/thời điểm gọi lại nếu cần triển khai.
+
+#### ACTIVED, OVERDUE, CLOSED — vòng đời sau khi khoản vay chạy
+
+Sau khi `ACTIVED`, khoản vay hoạt động bình thường. Nếu tới hạn mà khách chưa trả, chuyển `OVERDUE` (có 3 mức: `null` là vừa quá hạn, `temp_lock` là khóa tạm, `perm_lock` là khóa vĩnh viễn — càng để lâu mức độ khóa càng nặng). Khi khách thanh toán lại đầy đủ, quay về `ACTIVED`. Nếu khách chủ động hủy hạn mức (đóng ví), khoản vay chuyển `CLOSED`.
+
+### 4.3. Giai đoạn 2 (Cake) — thẩm định lần 1 trước, ký hợp đồng sau, rồi thẩm định lần 2
+
+**Phần 1 — Thẩm định lần 1 rồi mới ký hợp đồng:**
+
+<img src="./images/4.3a-giai-doan-2-cake-phan1.png" alt="Giai đoạn 2 của Cake, phần 1: thẩm định lần 1 rồi ký hợp đồng" width="1300" />
+
+<details>
+<summary>Xem mã Mermaid (nếu muốn sửa lại sơ đồ)</summary>
+
+```mermaid
+flowchart LR
+    submit["SUBMIT"] --> underwriting1["PENDING_UNDERWRITING<br/>(thẩm định lần 1)"]
+    underwriting1 --> result1{"Kết quả<br/>thẩm định lần 1?"}
+    result1 -- "từ chối / hủy" --> rej1(["REJECTED / CANCELLED<br/>by lender"])
+    result1 -- "phê duyệt" --> approval["APPROVAL"]
+    approval --> esign["PENDING_ESIGNING<br/>(ký hợp đồng + OTP)"]
+    esign -- "sai OTP quá số lần" --> rej2(["REJECTED<br/>reject_by_lender"])
+    esign -- "verify OTP OK" --> pendactive["PENDING_ACTIVE"]
+```
+
+</details>
+
+**Phần 2 — Thẩm định lần 2 rồi mới Active:**
+
+<img src="./images/4.3b-giai-doan-2-cake-phan2.png" alt="Giai đoạn 2 của Cake, phần 2: thẩm định lần 2 rồi active" width="1100" />
+
+<details>
+<summary>Xem mã Mermaid (nếu muốn sửa lại sơ đồ)</summary>
+
+```mermaid
+flowchart LR
+    pendactive["PENDING_ACTIVE"] --> result2{"Kết quả<br/>thẩm định lần 2?"}
+    result2 -- "từ chối / hủy" --> rej3(["REJECTED / CANCELLED<br/>by lender"])
+    result2 -- "chấp thuận" --> active["ACTIVED"]
+    active -- "quá hạn" --> overdue["OVERDUE<br/>(null / temp_lock / perm_lock)"]
+    overdue -- "thanh toán" --> active
+    active -- "KH hủy hạn mức" --> closed["CLOSED"]
+```
+
+</details>
+
+#### PENDING_UNDERWRITING (lần 1) — thẩm định trước khi ký
+
+Khác với VietCredit, Cake **thẩm định trước khi cho ký hợp đồng**. Sau `SUBMIT`, hồ sơ chuyển `PENDING_UNDERWRITING` và Cake thẩm định lần đầu. Đây chính là bước tương ứng với "callback phê duyệt lần 1, unsigned" đã nói ở mục 3.2 (bước 17.1) — "unsigned" vì tới đây hợp đồng còn chưa ký. Nếu bị từ chối/hủy ngay tại đây, `REJECTED`/`CANCELLED`; nếu được phê duyệt, chuyển `APPROVAL`.
+
+#### PENDING_ESIGNING — ký hợp đồng sau khi đã qua thẩm định lần 1
+
+Từ `APPROVAL`, khoản vay chuyển `PENDING_ESIGNING` để khách ký hợp đồng (lấy hợp đồng, nhận OTP, verify OTP — cùng cơ chế như mục 3.3 và như VC ở trên). Sai OTP quá số lần thì `REJECTED (reject_by_lender)`; verify thành công thì chuyển `PENDING_ACTIVE`.
+
+#### PENDING_ACTIVE — chờ thẩm định lần 2
+
+Đây là trạng thái Cake có mà VietCredit không có: sau khi ký hợp đồng xong, khoản vay chưa `ACTIVED` ngay, mà còn phải chờ Cake thẩm định thêm một lần nữa (`kết quả thẩm định lần 2`) — tương ứng với "callback phê duyệt lần 2, Signed" đã nói ở mục 3.3 (bước 12.1). Nếu lần này bị từ chối/hủy, `REJECTED`/`CANCELLED`; nếu được chấp thuận, khoản vay mới thật sự chuyển `ACTIVED`.
+
+#### ACTIVED, OVERDUE, CLOSED
+
+Từ đây, vòng đời của Cake giống hoàn toàn VC: `ACTIVED` → quá hạn thì `OVERDUE` (null/temp_lock/perm_lock) → thanh toán lại thì về `ACTIVED`; khách hủy hạn mức thì `CLOSED`.
+
+### So sánh nhanh: VC vs Cake
+
+| | VietCredit (VC) | Cake |
+|---|---|---|
+| Thứ tự ký hợp đồng vs thẩm định | **Ký trước** (`PENDING_ESIGNING`), thẩm định sau (`PENDING_UNDERWRITING`) | **Thẩm định trước** (`PENDING_UNDERWRITING`), ký sau (`PENDING_ESIGNING`) |
+| Số lần phê duyệt | 1 lần (sau khi ký) | 2 lần (lần 1 trước khi ký — unsigned; lần 2 sau khi ký — Signed) |
+| Trạng thái đặc trưng riêng | Không có `PENDING_ACTIVE` | Có thêm `PENDING_ACTIVE` (chờ phê duyệt lần 2) |
+| Phần lọc điều kiện trước Submit | Giống nhau (xem mục 4.1) | Giống nhau (xem mục 4.1) |
+| Vòng đời sau khi Active | Giống nhau: `ACTIVED` ⇄ `OVERDUE` → `CLOSED` | Giống nhau: `ACTIVED` ⇄ `OVERDUE` → `CLOSED` |
+
+<details>
+<summary>Bảng tham khảo: mapping trạng thái cũ của Cake sang trạng thái mới của nền tảng (dành cho việc cắt chuyển dữ liệu, không phải luồng nghiệp vụ)</summary>
+
+Bảng này chỉ có ý nghĩa với việc **migrate dữ liệu Cake cũ sang nền tảng mới** — vì Cake là sản phẩm đã chạy trước, nên trạng thái cũ cần được "dịch" sang tên trạng thái mới ở trên. Không cần nhớ bảng này để hiểu luồng nghiệp vụ, chỉ cần khi làm việc với dữ liệu cũ.
+
+| Trạng thái sản phẩm hiện tại (cũ) | STATUS mới | SUB_STATUS mới | Note |
+|---|---|---|---|
+| PRECHECK_VDS_QUALIFIED | INIT | PRE_SCREENING_PASS | |
+| CREDIT_PASSED | INIT | PRE_SCREENING_PASS | |
+| PRECHECK_CAKE_QUALIFIED | INIT | PRE_SCREENING_PASS | |
+| EKYC_PASSED | INIT | PRE_EKYC_PASS | |
+| SEND_TO_PARTNER, sub = null | PENDING_UNDERWRITING | SEND_TO_PARTNER | Đánh dấu chưa gọi client-create |
+| SEND_TO_PARTNER, sub = INIT | | | Đánh dấu đã gọi client-create nhưng nhận mã lỗi được phép retry |
+| SEND_TO_PARTNER, sub = PROFILE_INIT | | | Đánh dấu đã gọi client-update nhưng nhận mã lỗi được phép retry |
+| SEND_TO_PARTNER, sub = PROFILE_NON_EKYC | | | Đánh dấu đã gọi client-update nhưng nhận mã lỗi được phép retry |
+| SEND_TO_PARTNER, sub = UPDATE_TIME_OUT | | | Đánh dấu đã gọi client-update nhưng nhận timeout được phép retry |
+| EKYC_CAKE_REVIEW | | | Đánh dấu đã gọi client-update nhưng profile cần đối tác callback-ekyc |
+| SEND_TO_PARTNER, sub = PROFILE_EKYC | | | Đánh dấu đã gọi client-update thành công, chưa gọi register |
+| SEND_TO_PARTNER, sub = REGISTER_TIME_OUT | | | Đánh dấu đã gọi register nhưng bị timeout, được phép retry |
+| SEND_TO_PARTNER, sub = LOAN_INIT | | | Đánh dấu khoản vay đã khởi tạo bên đối tác Cake |
+| WAITTING_FOR_APPROVAL | | | Đánh dấu khoản vay đang reviewing và chờ phê duyệt từ đối tác Cake |
+| CANCELLED, sub = LOAN_CANCELLED | CANCELLED | CANCELLED_BY_LENDER | |
+| REJECTED, sub = LOAN_REJECTED | REJECTED | REJECTED_BY_LENDER | |
+| PENDING_SIGNCONTRACT, sub = null | PENDING_ESIGNING | NULL | |
+| PENDING_SIGNCONTRACT, sub = get_infor | PENDING_ESIGNING | NULL | |
+| PENDING_SIGNCONTRACT, sub = TO | PENDING_ESIGNING | NULL | |
+| CANCELLED, sub = cancel by customer | CANCELLED | CANCELLED_CONTRACT_BY_CUSTOMER | |
+| EXPIRED_SIGNCONTRACT | CANCELLED | EXPIRED_CONTRACT_BY_CUSTOMER | |
+| CALLED_OFF | CANCELLED | CANCLLED_CONTRACT_BY_LENDER | |
+| SIGNED | PENDING_ACTIVE | | |
+| ACTIVE | ACTIVE | | |
+| CLOSED | CLOSED | | |
+| OVERDUE, sub = null | OVERDUE | NULL | |
+| OVERDUE, sub = temp_lock | OVERDUE | TEMP_LOCK | |
+| OVERDUE, sub = perm_lock | OVERDUE | PERM_LOCK | |
+| PRECHECK_VDS_NOT_QUALIFIED | REJECTED | PRE_SCREENING_VDS_FAIL | |
+| CREDIT_FAILED | REJECTED | CREDIT_SCORE_FAIL | |
+| PRECHECK_CAKE_NOT_QUALIFIED | REJECTED | PRE_SCREENING_LENDER_FAIL | |
+| EKYC_FAILED | REJECTED | EKYC_FAIL | |
+| SEND_FAILED | REJECTED | REJECT_BY_VDS | |
+
+*(Các dòng để trống STATUS/SUB_STATUS trong bảng gốc — nên hỏi lại BA để xác nhận giá trị chính xác trước khi dùng cho việc migrate thật.)*
+
+</details>
+
 ---
 
 ## Vài điểm dễ nhầm, nên để ý
@@ -374,6 +601,10 @@ Sau khi OTP xác thực thành công, hệ thống tách theo đối tác: **Cak
 - **"Hủy hợp đồng" (mục 3.3) là hủy ví, không phải hủy khoản vay đơn thuần** — và tùy chọn này sơ đồ gốc ghi rõ chỉ có với Cake, VietCredit không có nhánh tương ứng ở bước preview hợp đồng.
 - **"Phê duyệt lần 1" và "phê duyệt lần 2" chỉ áp dụng cho Cake** — VietCredit chỉ có một lần phê duyệt (sau khi ký), nên khi đọc thấy "Signed" mà không có "lần 2" thì đó là trạng thái của VietCredit, đừng nhầm là thiếu bước.
 - **Hai lượt xác thực khác mục đích dễ gộp nhầm ở mục 3.3**: sinh/verify OTP (bước 8-11, xác thực đúng khách hàng đang ký) khác với eKYC ở mục 3.2 (xác thực danh tính khách khi đăng ký) — hai cơ chế riêng, ở hai thời điểm khác nhau trong hành trình.
+- **Mục 4 nhìn cùng một hành trình nhưng theo góc "trạng thái", không phải góc "service gọi nhau"** — đừng nhầm sơ đồ mục 4 là một luồng nghiệp vụ khác với mục 3; nó chỉ là một lát cắt khác của cùng luồng đăng ký vay đã nói ở mục 3.1-3.3.
+- **Cake và VietCredit đảo ngược thứ tự "ký hợp đồng" và "thẩm định"** (mục 4.2, 4.3) — VietCredit ký trước thẩm định sau (1 lần phê duyệt), Cake thẩm định trước ký sau (2 lần phê duyệt, có thêm trạng thái `PENDING_ACTIVE` mà VietCredit không có). Đây là điểm dễ nhầm nhất giữa hai đối tác.
+- **`REJECTED` và `CANCELLED` không phải là một** — theo sơ đồ trạng thái mục 4, `REJECTED` là bị đối tác/hệ thống từ chối (không đạt điều kiện), còn `CANCELLED` là bị hủy (do khách tự hủy, hoặc do hết hạn xử lý/timeout) — mỗi trạng thái đều có `sub_status` riêng để biết chính xác lý do.
+- **Bảng mapping Cake ở mục 4.3 chỉ dùng cho việc cắt chuyển dữ liệu cũ, không phải luồng nghiệp vụ hiện tại** — đừng dùng bảng đó để hiểu luồng chạy thật, chỉ dùng khi cần đối chiếu dữ liệu Cake từ trước khi cắt chuyển sang nền tảng mới.
 
 ---
 
@@ -400,7 +631,14 @@ Sau khi OTP xác thực thành công, hệ thống tách theo đối tác: **Cak
 - **OTP (One-Time Password)**: mã dùng một lần, gửi tới khách để xác thực chính khách hàng đang thực hiện hành động (ở đây là ký hợp đồng) — khác với eKYC (xác thực danh tính lúc đăng ký).
 - **Signed / Active (trạng thái ví)**: "Signed" là đã ký hợp đồng nhưng còn chờ đối tác phê duyệt lần cuối; "Active" là ví đã được phê duyệt xong, khách dùng được dịch vụ.
 - **Hủy ví**: hủy toàn bộ ví trả sau (không chỉ hủy đơn xin vay) — vì tới bước này ví nhiều khả năng đã được khởi tạo, dù chưa active.
+- **INIT / SUBMIT / APPROVAL / ACTIVED / OVERDUE / CLOSED**: các trạng thái (`STATUS`) chính của một khoản vay, theo đúng thứ tự đi qua trong đời một khoản vay bình thường — mới tạo, đã gửi đăng ký, được phê duyệt, đang hoạt động, quá hạn, đã đóng.
+- **PENDING_ESIGNING**: trạng thái "đang chờ ký hợp đồng" — khách đang trong bước lấy hợp đồng và xác thực OTP để ký.
+- **PENDING_UNDERWRITING**: trạng thái "đang chờ thẩm định" — hồ sơ đã gửi sang đối tác, đang chờ đối tác đánh giá có cho vay hay không.
+- **PENDING_ACTIVE**: trạng thái chỉ có ở Cake — đã ký hợp đồng xong nhưng còn chờ đối tác phê duyệt lần 2 trước khi thật sự Active.
+- **sub_status**: một trạng thái "phụ" đi kèm `STATUS` chính, dùng để biết chi tiết hơn *vì sao* khoản vay đang ở trạng thái đó (ví dụ `REJECTED` có thể do `ekyc_fail`, `credit_fail`, `reject_by_lender`... mỗi lý do một `sub_status` khác nhau).
+- **OVERDUE (null/temp_lock/perm_lock)**: ba mức độ quá hạn — `null` là vừa quá hạn, `temp_lock` là bị khóa tạm thời, `perm_lock` là bị khóa vĩnh viễn; càng để quá hạn lâu mức khóa càng nặng.
+- **Cắt chuyển nền tảng (migrate)**: việc chuyển dữ liệu/khách hàng đang dùng sản phẩm Cake cũ sang chạy trên nền tảng "Ví trả sau" mới — cần bảng mapping trạng thái cũ→mới vì tên trạng thái hai bên khác nhau.
 
 ---
 
-*Tài liệu này viết dựa trên sơ đồ activity của mục 3.1, 3.2 và 3.3 trong file "Ví trả sau - Nền tảng-v25", phần "vì sao" là suy luận theo logic nghiệp vụ chung (có đối chiếu với phần mô tả vai trò của Lender ở mục Mô hình tổng quan trong cùng tài liệu), không phải trích nguyên văn đặc tả chi tiết. Bạn nên xác nhận lại với BA/đội nghiệp vụ trước khi dùng để trình bày chính thức, đặc biệt là ý nghĩa của cờ VTS, "TTTĐ", nhánh "Hủy hợp đồng" chỉ có ở Cake, và các nhánh fail không được vẽ rõ trên sơ đồ gốc.*
+*Tài liệu này viết dựa trên sơ đồ activity của mục 3.1, 3.2, 3.3 và mục 4 (Biểu đồ trạng thái) trong file "Ví trả sau - Nền tảng-v25", phần "vì sao" là suy luận theo logic nghiệp vụ chung (có đối chiếu với phần mô tả vai trò của Lender ở mục Mô hình tổng quan trong cùng tài liệu), không phải trích nguyên văn đặc tả chi tiết. Sơ đồ trạng thái ở mục 4 đã được đơn giản hóa một số nhánh phụ (timeout, retry) để dễ đọc — nếu cần chính xác 100% từng nhánh, nên đối chiếu lại sơ đồ activity gốc ở trang "4. Biểu đồ trạng thái" của file PDF. Bạn nên xác nhận lại với BA/đội nghiệp vụ trước khi dùng để trình bày chính thức, đặc biệt là ý nghĩa của cờ VTS, "TTTĐ", nhánh "Hủy hợp đồng" chỉ có ở Cake, cơ chế đối tác trả kết quả thẩm định "TB" (polling) ở mục 4.2, và các nhánh fail không được vẽ rõ trên sơ đồ gốc.*
