@@ -29,7 +29,7 @@ description: Soạn và biên tập bài học ngữ pháp theo sách hoặc uni
 - Ký hiệu S, V, V-ing, mệnh đề, trọng âm… phải có nghĩa bằng lời thông thường ngay khi xuất hiện. Ví dụ: “Chủ ngữ là người hoặc vật được nói đến”; “Trọng âm là âm tiết được đọc nổi bật hơn”. Không giải thích thuật ngữ khó bằng một thuật ngữ khó khác.
 - Với am/is/are, phải đủ ba nhóm: I → am; He/She/It và danh từ số ít → is; You/We/They và danh từ số nhiều → are. Mỗi nhóm riêng một hàng. Nêu rõ you dùng are cả số ít lẫn số nhiều, kèm cụm minh họa dễ hiểu.
 - Bản dịch tiếng Việt phải tự nhiên và đúng ý trong tình huống. Không cố giữ từng từ “đang”, “có đang”, “trở nên” nếu làm câu gượng. Đối chiếu sắc thái với ví dụ: “Is your English getting better?” có thể dịch “Dạo này tiếng Anh của bạn có khá hơn không?”.
-- Thuật ngữ, tiêu đề và lời giảng bằng tiếng Việt; câu tiếng Anh và cụm được phân tích có `lang="en"`. Công thức dùng tiếng Anh/ký hiệu khi cần, không đánh dấu cả đoạn Việt là tiếng Anh.
+- Thuật ngữ, tiêu đề và lời giảng bằng tiếng Việt; câu tiếng Anh và cụm được phân tích có `lang="en"`. Công thức chỉ dùng ký hiệu và từ tiếng Anh, như `S + V + …`, `S + am/is/are + being + V3`, `N`, `Adj`, `Wh-word`; không chèn “chủ ngữ”, “động từ”, “tính từ”, “phần còn lại” vào công thức. Giải thích ký hiệu bằng tiếng Việt ở đoạn riêng ngay cạnh công thức. Không đánh dấu cả đoạn Việt là tiếng Anh.
 
 ## Tổ chức bài như trang giáo trình
 
@@ -37,8 +37,9 @@ description: Soạn và biên tập bài học ngữ pháp theo sách hoặc uni
 - Mạch ưu tiên: hiểu tình huống sử dụng → cách tạo câu → so sánh gần nghĩa → lỗi thường gặp → chính tả/ghi chú liên quan → giải thích cấu trúc trong ví dụ → cách dùng ngoài trọng tâm đã có → ghi nhớ. Điều chỉnh theo chủ đề, không ép mọi bài theo cùng số mục.
 - Nội dung hiển thị đầy đủ khi mở trang. Không dùng details/summary, accordion, tab ẩn nội dung hoặc nút “xem thêm”. Quy định này thay toàn bộ yêu cầu thu gọn của các phiên bản skill trước, kể cả mục lục unit. Mục lục là danh sách neo hiển thị sẵn theo bài.
 - Giải thích dài cần phân cấp bằng heading, đoạn ngắn, danh sách và bảng. Cấu trúc phụ hoặc kiến thức ngoài trọng tâm đặt trong phần riêng ở cuối bài, có neo từ ví dụ liên quan và mục lục. Không chen một bài giảng dài vào giữa quy tắc chính và ví dụ chính.
-- Mỗi ví dụ có tiếng Anh và bản dịch cùng hàng, ngay dưới là lời giải thích của chính câu đó. Desktop có thể hai cột; điện thoại xếp dọc trong cùng khối. Tô nhấn đúng cụm đang học, không tô cả câu. Tránh lặp một câu ở nhiều phần chỉ để minh họa cùng một ý.
-- Giải thích cấu trúc phụ đi theo: nghĩa → công thức nếu hữu ích → ví dụ → tách các cụm trong câu và lý do dùng. Chỉ thêm ví dụ khi làm rõ một điểm mới, không bắt buộc thêm câu chỉ thay danh từ.
+- Mỗi ví dụ có tiếng Anh và bản dịch cùng hàng, ngay dưới là lời giải thích của chính câu đó. Desktop có thể hai cột; điện thoại xếp dọc trong cùng khối. Tô nhấn đúng cụm đang học, không tô cả câu. Khi một câu được phân tích ở phần khác, nhắc lại nguyên câu và bản dịch ngay tại phần phân tích; không tránh lặp bằng cách bắt người đọc tìm lại câu ở nơi khác.
+- Mỗi phần giải thích phải đọc hiểu được ngay tại chỗ: đặt câu ví dụ đầy đủ và bản dịch sát lời phân tích, trước khi tách cụm hoặc giải thích lý do dùng. Không chỉ viết “ví dụ bên trên”, “câu ở phần D”, “trong câu gốc” khi chưa hiển thị câu đó tại chỗ. Liên kết tới phần khác chỉ để đọc sâu hơn; phần đang đọc vẫn phải có ví dụ và ý nghĩa đủ hiểu. Với bảng, đặt nghĩa và lời giải thích trong cùng hàng với câu tương ứng, không gom nghĩa ở một đoạn phía dưới.
+- Phần bổ sung trong ví dụ phải dạy **cấu trúc**, trình bày như các phần khác: tên cấu trúc → cách dùng/nghĩa → công thức rõ ràng → câu ví dụ đầy đủ kèm bản dịch → giải thích cách áp dụng công thức vào chính câu đó. Không thay bằng danh sách dịch từng cụm hoặc mục “cụm nếu có”. Chỉ tách thành phần câu khi giúp hiểu công thức. Nếu một câu có nhiều cấu trúc cần giải thích, trình bày riêng từng cấu trúc, mỗi cấu trúc có công thức và ví dụ sát nhau; cập nhật neo và mục lục tương ứng. Chỉ thêm ví dụ khi làm rõ một điểm mới.
 - Bảng so sánh luôn đặt nghĩa sát câu/cụm tiếng Anh. Nếu cột Nghĩa và giải thích gộp chung, tách dòng rõ ràng. Câu sai có nhãn đúng mức độ, câu sửa, nghĩa và lý do; dấu/màu không được là tín hiệu duy nhất.
 - Không đưa bài tập, câu đố, đáp án hay vị trí bài tập vào trang. Ví dụ câu hỏi vẫn phải được dịch và giải thích, không để người học đoán như một câu đố.
 - Khi refactor toàn bài, được đổi ví dụ hoặc thứ tự để dễ học, nhưng phải giữ đủ quy tắc, ngoại lệ, sắc thái và các nội dung người dùng đã hỏi. Không xóa kiến thức chỉ vì khó bố trí. Các bài khác và các ID cũ phải tiếp tục dùng được.
@@ -54,7 +55,7 @@ description: Soạn và biên tập bài học ngữ pháp theo sách hoặc uni
 
 ## Kiểm tra trước khi giao
 
-1. Đọc lại bài như người chưa biết chủ đề: mỗi mục có cho biết dùng lúc nào, ví dụ nghĩa gì, vì sao dùng dạng đó không? Chỗ nào cần đoán nghĩa hoặc phải biết thuật ngữ từ trước thì sửa.
+1. Đọc lại bài như người chưa biết chủ đề: mỗi mục có cho biết dùng lúc nào, ví dụ nghĩa gì, vì sao dùng dạng đó không? Chỗ nào cần đoán nghĩa hoặc phải biết thuật ngữ từ trước thì sửa. Đọc riêng từng phần phân tích: nếu phải cuộn tới phần khác để tìm câu đang được giải thích, nhắc lại câu và bản dịch tại phần đó.
 2. Rà lời Việt bằng cách đọc riêng, không nhìn bản tiếng Anh. Thay câu gượng, câu cụt, từ ngữ trừu tượng bằng cách nói tự nhiên; không chỉ thay vài từ đồng nghĩa. Giữ đủ nhóm áp dụng và điều kiện quan trọng.
 3. Đối chiếu các ý cũ khi refactor: quy tắc, cấu trúc phụ, ví dụ cần giữ và ngoại lệ đều còn hoặc đã được diễn đạt tương đương. Không suy ra “đủ ý” từ số chữ hay số ví dụ.
 4. Kiểm tra HTML hợp lệ, ID duy nhất, neo trỏ đúng, không có nội dung ẩn phải bấm mở, nguồn chỉ ở template. Kiểm tra các bảng và cặp câu/dịch ở desktop, điện thoại nếu có công cụ render; chỉ nói đã xem ảnh khi thực sự xem.
