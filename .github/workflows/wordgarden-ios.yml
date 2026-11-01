@@ -1,0 +1,43 @@
+name: WordGarden iOS build
+on:
+  workflow_dispatch:
+  push:
+    branches: [learn-english]
+    paths:
+      - '06-wordgarden-ios/**'
+      - '.github/workflows/wordgarden-ios.yml'
+permissions:
+  contents: read
+concurrency:
+  group: wordgarden-ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check catalog and project source
+        run: node 06-wordgarden-ios/scripts/validate-source.cjs
+      - name: Build, test, archive
+        run: bash 06-wordgarden-ios/scripts/build-macos.sh
+      - name: Upload unsigned iPhone IPA and Simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: WordGarden-ios-${{ github.run_number }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            06-wordgarden-ios/build/WordGarden-unsigned.ipa
+            06-wordgarden-ios/build/WordGarden-Simulator.zip
+            06-wordgarden-ios/INSTALL.html
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WordGarden-build-logs-${{ github.run_number }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            06-wordgarden-ios/build-simulator.log
+            06-wordgarden-ios/build-device.log

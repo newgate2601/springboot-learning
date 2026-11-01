@@ -1,0 +1,10 @@
+build/
+.build/
+Core/.build/
+*.log
+*.xcodeproj/
+.DS_Store
+xcuserdata/
+*.p12
+*.mobileprovision
+*.ipa
