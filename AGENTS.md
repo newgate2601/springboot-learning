@@ -1,6 +1,6 @@
 # Vocabulary notebook
 
-For grammar lessons based on a book and a topic keyword/unit, read and follow `03-grammar/skill.md` and update `03-grammar/grammar.html` in place. Keep this HTML empty until the first lesson is requested. This book-based workflow takes precedence over the standalone sentence-structure workflow for examples belonging to those lessons.
+For grammar lessons based on a book and a topic keyword/unit, read and follow `03-grammar/skill.md` and update `03-grammar/grammar.html` in place. Keep this HTML empty until the first lesson is requested. Common supporting sentence structures belong in `04-common-structures/common-structures.html`, following `04-common-structures/skill.md`; link directly to their anchors from grammar instead of embedding their explanations there. This book-based workflow takes precedence over the standalone sentence-structure workflow for examples belonging to those lessons.
 
 For requests to add, note, or edit English vocabulary in this workspace, read and follow `01-vocabulary/skill.md`. Update `01-vocabulary/vocabulary-audio.html` in place, including the navigation and the US/UK audio targets. The HTML notebook is the maintained learning artifact; do not create a Markdown vocabulary notebook. Respect requests for chat-only explanations without saving.
 
