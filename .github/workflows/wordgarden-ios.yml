@@ -7,7 +7,7 @@ on:
       - '06-wordgarden-ios/**'
       - '.github/workflows/wordgarden-ios.yml'
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: wordgarden-ios-${{ github.ref }}
   cancel-in-progress: true
@@ -31,6 +31,16 @@ jobs:
             06-wordgarden-ios/build/WordGarden-unsigned.ipa
             06-wordgarden-ios/build/WordGarden-Simulator.zip
             06-wordgarden-ios/INSTALL.html
+      - name: Publish IPA as downloadable release (no login needed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete wordgarden-latest -y --cleanup-tag || true
+          gh release create wordgarden-latest \
+            06-wordgarden-ios/build/WordGarden-unsigned.ipa 06-wordgarden-ios/INSTALL.html \
+            --target "${{ github.sha }}" --prerelease \
+            --title "Word Garden iOS — bản mới nhất (#${{ github.run_number }})" \
+            --notes "Tải WordGarden-unsigned.ipa rồi cài bằng Sideloadly/AltStore (ký bằng Apple ID của bạn). Giữ lại app extensions để có widget."
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
