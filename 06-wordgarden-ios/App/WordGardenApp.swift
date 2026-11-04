@@ -85,15 +85,18 @@ import WordGardenCore
                                     } label: {
                                         VStack(spacing: 5) {
                                             Label(locale.uppercased(), systemImage: "speaker.wave.2.fill").font(.headline)
-                                            Text(word.firstRecording(locale: locale)?.ipa ?? "Chưa có bản thu").font(.caption)
+                                            Text(word.firstRecording(locale: locale)?.ipa ?? "giọng iPhone").font(.caption)
                                         }.frame(maxWidth: .infinity).padding(.vertical, 12)
-                                    }.buttonStyle(.bordered).disabled(word.firstRecording(locale: locale) == nil)
+                                    }.buttonStyle(.bordered)
                                 }
                             }
                             if !audio.message.isEmpty { Text(audio.message).font(.caption).foregroundStyle(.secondary) }
                             Button(action: model.next) { Label("Đổi từ", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity).padding(.vertical, 8) }.buttonStyle(.borderedProminent)
                         }.padding(22).background(.background, in: RoundedRectangle(cornerRadius: 24))
                         note("VÍ DỤ TỰ SOẠN", english: word.example, vietnamese: word.translation)
+                        Button {
+                            do { try audio.speak(word.example, locale: "us", note: "Đọc câu ví dụ · giọng iPhone") } catch { model.error = error.localizedDescription }
+                        } label: { Label("Nghe câu ví dụ", systemImage: "text.bubble") }.font(.subheadline)
                         note("CÁCH DÙNG", english: "", vietnamese: word.usage.replacingOccurrences(of: "`", with: ""))
                         note("PHÂN BIỆT", english: "", vietnamese: word.contrast.replacingOccurrences(of: "`", with: ""))
                         ForEach(Array(word.pronunciations.enumerated()), id: \.offset) { _, pronunciation in
@@ -101,7 +104,7 @@ import WordGardenCore
                         }
                     }
                     Button { showHelp = true } label: { Label("Gắn widget lên màn hình khóa", systemImage: "rectangle.and.hand.point.up.left") }
-                    Text("\(model.words.count) từ nhúng offline. Audio Oxford cần mạng. Chu kỳ tự đổi là mốc mong muốn; iOS kiểm soát lịch cập nhật.")
+                    Text("\(model.words.count) từ nhúng offline. Có mạng: bản thu Oxford; mất mạng: tự chuyển sang giọng iPhone. Chu kỳ tự đổi là mốc mong muốn; iOS kiểm soát lịch cập nhật.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(22)
             }

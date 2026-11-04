@@ -88756,5 +88756,265 @@
         }
       }
     ]
+  },
+  {
+    "id": 3406,
+    "word": "stationery",
+    "pos": "n. (không đếm được)",
+    "meaning": "văn phòng phẩm; đồ dùng để viết",
+    "image": "✏️",
+    "example": "We need to order more stationery.",
+    "translation": "Chúng ta cần đặt thêm văn phòng phẩm.",
+    "usage": "Dùng `office stationery`, `buy/order stationery`; gồm giấy, bút, phong bì.",
+    "contrast": "`Stationery` là đồ dùng để viết; `stationary` là tính từ nghĩa là đứng yên.",
+    "pronunciations": [
+      {
+        "word": "stationery",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/stationery",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/s/sta/stati/stationery__us_1.mp3",
+          "ipa": "/ˈsteɪʃəneri/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/s/sta/stati/stationery__gb_1.mp3",
+          "ipa": "/ˈsteɪʃənri/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3407,
+    "word": "notebook",
+    "pos": "n.",
+    "meaning": "sổ tay; vở ghi chép",
+    "image": "📓",
+    "example": "I wrote the shopping list in my notebook.",
+    "translation": "Tôi ghi danh sách mua sắm vào sổ tay.",
+    "usage": "Dùng `write in a notebook`, `a notebook for work`.",
+    "contrast": "`Notebook` là sổ để ghi; `notepad` thường là tập giấy ghi chú có thể xé rời.",
+    "pronunciations": [
+      {
+        "word": "notebook",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/notebook",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/n/not/noteb/notebook__us_1.mp3",
+          "ipa": "/ˈnəʊtbʊk/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/n/not/noteb/notebook__gb_1.mp3",
+          "ipa": "/ˈnəʊtbʊk/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3408,
+    "word": "workstation",
+    "pos": "n.",
+    "meaning": "chỗ làm việc được trang bị cho một người; máy trạm",
+    "image": "🖥️",
+    "example": "Each workstation has a desk and a monitor.",
+    "translation": "Mỗi chỗ làm việc có một chiếc bàn và một màn hình.",
+    "usage": "Trong văn phòng, chỉ một vị trí làm việc cụ thể có bàn, máy tính hoặc thiết bị cần thiết: `a workstation with two monitors`, `set up a workstation`. Trong tin học, còn chỉ máy tính hiệu năng cao dùng cho công việc chuyên môn.",
+    "contrast": "`Workstation` nhấn vào một vị trí và bộ thiết bị phục vụ công việc, thường cho một người. `Workspace` nhấn vào phần không gian dùng để làm việc, có thể là một góc bàn, một phòng hoặc khu vực chung. Một workspace có thể chứa nhiều workstation; hai từ cũng có thể cùng chỉ chỗ làm việc cá nhân nhưng khác điểm nhấn.",
+    "pronunciations": [
+      {
+        "word": "workstation",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/workstation",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/w/wor/works/workstation__us_1.mp3",
+          "ipa": "/ˈwɜːrksteɪʃn/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/w/wor/works/workstation__gb_1.mp3",
+          "ipa": "/ˈwɜːksteɪʃn/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3409,
+    "word": "pantry",
+    "pos": "n.",
+    "meaning": "phòng hoặc tủ để thực phẩm; khu đồ ăn, đồ uống ở văn phòng",
+    "image": "☕",
+    "example": "There is a coffee machine in the office pantry.",
+    "translation": "Có một máy pha cà phê trong khu đồ ăn, đồ uống của văn phòng.",
+    "usage": "Dùng `in the pantry`; trong ngữ cảnh văn phòng, thường là khu lấy đồ uống và đồ ăn nhẹ.",
+    "contrast": "`Kitchen` là nơi nấu ăn; `pantry` chủ yếu để thực phẩm và đồ dùng, có thể có thiết bị đơn giản.",
+    "pronunciations": [
+      {
+        "word": "pantry",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/pantry",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/p/pan/pantr/pantry__us_1.mp3",
+          "ipa": "/ˈpæntri/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/p/pan/pantr/pantry__gb_1.mp3",
+          "ipa": "/ˈpæntri/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3410,
+    "word": "deadline",
+    "pos": "n.",
+    "meaning": "hạn chót",
+    "image": "⏰",
+    "example": "The deadline for the report is Friday.",
+    "translation": "Hạn chót nộp báo cáo là thứ Sáu.",
+    "usage": "Dùng `meet/miss a deadline`, `the deadline for something`, `by the deadline`.",
+    "contrast": "`Deadline` là mốc cuối phải hoàn thành; `schedule` là lịch sắp xếp các hoạt động.",
+    "pronunciations": [
+      {
+        "word": "deadline",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/deadline",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/d/dea/deadl/deadline__us_1.mp3",
+          "ipa": "/ˈdedlaɪn/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/d/dea/deadl/deadline__gb_2.mp3",
+          "ipa": "/ˈdedlaɪn/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3411,
+    "word": "update",
+    "pos": "v., n.",
+    "meaning": "cập nhật; bản hoặc thông tin cập nhật",
+    "image": "🔄",
+    "example": "Please update the report before the meeting.",
+    "translation": "Hãy cập nhật báo cáo trước cuộc họp.",
+    "usage": "Dùng `update a file/report`, `update someone on something`; danh từ: `an update on the project`.",
+    "contrast": "`Update` làm cho thông tin mới nhất; `revise` chỉnh sửa nội dung, không nhất thiết vì có thông tin mới.",
+    "pronunciations": [
+      {
+        "word": "update",
+        "pos": "verb",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/update",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/u/upd/updat/update__us_1_rr.mp3",
+          "ipa": "/ˌʌpˈdeɪt/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/u/upd/updat/update__gb_1.mp3",
+          "ipa": "/ˌʌpˈdeɪt/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3412,
+    "word": "workspace",
+    "pos": "n.",
+    "meaning": "không gian dành để làm việc; không gian làm việc số",
+    "image": "🧑‍💻",
+    "example": "This shared workspace has six workstations.",
+    "translation": "Không gian làm việc chung này có sáu chỗ làm việc được trang bị sẵn.",
+    "usage": "Dùng khi nói về diện tích, cách bố trí hoặc môi trường dành cho công việc: `a shared workspace`, `more workspace`, `organize your workspace`. Trong phần mềm, còn chỉ khu vực làm việc số chứa tài liệu, công cụ hoặc dự án.",
+    "contrast": "`Workspace` trả lời “không gian nào dùng để làm việc?”, không nhất thiết có máy tính hay thiết bị. `Workstation` chỉ một vị trí làm việc với bộ thiết bị cụ thể, thường cho một người; trong tin học còn có nghĩa máy trạm. Ví dụ: cả phòng là workspace, còn từng bàn có máy tính là workstation. `Workplace` nói nơi làm việc nói chung, chẳng hạn công ty hoặc văn phòng.",
+    "pronunciations": [
+      {
+        "word": "workspace",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/workspace",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/w/wor/works/workspace__us_1.mp3",
+          "ipa": "/ˈwɜːrkspeɪs/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/w/wor/works/workspace__gb_1.mp3",
+          "ipa": "/ˈwɜːkspeɪs/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3413,
+    "word": "submit",
+    "pos": "v.",
+    "meaning": "nộp; trình để xem xét",
+    "image": "📤",
+    "example": "Please submit the form by Friday.",
+    "translation": "Vui lòng nộp biểu mẫu chậm nhất vào thứ Sáu.",
+    "usage": "Dùng `submit a report/application`, `submit something to someone`; dạng -ing: `submitting`.",
+    "contrast": "`Submit` thường là nộp chính thức để xử lý hoặc xét duyệt; `send` chỉ hành động gửi nói chung.",
+    "pronunciations": [
+      {
+        "word": "submit",
+        "pos": "verb",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/submit",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/s/sub/submi/submit__us_1.mp3",
+          "ipa": "/səbˈmɪt/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/s/sub/submi/submit__gb_2.mp3",
+          "ipa": "/səbˈmɪt/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3414,
+    "word": "agenda",
+    "pos": "n.",
+    "meaning": "chương trình; danh sách nội dung cuộc họp",
+    "image": "📋",
+    "example": "Please print the agenda for the meeting.",
+    "translation": "Vui lòng in chương trình cuộc họp.",
+    "usage": "Dùng `on the agenda`, `set an agenda`, `the agenda for a meeting`.",
+    "contrast": "`Agenda` liệt kê việc sẽ thảo luận; `minutes` ghi lại nội dung và quyết định sau cuộc họp.",
+    "pronunciations": [
+      {
+        "word": "agenda",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/agenda",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/a/age/agend/agenda__us_2.mp3",
+          "ipa": "/əˈdʒendə/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/a/age/agend/agenda__gb_1.mp3",
+          "ipa": "/əˈdʒendə/"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3415,
+    "word": "projector",
+    "pos": "n.",
+    "meaning": "máy chiếu",
+    "image": "📽️",
+    "example": "Please check the projector before the presentation.",
+    "translation": "Vui lòng kiểm tra máy chiếu trước buổi thuyết trình.",
+    "usage": "Dùng `turn on/off the projector`, `connect a laptop to a projector`.",
+    "contrast": "`Projector` chiếu hình lên một bề mặt; `monitor` hiển thị hình trực tiếp trên màn hình.",
+    "pronunciations": [
+      {
+        "word": "projector",
+        "pos": "noun",
+        "source": "https://www.oxfordlearnersdictionaries.com/definition/english/projector",
+        "us": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/us_pron/p/pro/proje/projector__us_1.mp3",
+          "ipa": "/prəˈdʒektər/"
+        },
+        "uk": {
+          "audio": "https://www.oxfordlearnersdictionaries.com/media/english/uk_pron/p/pro/proje/projector__gb_1.mp3",
+          "ipa": "/prəˈdʒektə(r)/"
+        }
+      }
+    ]
   }
 ]

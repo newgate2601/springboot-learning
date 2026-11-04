@@ -64,7 +64,7 @@ struct GardenWidgetView: View {
     }
     private func ipa(_ word: Word) -> String {
         guard let p = word.pronunciations.first(where: { $0.recording(for: entry.configuration.locale.rawValue) != nil }),
-              let rec = p.recording(for: entry.configuration.locale.rawValue) else { return "Chưa có bản thu" }
+              let rec = p.recording(for: entry.configuration.locale.rawValue) else { return word.pos }
         let label = p.word.lowercased() == word.word.lowercased() ? "" : p.word + " "
         return entry.configuration.locale.rawValue.uppercased() + " " + label + rec.ipa
     }
@@ -79,7 +79,7 @@ struct GardenWidgetView: View {
             }.buttonStyle(.plain).accessibilityLabel("Đổi từ. Đang hiện \(word.word)")
             Button(intent: PlayWordIntent(wordID: word.id, locale: entry.configuration.locale)) {
                 Image(systemName: "speaker.wave.2.fill").font(.system(size: 16)).frame(width: 26, height: 40).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(word.firstRecording(locale: entry.configuration.locale.rawValue) == nil).accessibilityLabel("Nghe \(word.word)")
+            }.buttonStyle(.plain).accessibilityLabel("Nghe \(word.word)")
         }
     }
     private func homeScreen(_ word: Word) -> some View {
@@ -94,7 +94,6 @@ struct GardenWidgetView: View {
                 Button(intent: NextWordIntent(displayedID: word.id, minutes: entry.configuration.minutes)) { Label("Đổi từ", systemImage: "arrow.triangle.2.circlepath") }
                 Spacer(minLength: 0)
                 Button(intent: PlayWordIntent(wordID: word.id, locale: entry.configuration.locale)) { Image(systemName: "speaker.wave.2.fill") }
-                    .disabled(word.firstRecording(locale: entry.configuration.locale.rawValue) == nil)
                 Link(destination: URL(string: "wordgarden://word/\(word.id)")!) { Image(systemName: "arrow.up.right.square") }.accessibilityLabel("Xem ví dụ")
             }.font(.caption).buttonStyle(.plain)
         }.foregroundStyle(Color(red: 0.14, green: 0.29, blue: 0.21))
@@ -105,7 +104,7 @@ struct GardenWidgetView: View {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "WordGardenWidget", intent: GardenConfiguration.self, provider: GardenProvider()) { entry in GardenWidgetView(entry: entry) }
             .configurationDisplayName("Word Garden — Đổi & Nghe")
-            .description("Chạm từ để đổi ngay tại chỗ. Chạm loa để thử nghe Oxford.")
+            .description("Từ mới + phiên âm + nghĩa. Chạm từ để đổi, chạm loa để nghe.")
             .supportedFamilies([.accessoryRectangular, .systemSmall, .systemMedium, .systemLarge])
             .contentMarginsDisabled()
     }
