@@ -23,6 +23,8 @@ description: Soạn và biên tập bài học ngữ pháp theo sách hoặc uni
 ## Viết cho người mới học bằng tiếng Việt tự nhiên
 
 - Viết như một người Việt đang giảng trực tiếp: câu trọn ý, từ quen thuộc, nói rõ ai đang làm gì. Không dịch theo thứ tự từ tiếng Anh, không dùng khẩu hiệu cụt như “Việc đang xảy ra, chưa xong” để thay lời giải thích.
+- Kiểm tra mỗi nghĩa và cách dùng khi đọc riêng. Người mới phải hiểu được ý chính ngay tại mục đó bằng từ tiếng Việt quen thuộc. Nếu ví dụ cần bối cảnh, đặt một lời dẫn ngắn ngay trước ví dụ. Bỏ lối nói mơ hồ hoặc chi tiết riêng của tài liệu không giúp hiểu quy tắc.
+- Khi sửa theo góp ý về cách viết, rà tất cả phần vừa soạn để tìm cùng kiểu lỗi. Đọc từng phần mà không dựa vào tiêu đề hoặc ví dụ ở phần trước, rồi sửa ngay các chỗ thiếu ý hoặc thiếu bối cảnh.
 - Mỗi cách dùng gồm: một quy tắc dễ hiểu → tình huống cụ thể đủ để hiểu ví dụ → câu tiếng Anh và nghĩa → một vài câu chỉ rõ vì sao cấu trúc đó phù hợp. Tình huống và ví dụ phải khớp nhau; ví dụ về việc đang diễn ra nên ưu tiên hành động cụ thể như lái xe trước khi dùng câu có thêm cấu trúc khó như try to.
 - Giải thích “vì sao” bằng nội dung của chính câu: “Cô ấy đang lái xe thật, không phải kể thói quen đi làm hằng ngày, nên dùng is driving”. Không chỉ nhắc lại “dùng tiếp diễn vì việc đang diễn ra” mà bỏ thông tin giúp người học nhận ra điều đó.
 - Ngắn gọn là bỏ lời thừa, không bỏ điều kiện áp dụng, ngữ cảnh hoặc mối liên hệ giữa các ý. Không giới hạn cứng số câu; dùng đủ lời để hiểu, sau đó cắt chỗ lặp. Một đoạn phát triển một ý, thường 2–3 câu vừa phải. Bối cảnh, ví dụ và giải thích luôn đặt sát nhau.

@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Word Garden · Flashcards từ vựng và cụm từ</title>
+<style>
+:root{--paper:#f5f3eb;--ink:#244837;--muted:#728074;--line:#dbe2d4;--green:#286b4c}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.65 'Segoe UI',Arial,sans-serif}button,input{font:inherit}button,a,input{touch-action:manipulation}button{cursor:pointer}a{color:var(--green);text-underline-offset:4px}button:focus-visible,a:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:3px solid #dca746;outline-offset:4px}[hidden]{display:none!important}.top{display:flex;justify-content:space-between;align-items:center;padding:20px max(24px,calc((100% - 1100px)/2));border-bottom:1px solid var(--line);background:#fffef9;gap:15px;flex-wrap:wrap}.brand{text-decoration:none;font-weight:800;font-size:22px;letter-spacing:-1px}.top nav{font-size:14px}main{max-width:1000px;margin:auto;padding:45px 24px 55px}.eyebrow{font-size:11px;letter-spacing:2px;font-weight:800;color:#7b915c;text-transform:uppercase}h1{font:normal clamp(38px,5vw,58px)/1.15 Georgia,serif;letter-spacing:-1.8px;margin:12px 0 15px}h1 em{color:var(--green)}.intro{color:var(--muted);max-width:680px;margin:0 0 26px}.setup{display:flex;align-items:end;gap:12px;flex-wrap:wrap;background:#e9eee2;border:1px solid #d7e0ce;padding:18px 22px;border-radius:15px}.setup label{font-size:12px;font-weight:700;display:grid;gap:5px}.setup input{width:100px;min-height:44px;background:#fffefa;color:var(--ink);border:1px solid #c7d1bd;border-radius:8px;padding:8px 12px}.primary{background:var(--green);color:#fff;border:1px solid var(--green);border-radius:8px;min-height:44px;padding:9px 23px;font-weight:600}.setup small{margin-left:auto;color:#65775d;font-size:12px;padding-bottom:9px}#error{color:#a43d25;margin:10px 0;font-size:14px}.study-top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:25px 3px 10px;font-size:13px;color:var(--muted)}.progress-track{height:4px;background:#e0e5d9;border-radius:4px;margin-bottom:20px;overflow:hidden}.progress-fill{height:100%;background:#7c9b65;width:0;transition:width .2s}.card{background:#fffefb;border:1px solid var(--line);border-radius:22px;box-shadow:0 14px 45px #29482b0a;overflow:hidden}.front{min-height:350px;padding:45px 26px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;cursor:pointer;background:radial-gradient(ellipse at 50% 30%,#edf2e5,transparent 65%)}.front-label{color:#8b9a7e;font-size:10px;font-weight:800;letter-spacing:2px}.front h2{font:normal clamp(36px,7vw,76px)/1.2 Georgia,serif;letter-spacing:-1px;margin:24px 0 14px;overflow-wrap:anywhere;max-width:100%}.front .pos{font-size:13px;background:#ebefdf;padding:3px 11px;border-radius:20px;color:#738366}.hint{margin-top:36px;color:#8b9486;font-size:12px}.card-back{cursor:pointer}.picture{height:145px;position:relative;background:hsl(var(--hue) 32% 93%);color:hsl(var(--hue) 28% 43%)}.picture svg{width:100%;height:100%}.number{position:absolute;top:12px;left:20px;font-size:12px;color:#71836a}.word-body{padding:27px 35px 30px}.word-body h2{font-size:27px;margin:0;line-height:1.4}.word-body .pos{font-size:12px;font-weight:400;margin-left:8px;background:#eef2e7;padding:3px 7px;border-radius:4px}.meaning{font-size:20px;margin:8px 0 15px}.main-usage h3,.contrast-usage h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:18px 0 5px;color:#7b8f68}.main-usage p,.contrast-usage p{font-size:14px;margin:0;line-height:1.85}.term{font-weight:600;color:#356340}.source-example{margin-top:18px;border-top:1px solid #e5e9df;padding-top:18px}.sentence{font-size:18px;margin:0}.translation{color:#6d7b6c;font-size:15px;margin:5px 0}.example-source{font-size:11px;color:#8e9987;margin:8px 0}.contrast-usage{border-left:2px solid #c8bd8d;background:#f6f4e9;padding:3px 17px 16px;margin-top:20px;border-radius:0 8px 8px 0}.structure{font-size:13px;display:block;margin-top:15px}.pronunciation{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:7px 0 12px;font-size:12px;color:var(--muted)}.pron-group{display:inline-flex;align-items:center;gap:5px}.audio{background:#fffefa;color:var(--green);border:1px solid #d3dfcd;border-radius:5px;padding:4px 8px;font-size:12px}.audio[aria-pressed=true]{background:var(--green);color:white}.inline-ipa{font-size:14px}.recorded-word,.pron-source{font-size:12px;color:#6a7c60}.fallback-pron>.spoken{display:none}.fallback-pron small{font-size:12px}.actions{display:flex;gap:12px;align-items:center;justify-content:center;margin-top:20px}.secondary{background:#fffef9;border:1px solid #d2dbca;color:var(--ink);border-radius:8px;padding:9px 17px;min-height:44px}.secondary:disabled{opacity:.35;cursor:default}.keyboard{text-align:center;font-size:12px;color:#899180;margin:18px 0}.empty{text-align:center;border:1px dashed #ccd6bf;border-radius:20px;padding:50px 20px;margin-top:26px;color:#829078}.empty span{display:block;font-size:40px;margin-bottom:10px}.footnote{font-size:12px;color:#829078;margin-top:30px;text-align:center}#audio-status{background:#294d37;color:white;border-radius:8px;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);max-width:90%;padding:10px 18px;z-index:10;font-size:13px}#audio-status:empty{display:none}@media(max-width:600px){main{padding:28px 16px}.top{padding:16px}.top nav{font-size:12px}.setup{padding:16px;gap:10px}.setup small{margin-left:0;width:100%;padding:0}.front{min-height:310px;padding:35px 18px}.word-body{padding:23px}.actions{gap:8px}.actions button{padding:10px 12px;font-size:13px}.card{border-radius:17px}.study-top{font-size:12px}.keyboard{font-size:11px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+.setup .secondary:disabled{opacity:.45;cursor:default}.setup small{flex-basis:100%;padding:0}.grade{flex-wrap:wrap}.grade [aria-pressed=true]{background:var(--green);color:white}.grade button:disabled{opacity:.45}.history{margin-top:28px;padding:16px 20px;border:1px solid var(--line);border-radius:15px;background:#fffef9}.history summary{cursor:pointer;font-weight:700}.history details{padding:10px 0;border-top:1px solid var(--line)}.history-tools{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.history-tools label{cursor:pointer}.history-note,#history-status,#grade-status{font-size:13px;color:var(--muted)}#grade-status{text-align:center}#history-status:empty{display:none}.mistakes{overflow-wrap:anywhere;margin-top:8px}.history input[type=file]{max-width:100%}
+.page-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}.page-tabs button{border:0;border-radius:12px;padding:10px 18px;background:#e4eae0;color:var(--ink);font-weight:700}.page-tabs button[aria-pressed=true]{background:#27664f;color:#fff}.page-tabs #history-tab[aria-pressed=true]{background:#57418a}.tab-count{margin-left:5px;font-size:.85em}.history{margin-top:0;background:linear-gradient(145deg,#f4ecff,#fffdf9 65%);border-color:#e0d3ef}.history h2,.results-card h2{margin:0 0 8px;font:normal 32px/1.2 Georgia,serif}.history details{margin:9px 0;padding:12px;border:1px solid #e6dcef;border-radius:12px;background:#fffdfd}.history summary{color:#473474}.history-tools{align-items:center}.history-tools label{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}.danger{border:1px solid #a52d43;background:#a52d43;color:#fff;border-radius:8px;padding:10px 17px;min-height:44px;font-weight:700}.danger:disabled,.primary:disabled{opacity:.45;cursor:default}#wrong{border-color:#e8b7c3;color:#922c43;background:#fff0f2}#wrong[aria-pressed=true]{background:#a52d43;color:white}#mark{background:#fff3d4;border-color:#e6cd91;color:#674509}#mark[aria-pressed=true]{background:#78510b;color:#fff}.results-card{padding:24px;border-radius:20px;background:linear-gradient(135deg,#e1f3e7,#fff8e1);border:1px solid #cddfce}.results-card .actions{justify-content:flex-start;flex-wrap:wrap}.score-line{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.score{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:700}.score.correct{background:#daf0e0;color:#235843}.score.wrong{background:#fbe3e9;color:#902b43}.score.pending{background:#eee7fc;color:#55417d}.round-end{text-align:center;margin-top:18px}
+</style></head><body>
+<header class="top"><a class="brand" href="common-vocabulary.html">wordgarden ✿</a><nav aria-label="Sổ học"><a href="common-vocabulary.html">Từ thông dụng</a> · <a href="less-common-vocabulary.html">Từ ít thông dụng</a> · <a href="english-phrases.html">Cụm từ</a></nav></header>
+<main><div class="eyebrow">A little recall, every day</div><h1>Ôn từ và cụm từ.<br><em>Một lần ghi nhớ.</em></h1>
+<nav class="page-tabs" aria-label="Flashcards">
+  <button type="button" id="practice-tab" aria-controls="practice-panel" aria-pressed="true">✿ Ôn thẻ</button>
+  <button type="button" id="history-tab" aria-controls="history-panel" aria-pressed="false">◷ Lịch sử <span class="tab-count" id="history-count"></span></button>
+</nav>
+<p id="history-status" role="status"></p>
+<section id="practice-panel" aria-labelledby="practice-tab">
+<p id="error" role="alert" hidden></p>
+<div id="draw-panel">
+<p class="intro">Bốc ngẫu nhiên từ các thẻ chưa chấm, trả lời sai hoặc đã đánh dấu. Nếu lượt có thẻ chưa chấm và chưa đánh dấu, lượt sẽ bắt đầu bằng một thẻ như vậy.</p>
+<form class="setup" id="setup">
+  <label for="quantity">SỐ THẺ MỖI LƯỢT<input type="number" id="quantity" min="1" step="1" value="20" required></label>
+  <button class="primary" id="draw" type="submit">Bốc ngẫu nhiên ↗</button>
+  <button class="secondary" id="draw-wrong" type="button">Chỉ bốc thẻ sai</button>
+  <button class="secondary" id="draw-marked" type="button">Chỉ bốc thẻ đánh dấu</button>
+  <small id="pool-count" aria-live="polite"></small>
+</form>
+<div class="empty" id="empty"><span aria-hidden="true">✿</span>Bộ thẻ của bạn sẽ xuất hiện ở đây.<br>Bắt đầu với 10–20 thẻ cho một lượt ôn ngắn.</div>
+</div>
+<section id="study" aria-label="Bộ flashcard" hidden><div class="study-top"><span id="position" aria-live="polite"></span><span id="face-label">Mặt trước · English</span></div><div class="progress-track"><div class="progress-fill" id="progress"></div></div>
+<div class="card"><div class="front" id="front" role="button" tabindex="0" aria-label="Lật thẻ để xem nghĩa" aria-expanded="false"><span class="front-label">WHAT DOES THIS MEAN?</span><h2 id="word"></h2><span class="pos" id="pos"></span><span class="hint">Bấm vào thẻ hoặc nhấn Space để lật ↻</span></div><div class="card-back" id="back" hidden></div></div>
+<div class="actions"><button type="button" class="secondary" id="previous" aria-label="Thẻ trước">← Trước</button><button type="button" class="primary" id="flip">Lật thẻ ↻</button><button type="button" class="secondary" id="next" aria-label="Thẻ tiếp theo">Tiếp →</button></div>
+<div class="actions grade" aria-label="Chấm và đánh dấu thẻ">
+  <button type="button" class="secondary" id="wrong" aria-pressed="false">Sai</button>
+  <button type="button" class="secondary" id="mark" aria-pressed="false">☆ Đánh dấu để ôn</button>
+</div>
+<p id="grade-status" aria-live="polite"></p>
+<div class="round-end"><button type="button" class="danger" id="exit-round">Thoát và lưu lịch sử</button></div>
+<p class="keyboard">Space / Enter để lật thẻ · ← → để chuyển thẻ</p></section>
+<section class="results-card" id="results" aria-labelledby="results-title" hidden>
+  <h2 id="results-title" tabindex="-1">Kết quả lượt ôn</h2>
+  <div id="result-score"></div>
+  <p id="result-mistakes" class="mistakes"></p>
+  <div class="actions">
+    <button class="primary" type="button" id="new-round">Bốc flashcard mới ↗</button>
+    <button class="secondary" type="button" id="back-to-draw">Về màn hình bốc</button>
+  </div>
+</section>
+</section>
+<section class="history" id="history-panel" aria-labelledby="history-tab" hidden>
+  <h2>Lịch sử bốc thẻ</h2>
+  <p class="history-note">Lịch sử và dấu ôn được lưu trong trình duyệt. Khi đổi máy, xuất tệp JSON từ máy cũ rồi nhập trên máy mới. Tệp nhập sẽ thay thế lịch sử và dấu ôn hiện tại.</p>
+  <div class="history-tools">
+    <button class="secondary" type="button" id="export-history">Xuất dữ liệu ôn tập</button>
+    <label for="import-history">Nhập dữ liệu ôn tập <input type="file" id="import-history" accept=".json,application/json"></label>
+    <button class="danger" type="button" id="clear-history">Xóa toàn bộ lịch sử bốc</button>
+  </div>
+  <div id="history-list"></div>
+</section>
+<p class="footnote">Dữ liệu từ sổ Word Garden · Hình gợi nhớ, ví dụ, cách dùng và audio ở mặt sau.<br>Bản thu Oxford cần mạng; câu ví dụ sử dụng máy đọc của thiết bị.</p></main><div id="audio-status" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+const pool=/*VOCABULARY_DATA*/[];
+const $=s=>document.querySelector(s),quantity=$('#quantity'),front=$('#front'),back=$('#back'),error=$('#error'),status=$('#audio-status');let deck=[],index=0,revealed=false,recording=null,active=null;
+const historyKey = 'wordgarden-flashcard-study-v1';
+const byId = new Map(pool.map(card => [card.id, card]));
+const historyStatus = $('#history-status');
+const wrongButton = $('#wrong'), markButton = $('#mark');
+let state = { version: 1, rounds: [], marked: [] };
+let roundId = null;
+let resultId = null;
+let unsaved = false;
+
+function parseHistory(json) {
+  const data = JSON.parse(json);
+  const validId = id => typeof id === 'string' && /^(word|phrase)-\d+$/.test(id);
+  const unique = values => new Set(values).size === values.length;
+  const validTime = time => Number.isFinite(time) && Math.abs(time) <= 8.64e15;
+  if (data?.version !== 1 || !Array.isArray(data.rounds) || !Array.isArray(data.marked) ||
+    !data.marked.every(validId) || !unique(data.marked)) throw Error('Invalid history');
+  for (const round of data.rounds) {
+    if (typeof round?.id !== 'string' || !validTime(round.createdAt) ||
+      !Array.isArray(round.cards) || !round.cards.length) throw Error('Invalid round');
+    for (const card of round.cards) {
+      if (!validId(card?.id) || typeof card.label !== 'string' ||
+        ![null, 'wrong', 'correct'].includes(card.result) ||
+        (card.result !== null && !validTime(card.answeredAt))) throw Error('Invalid answer');
+    }
+    if (!unique(round.cards.map(card => card.id))) throw Error('Duplicate cards');
+  }
+  if (!unique(data.rounds.map(round => round.id))) throw Error('Duplicate rounds');
+  return data;
+}
+
+function readHistory() {
+  if (unsaved) return;
+  try {
+    const saved = localStorage.getItem(historyKey);
+    state = saved === null ? { version: 1, rounds: [], marked: [] } : parseHistory(saved);
+  } catch {
+    historyStatus.textContent = 'Không đọc được lịch sử đã lưu trong trình duyệt.';
+  }
+}
+
+function saveHistory(message = '') {
+  try {
+    localStorage.setItem(historyKey, JSON.stringify(state));
+    unsaved = false;
+    historyStatus.textContent = message;
+  } catch {
+    unsaved = true;
+    historyStatus.textContent = 'Trình duyệt không lưu được dữ liệu. Hãy xuất tệp JSON trước khi đóng trang.';
+  }
+  refresh();
+}
+
+function latestAnswers() {
+  const answers = new Map();
+  for (const round of state.rounds) {
+    for (const card of round.cards) {
+      if (card.result !== null && card.answeredAt >= (answers.get(card.id)?.answeredAt ?? -Infinity)) {
+        answers.set(card.id, card);
+      }
+    }
+  }
+  return answers;
+}
+
+function candidates() {
+  const answers = latestAnswers();
+  const marked = new Set(state.marked);
+  return {
+    wrong: pool.filter(card => answers.get(card.id)?.result === 'wrong'),
+    fresh: pool.filter(card => !answers.has(card.id)),
+    marked: pool.filter(card => marked.has(card.id))
+  };
+}
+
+function currentRound() {
+  return state.rounds.find(round => round.id === roundId);
+}
+
+function updateGrade() {
+  const entry = currentRound()?.cards.find(card => card.id === deck[index]?.id);
+  const marked = entry && state.marked.includes(entry.id);
+  wrongButton.disabled = !entry || !revealed;
+  markButton.disabled = !entry;
+  wrongButton.setAttribute('aria-pressed', String(entry?.result === 'wrong'));
+  markButton.setAttribute('aria-pressed', String(Boolean(marked)));
+  markButton.textContent = marked ? '★ Bỏ dấu ôn' : '☆ Đánh dấu để ôn';
+  $('#grade-status').textContent = entry?.result === 'wrong' ? 'Đã ghi Sai. Bấm lại để bỏ.' :
+    'Thẻ sẽ tính là đúng khi bạn chuyển tiếp, trừ khi bạn chọn Sai.';
+}
+
+function scoreLine(round) {
+  const scores = document.createElement('span');
+  scores.className = 'score-line';
+  const wrong = round.cards.filter(card => card.result === 'wrong').length;
+  const correct = round.cards.filter(card => card.result === 'correct').length;
+  for (const [kind, text] of [
+    ['correct', `${correct} đúng`], ['wrong', `${wrong} sai`],
+    ['pending', `${round.cards.length - correct - wrong} chưa chấm`]
+  ]) {
+    const badge = document.createElement('span');
+    badge.className = 'score ' + kind;
+    badge.textContent = text;
+    scores.append(badge);
+  }
+  return scores;
+}
+
+function renderMistakes(element, round) {
+  const wrong = round.cards.filter(card => card.result === 'wrong');
+  element.textContent = wrong.length ? 'Thẻ sai: ' : 'Không có thẻ sai trong lượt này.';
+  wrong.forEach((card, index) => {
+    if (index) element.append(' · ');
+    const source = byId.get(card.id);
+    if (!source) {
+      element.append(card.label);
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = source.href;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = card.label;
+    element.append(link);
+  });
+}
+
+function renderHistory() {
+  const list = $('#history-list');
+  const opened = new Set([...list.querySelectorAll('details[open]')].map(item => item.dataset.round));
+  list.replaceChildren();
+  $('#history-count').textContent = `(${state.rounds.length} lượt)`;
+  $('#clear-history').disabled = !state.rounds.length;
+  if (!state.rounds.length) list.textContent = 'Chưa có lượt bốc nào.';
+  for (const round of [...state.rounds].reverse()) {
+    const item = document.createElement('details');
+    item.dataset.round = round.id;
+    item.open = opened.has(round.id);
+    const title = document.createElement('summary');
+    title.textContent = new Date(round.createdAt).toLocaleString('vi-VN');
+    title.append(scoreLine(round));
+    const mistakes = document.createElement('p');
+    mistakes.className = 'mistakes';
+    renderMistakes(mistakes, round);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary';
+    remove.textContent = 'Xóa lượt này';
+    remove.addEventListener('click', () => deleteHistory(round.id));
+    item.append(title, mistakes, remove);
+    list.append(item);
+  }
+}
+
+function refresh() {
+  const { wrong, fresh, marked } = candidates();
+  $('#pool-count').textContent = `${wrong.length} thẻ sai · ${fresh.length} thẻ chưa chấm · ${marked.length} thẻ đánh dấu`;
+  $('#draw').disabled = $('#new-round').disabled = !wrong.length && !fresh.length && !marked.length;
+  $('#draw-wrong').disabled = !wrong.length;
+  $('#draw-marked').disabled = !marked.length;
+  if (roundId && (!currentRound() || currentRound().closed)) showDraw();
+  if (resultId && !state.rounds.some(round => round.id === resultId)) showDraw();
+  updateGrade();
+  renderHistory();
+}
+
+function showDraw() {
+  roundId = resultId = null;
+  deck = [];
+  stopAudio();
+  $('#study').hidden = $('#results').hidden = error.hidden = true;
+  $('#draw-panel').hidden = false;
+}
+
+function showTab(history) {
+  $('#practice-panel').hidden = history;
+  $('#history-panel').hidden = !history;
+  $('#practice-tab').setAttribute('aria-pressed', String(!history));
+  $('#history-tab').setAttribute('aria-pressed', String(history));
+  stopAudio();
+}
+
+function openRound(round) {
+  roundId = round.id;
+  resultId = null;
+  deck = round.cards.map(card => byId.get(card.id)).filter(Boolean);
+  const next = round.cards.find(card => card.result === null && byId.has(card.id));
+  index = next ? deck.indexOf(byId.get(next.id)) : 0;
+  $('#study').hidden = !deck.length;
+  $('#draw-panel').hidden = Boolean(deck.length);
+  $('#results').hidden = true;
+  if (!deck.length) roundId = null;
+  render();
+}
+
+function deleteHistory(id) {
+  if (!window.confirm(id ? 'Xóa kết quả của lượt bốc này?' : 'Xóa toàn bộ lượt bốc và kết quả Đúng/Sai? Dấu ôn sẽ được giữ lại.')) return;
+  readHistory();
+  state.rounds = id ? state.rounds.filter(round => round.id !== id) : [];
+  saveHistory(id ? 'Đã xóa lượt bốc.' : 'Đã xóa toàn bộ lịch sử bốc.');
+}
+function stopAudio(){if(recording){recording.pause();recording=null}if('speechSynthesis'in window)speechSynthesis.cancel();if(active)active.setAttribute('aria-pressed','false');active=null;status.textContent=''}
+function render(){stopAudio();const r=deck[index];if(!r)return;revealed=false;front.hidden=false;back.hidden=true;front.setAttribute('aria-expanded','false');$('#word').innerHTML=r.word;$('#pos').innerHTML=r.pos;back.innerHTML=r.back;back.querySelectorAll('a').forEach(a=>{a.target='_blank';a.rel='noopener'});$('#position').textContent='Thẻ '+(index+1)+' / '+deck.length;$('#face-label').textContent='Mặt trước · English';$('#progress').style.width=((index+1)/deck.length*100)+'%';$('#previous').disabled=index===0;$('#next').textContent=index===deck.length-1?'Xem kết quả ✓':'Tiếp →';$('#next').setAttribute('aria-label',$('#next').textContent);$('#flip').textContent='Lật thẻ ↻';updateGrade();}
+function flip(){if(!deck.length)return;stopAudio();revealed=!revealed;front.hidden=revealed;back.hidden=!revealed;front.setAttribute('aria-expanded',String(revealed));$('#face-label').textContent=revealed?'Mặt sau · Nghĩa & cách dùng':'Mặt trước · English';$('#flip').textContent=revealed?'Xem mặt tiếng Anh ↻':'Lật thẻ ↻';if(revealed&&document.activeElement===front)$('#flip').focus();updateGrade();}
+function setAnswer(entry, result) {
+  entry.result = result;
+  entry.answeredAt = Date.now();
+}
+
+function saveDefaultAnswer(round) {
+  const entry = round.cards.find(card => card.id === deck[index]?.id);
+  if (entry?.result === null) setAnswer(entry, 'correct');
+}
+
+function move(delta) {
+  const next = index + delta;
+  if (next < 0 || next >= deck.length) return;
+  readHistory();
+  const round = currentRound();
+  if (!round || round.closed) { refresh(); return; }
+  saveDefaultAnswer(round);
+  index = next;
+  render();
+  saveHistory();
+}
+
+function closeRound(showResult) {
+  readHistory();
+  const round = currentRound();
+  if (!round || round.closed) { refresh(); return; }
+  saveDefaultAnswer(round);
+  round.closed = true;
+  showDraw();
+  if (showResult) {
+    resultId = round.id;
+    $('#draw-panel').hidden = true;
+    $('#results').hidden = false;
+    $('#result-score').replaceChildren(scoreLine(round));
+    renderMistakes($('#result-mistakes'), round);
+    $('#results-title').focus();
+  }
+  saveHistory(showResult ? '' : 'Đã lưu lượt ôn.');
+  if (!showResult) quantity.focus();
+}
+function shuffle(cards) {
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cards[i], cards[j]] = [cards[j], cards[i]];
+  }
+  return cards;
+}
+
+function drawRound(mode = 'review') {
+  if (!quantity.reportValidity()) return;
+  readHistory();
+  const { wrong, fresh, marked } = candidates();
+  const eligible = mode === 'marked' ? marked : mode === 'wrong' ? wrong : [...new Set([...wrong, ...fresh, ...marked])];
+  const selected = shuffle(eligible).slice(0, quantity.valueAsNumber);
+  if (mode === 'review') {
+    const reviewCards = new Set([...wrong, ...marked]);
+    const firstFresh = selected.findIndex(card => !reviewCards.has(card));
+    if (firstFresh > 0) {
+      [selected[0], selected[firstFresh]] = [selected[firstFresh], selected[0]];
+    }
+  }
+  error.hidden = selected.length === quantity.valueAsNumber;
+  error.textContent = selected.length ? `Có ${selected.length} thẻ phù hợp trong lượt này.` : 'Hết thẻ phù hợp với cách bốc này.';
+  if (!selected.length) {
+    refresh();
+    return;
+  }
+  const label = document.createElement('span');
+  const round = {
+    id: Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16).padStart(8, '0')).join(''),
+    createdAt: Date.now(),
+    cards: selected.map(card => {
+      label.innerHTML = card.word;
+      return { id: card.id, label: label.textContent, result: null };
+    })
+  };
+  state.rounds.push(round);
+  openRound(round);
+  saveHistory();
+  front.focus();
+}
+
+function toggleWrong() {
+  if (!revealed) return;
+  readHistory();
+  const round = currentRound();
+  const entry = round?.cards.find(card => card.id === deck[index]?.id);
+  if (!entry || round.closed) return;
+  setAnswer(entry, entry.result === 'wrong' ? 'correct' : 'wrong');
+  saveHistory();
+}
+
+function toggleMark() {
+  const id = deck[index]?.id;
+  readHistory();
+  if (!id || !currentRound() || currentRound().closed) return;
+  const markedIndex = state.marked.indexOf(id);
+  if (markedIndex < 0) state.marked.push(id);
+  else state.marked.splice(markedIndex, 1);
+  saveHistory();
+}
+
+$('#export-history').addEventListener('click', () => {
+  readHistory();
+  const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'wordgarden-flashcard-history.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+$('#import-history').addEventListener('change', async event => {
+  const input = event.currentTarget;
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  let imported;
+  try {
+    imported = parseHistory(await file.text());
+  } catch {
+    historyStatus.textContent = 'Tệp này không phải dữ liệu ôn tập Word Garden hợp lệ.';
+    return;
+  }
+  readHistory();
+  if ((state.rounds.length || state.marked.length) &&
+    !window.confirm('Thay thế lịch sử và dấu ôn trên máy này bằng dữ liệu trong tệp?')) return;
+  state = imported;
+  showDraw();
+  const last = state.rounds.at(-1);
+  if (last && !last.closed) openRound(last);
+  saveHistory('Đã nhập lịch sử và dấu ôn.');
+});
+
+quantity.max = pool.length;
+readHistory();
+const lastRound = state.rounds.at(-1);
+if (lastRound && !lastRound.closed) openRound(lastRound);
+refresh();
+window.addEventListener('storage', event => {
+  if (event.key !== historyKey && event.key !== null) return;
+  readHistory();
+  refresh();
+});
+$('#setup').addEventListener('submit', event => { event.preventDefault(); drawRound(); });
+$('#practice-tab').addEventListener('click', () => showTab(false));
+$('#history-tab').addEventListener('click', () => showTab(true));
+$('#new-round').addEventListener('click', () => drawRound());
+$('#back-to-draw').addEventListener('click', () => { showDraw(); quantity.focus(); });
+$('#exit-round').addEventListener('click', () => closeRound(false));
+$('#draw-wrong').addEventListener('click', () => drawRound('wrong'));
+$('#draw-marked').addEventListener('click', () => drawRound('marked'));
+$('#clear-history').addEventListener('click', () => deleteHistory());
+wrongButton.addEventListener('click', toggleWrong);
+markButton.addEventListener('click', toggleMark);
+front.addEventListener('click',flip);front.addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();e.stopPropagation();flip()}});$('#flip').addEventListener('click',flip);$('#previous').addEventListener('click',()=>move(-1));$('#next').addEventListener('click',()=>{if(index===deck.length-1)closeRound(true);else move(1);});
+document.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea,.page-tabs')||!deck.length||$('#practice-panel').hidden)return;if(e.key==='ArrowLeft'){e.preventDefault();move(-1);return}if(e.key==='ArrowRight'){e.preventDefault();move(1);return}if(e.target.closest('button,a'))return;if(e.key===' '||e.key==='Enter'){e.preventDefault();flip()}});
+back.addEventListener('click',e=>{const b=e.target.closest('.audio');if(b){play(b);return}if(e.target.closest('a,button'))return;if(window.getSelection()?.toString())return;flip()});
+function play(b){const same=active===b;stopAudio();if(same)return;active=b;b.setAttribute('aria-pressed','true');const finish=()=>{if(active===b){b.setAttribute('aria-pressed','false');active=null;recording=null}};if(b.dataset.audio){const a=new Audio(b.dataset.audio);recording=a;a.playbackRate=1;a.onended=finish;const fail=()=>{if(active===b){finish();status.textContent='Không tải được bản thu Oxford. Bạn có thể mở liên kết Oxford cạnh nút để nghe.'}};a.onerror=fail;a.play().catch(fail);return}if(!('speechSynthesis'in window)){finish();status.textContent='Thiết bị không hỗ trợ máy đọc.';return}const voice=speechSynthesis.getVoices().find(v=>v.lang.toLowerCase()===b.dataset.locale.toLowerCase());if(!voice){finish();status.textContent='Chưa có giọng '+b.dataset.locale+' trên thiết bị.';return}const u=new SpeechSynthesisUtterance(b.dataset.say);u.lang=b.dataset.locale;u.voice=voice;u.rate=1;u.onend=finish;u.onerror=e=>{if(active!==b)return;finish();if(!['canceled','interrupted'].includes(e.error))status.textContent='Máy đọc gặp lỗi: '+e.error};speechSynthesis.speak(u);}
+if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.addEventListener('voiceschanged',()=>speechSynthesis.getVoices())}window.addEventListener('pagehide',stopAudio);
+</script></body></html>

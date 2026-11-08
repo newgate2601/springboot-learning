@@ -1,0 +1,534 @@
+[
+  {
+    "id": 1,
+    "word": "down the drain",
+    "pos": "idiom · informal",
+    "meaning": "đổ sông đổ biển; bị lãng phí, mất trắng",
+    "image": "💸",
+    "us": "daʊn ðə dreɪn",
+    "uk": "daʊn ðə dreɪn",
+    "example": "That is at least a hundred dollars down the drain.",
+    "translation": "Thế là ít nhất một trăm đô la đổ sông đổ biển.",
+    "usage": "Dùng với tiền bạc, thời gian hoặc công sức bị phí hoài: `go down the drain`, `money down the drain`, `pour/throw money down the drain`. Không dịch từng từ để suy ra nghĩa thành ngữ.",
+    "contrast": "`Down the drain` nhấn mạnh thứ gì đó bị phí hoài hoặc mất đi; `a waste of money` trực tiếp gọi một khoản chi là lãng phí. Nghĩa đen là “xuống cống/lỗ thoát nước”.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/down-the-drain",
+    "components": [
+      {
+        "word": "down",
+        "id": 905
+      },
+      {
+        "word": "the",
+        "id": 3007
+      },
+      {
+        "word": "drain",
+        "id": 3416
+      }
+    ],
+    "exampleLabel": "Ví dụ phỏng theo ngữ cảnh ảnh người dùng"
+  },
+  {
+    "id": 2,
+    "word": "pick up",
+    "pos": "phrasal verb",
+    "meaning": "cầm lên; nhấc lên; nhặt lên (bằng tay)",
+    "image": "📷",
+    "us": "pɪk ˈʌp",
+    "uk": "pɪk ˈʌp",
+    "example": "I thought I would pick up my camera and film a short video.",
+    "translation": "Tôi nghĩ mình sẽ cầm máy quay lên và quay một video ngắn.",
+    "exampleLabel": "Ví dụ hoàn chỉnh phỏng theo đoạn phụ đề trong ảnh người dùng",
+    "usage": "`Pick up my camera` nghĩa là cầm máy quay lên để dùng. Dùng `pick up something` hoặc `pick something up`. Với đại từ phải nói `pick it up`, không nói `pick up it`. Quá khứ: `picked up`. Cụm còn có nghĩa đón người/lấy đồ, nhưng ở đây là hành động nhấc lên.",
+    "contrast": "`Pick` đứng riêng thường là chọn hoặc hái; `pick up` trong ngữ cảnh này là cầm/nhấc một vật lên. `Hold` là cầm/giữ vật trong tay, không nhất thiết có động tác nhấc lên.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/pick-up",
+    "components": [
+      {
+        "word": "pick",
+        "id": 2161
+      },
+      {
+        "word": "up",
+        "id": 3200
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "word": "go easy on me",
+    "pos": "idiom · informal",
+    "meaning": "nhẹ tay với tôi; đừng quá khắt khe với tôi",
+    "image": "🙏",
+    "us": "ɡoʊ ˈiːzi ɑːn miː",
+    "uk": "ɡəʊ ˈiːzi ɒn miː",
+    "example": "Go easy on me, guys.",
+    "translation": "Mọi người nhẹ tay với tôi nhé.",
+    "exampleLabel": "Câu trong ảnh người dùng (chuẩn hóa viết hoa và dấu câu)",
+    "usage": "Mẫu chung: `go easy on someone` — đối xử nhẹ nhàng, đừng chỉ trích, trừng phạt hay gây khó dễ quá mức. Thay `me` bằng `him`, `her`, `us` hoặc tên người. Câu trong ảnh là lời nhờ mọi người nương tay hoặc thông cảm khi nhận xét; sắc thái cụ thể tùy tình huống. Giữ `easy`, không đổi thành `easily` trong thành ngữ này.",
+    "contrast": "`Go easy on me` xin người khác nhẹ tay với mình; `take it easy` thường khuyên ai đó thư giãn hoặc bình tĩnh. `Go easy on something`, như `go easy on the sugar`, lại có nghĩa dùng/ăn thứ đó ít thôi.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/go-easy-on",
+    "components": [
+      {
+        "word": "go",
+        "id": 1314
+      },
+      {
+        "word": "easy",
+        "id": 951
+      },
+      {
+        "word": "on",
+        "id": 2025
+      },
+      {
+        "word": "me",
+        "id": 1815
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "word": "make sense",
+    "pos": "idiom",
+    "meaning": "hợp lý; có ý nghĩa, có thể hiểu được",
+    "image": "💡",
+    "us": "meɪk sens",
+    "uk": "meɪk sens",
+    "example": "This is how it makes sense to me.",
+    "translation": "Đây là cách tôi thấy điều đó hợp lý.",
+    "exampleLabel": "Câu điều chỉnh từ ảnh người dùng: hoàn chỉnh phần sau to bằng me",
+    "usage": "`Makes sense` là dạng hiện tại của `make sense` khi chủ ngữ là `it`. `Something makes sense` nghĩa là điều gì đó hợp lý hoặc dễ hiểu; thêm `to someone` để nói hợp lý/dễ hiểu đối với ai. Không dịch từng từ thành “tạo ra giác quan”.",
+    "contrast": "`Make sense` nói bản thân một điều hợp lý hoặc có thể hiểu được; `make sense of something` nói một người hiểu hoặc tìm ra ý nghĩa của điều đó. `It makes sense to + động từ nguyên mẫu` nghĩa là làm việc đó là hợp lý, khác với `to + người`.",
+    "source": "https://dictionary.cambridge.org/us/dictionary/english/make-sense?q=make-sense_1",
+    "components": [
+      {
+        "word": "make",
+        "id": 1779
+      },
+      {
+        "word": "sense",
+        "id": 2624
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "word": "punch card",
+    "pos": "noun phrase",
+    "meaning": "thẻ tích lượt mua bằng cách bấm lỗ/đánh dấu để nhận ưu đãi",
+    "image": "🎟️",
+    "us": "ˈpʌntʃ ˌkɑːrd",
+    "uk": "ˈpʌntʃ ˌkɑːd",
+    "ipaSource": "https://dictionary.cambridge.org/pronunciation/english/punch-card",
+    "example": "I do have a punch card here.",
+    "translation": "Tôi có thẻ tích lượt ở đây thật mà.",
+    "exampleLabel": "Đoạn trong ảnh người dùng, điều chỉnh tối thiểu: thêm chủ ngữ I",
+    "usage": "Thẻ ghi nhận các lần mua. Khi đủ số lượt theo quy định, khách được ưu đãi. Thẻ giấy thường được bấm lỗ hoặc đóng dấu.",
+    "contrast": "`Loyalty card` là tên chung của thẻ khách hàng thân thiết; `punch card` nhấn vào việc tích từng lượt đánh dấu. Trong ngữ cảnh máy tính cũ, `punch card` còn là thẻ đục lỗ để lưu dữ liệu.",
+    "source": "https://js.squareup.com/help/us/en/article/8411-apply-loyalty-rewards-to-a-sale",
+    "components": [
+      {
+        "word": "punch",
+        "id": 3419
+      },
+      {
+        "word": "card",
+        "id": 439
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "word": "add up",
+    "pos": "phrasal verb",
+    "meaning": "khớp nhau; hợp lý, có lý (các chi tiết nhất quán)",
+    "image": "🧩",
+    "us": "æd ˈʌp",
+    "uk": "æd ˈʌp",
+    "example": "Everything adds up.",
+    "translation": "Mọi thứ đều khớp nhau / đều hợp lý.",
+    "exampleLabel": "Câu trong ảnh phụ đề người dùng",
+    "usage": "Ở nghĩa trong ảnh, `add up` không cần tân ngữ: các chi tiết hoặc lý do ghép lại thấy hợp lý. `Everything` đi với động từ số ít nên dùng `adds up`. Dạng phủ định thường dùng khi thấy điều gì đó không ổn: `does not add up`.",
+    "contrast": "`Make sense` nói chung là hợp lý hoặc hiểu được; `add up` thường nhấn mạnh các chi tiết/lý do khớp với nhau. Cụm còn có nghĩa cộng số (`add something up`) hoặc tích lại thành nhiều; không mặc định dịch mọi trường hợp là “khớp nhau”.",
+    "source": "https://dictionary.cambridge.org/us/dictionary/english/add-up",
+    "components": [
+      {
+        "word": "add",
+        "id": 46
+      },
+      {
+        "word": "up",
+        "id": 3200
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "word": "officially established",
+    "pos": "adverb + verb",
+    "meaning": "đã chính thức xác định hoặc xác nhận",
+    "image": "✅",
+    "us": "əˈfɪʃ.əl.i ɪˈstæb.lɪʃt",
+    "uk": "əˈfɪʃ.əl.i ɪˈstæb.lɪʃt",
+    "example": "I think I have officially established that my favorite season in New York is fall.",
+    "translation": "Mình nghĩ mình chốt được rồi: mùa mình thích nhất ở New York là mùa thu.",
+    "exampleLabel": "Ví dụ phỏng theo phụ đề, bổ sung fall để hoàn chỉnh câu",
+    "usage": "Dùng `establish that` trước một câu nêu điều đã xác định. `Officially` cho biết kết luận đã được xác nhận chính thức. Trong ví dụ về mùa yêu thích, người nói dùng từ này đùa như thể đang công bố kết luận.",
+    "contrast": "`I've decided that ...` nhấn mạnh việc đi đến quyết định. Trong ví dụ này, `I've officially established that ...` nói về việc nhận ra sở thích của mình, với giọng như đang công bố một kết luận.",
+    "source": "https://dictionary.cambridge.org/us/dictionary/english/establish",
+    "components": [
+      {
+        "word": "officially",
+        "id": 2018
+      },
+      {
+        "word": "establish",
+        "id": 1045
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "word": "sense of doom",
+    "pos": "noun phrase",
+    "meaning": "cảm giác bất an như thể sắp có chuyện rất tồi tệ",
+    "image": "🌩️",
+    "us": "sens əv duːm",
+    "uk": "sens əv duːm",
+    "example": "I used to feel like fall meant an impending sense of doom.",
+    "translation": "Trước đây, cứ đến mùa thu là mình lại có cảm giác như sắp có chuyện tồi tệ xảy ra.",
+    "exampleLabel": "Trích phần câu có đủ ý trong phụ đề người dùng.",
+    "usage": "Thường dùng `a sense of doom` để nói về linh cảm một chuyện rất xấu sắp xảy ra.",
+    "contrast": "`A sense of danger` là cảm giác có mối nguy; `a sense of doom` mạnh hơn và gợi linh cảm về một kết cục rất xấu.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/doom",
+    "components": [
+      { "word": "sense", "id": 2624 },
+      { "word": "of", "id": 2009 },
+      { "word": "doom", "id": 3424 }
+    ]
+  },
+  {
+    "id": 9,
+    "word": "go all out",
+    "pos": "idiom",
+    "meaning": "dốc hết sức hoặc đầu tư hết mình để làm việc gì",
+    "image": "🎊",
+    "us": "ɡoʊ ɔːl aʊt",
+    "uk": "ɡəʊ ɔːl aʊt",
+    "example": "They went all out on the decorations this year.",
+    "translation": "Năm nay họ đầu tư hết mình vào việc trang trí.",
+    "usage": "Dùng `go all out for` trước dịp mình chuẩn bị kỹ, hoặc `go all out to` trước việc mình dốc sức làm.",
+    "contrast": "`Try hard` nhấn vào nỗ lực; `go all out` còn gợi việc không tiếc công hoặc tiền.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/go-all-out",
+    "components": [
+      {
+        "word": "go",
+        "id": 1314
+      },
+      {
+        "word": "all",
+        "id": 97
+      },
+      {
+        "word": "out",
+        "id": 3430
+      }
+    ]
+  },
+  {
+    "id": 10,
+    "word": "like a broken record",
+    "pos": "idiom",
+    "meaning": "nói đi nói lại cùng một điều",
+    "image": "💿",
+    "us": "laɪk ə ˈbroʊ.kən ˈrek.ɚd",
+    "uk": "laɪk ə ˈbrəʊ.kən ˈrek.ɔːd",
+    "example": "I sound like a broken record, but please back up your files.",
+    "translation": "Mình biết mình nói đi nói lại, nhưng nhớ sao lưu tệp nhé.",
+    "usage": "Dùng `sound like a broken record` khi một người liên tục nhắc lại cùng một ý. Hình ảnh chiếc đĩa bị xước gợi âm thanh cứ lặp lại.",
+    "contrast": "`Repeat yourself` mô tả việc lặp lại; thành ngữ này nhấn vào cảm giác nghe mãi một chuyện.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/be-sound-like-a-broken-record",
+    "components": [
+      {
+        "word": "like",
+        "id": 1717
+      },
+      {
+        "word": "a",
+        "id": 1
+      },
+      {
+        "word": "broken",
+        "id": 389
+      },
+      {
+        "word": "record",
+        "id": 2407
+      }
+    ]
+  },
+  {
+    "id": 11,
+    "word": "solo date",
+    "pos": "noun phrase",
+    "meaning": "buổi đi chơi một mình để dành thời gian cho bản thân",
+    "image": "☕",
+    "us": "ˈsoʊ.loʊ deɪt",
+    "uk": "ˈsəʊ.ləʊ deɪt",
+    "example": "I went on a solo date to the museum.",
+    "translation": "Mình dành một buổi tự đi chơi ở bảo tàng.",
+    "usage": "Dùng `go on a solo date`, chẳng hạn tự đi cà phê, xem phim hoặc ghé bảo tàng.",
+    "contrast": "`Go out alone` chỉ nói mình ra ngoài một mình. `Solo date` là một buổi đi chơi mình tự chọn để tận hưởng.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/solo",
+    "components": [
+      {
+        "word": "solo",
+        "id": 3432
+      },
+      {
+        "word": "date",
+        "id": 757
+      }
+    ]
+  },
+  {
+    "id": 12,
+    "word": "take charge",
+    "pos": "idiom",
+    "meaning": "đứng ra phụ trách hoặc điều hành",
+    "image": "🧭",
+    "us": "teɪk tʃɑːrdʒ",
+    "uk": "teɪk tʃɑːdʒ",
+    "example": "She took charge of the project when the manager left.",
+    "translation": "Cô ấy đứng ra phụ trách dự án khi quản lý rời đi.",
+    "usage": "Dùng `take charge of + việc/người`.",
+    "contrast": "`Be in charge` là đang phụ trách. `Take charge` là đứng ra nhận việc phụ trách.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/take-charge",
+    "components": [
+      {
+        "word": "take",
+        "id": 2964
+      },
+      {
+        "word": "charge",
+        "id": 486
+      }
+    ]
+  },
+  {
+    "id": 13,
+    "word": "come across",
+    "pos": "phrasal verb",
+    "meaning": "tình cờ gặp ai hoặc bắt gặp thứ gì",
+    "image": "🔎",
+    "us": "kʌm əˈkrɑːs",
+    "uk": "kʌm əˈkrɒs",
+    "example": "I came across an old photo while cleaning my desk.",
+    "translation": "Mình tình cờ thấy một bức ảnh cũ khi dọn bàn.",
+    "usage": "Dùng `come across + người/vật`; quá khứ `came across`.",
+    "contrast": "`Look for` là chủ động tìm; `come across` nhấn vào việc tình cờ gặp hoặc thấy.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/come-across?q=came-across",
+    "components": [
+      {
+        "word": "come",
+        "id": 567
+      },
+      {
+        "word": "across",
+        "id": 35
+      }
+    ]
+  },
+  {
+    "id": 14,
+    "word": "grocery haul",
+    "pos": "noun phrase",
+    "meaning": "những món vừa mua trong một lần đi chợ hoặc siêu thị",
+    "image": "🛒",
+    "us": "ˈɡroʊ.sɚ.i hɔːl",
+    "uk": "ˈɡrəʊ.sər.i hɔːl",
+    "example": "My grocery haul included eggs, apples, and bread.",
+    "translation": "Lần đi siêu thị này mình mua trứng, táo và bánh mì.",
+    "usage": "Dùng để nói về những món mua được trong cùng một lần đi chợ hoặc siêu thị.",
+    "contrast": "`Grocery shopping` là việc đi mua thực phẩm và đồ dùng. `Grocery haul` chỉ những món đã mua trong lần đi đó.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/haul",
+    "components": [
+      {
+        "word": "grocery",
+        "id": 1351
+      },
+      {
+        "word": "haul",
+        "id": 3434
+      }
+    ]
+  },
+  {
+    "id": 15,
+    "word": "speaking of",
+    "pos": "discourse marker",
+    "meaning": "nhân tiện nhắc đến chuyện vừa nói",
+    "image": "💬",
+    "us": "ˈspiː.kɪŋ əv",
+    "uk": "ˈspiː.kɪŋ əv",
+    "example": "Speaking of lunch, have you tried the new café?",
+    "translation": "Nhắc đến chuyện ăn trưa, bạn đã thử quán cà phê mới chưa?",
+    "usage": "Dùng `speaking of + người/chủ đề` để chuyển sang chuyện có liên quan đến điều vừa nhắc.",
+    "contrast": "`By the way` có thể mở một chuyện mới; `speaking of` nối rõ với chủ đề vừa xuất hiện.",
+    "source": "https://dictionary.cambridge.org/us/dictionary/english/speaking-of",
+    "components": [
+      {
+        "word": "speak",
+        "id": 2787
+      },
+      {
+        "word": "of",
+        "id": 2009
+      }
+    ]
+  },
+  {
+    "id": 16,
+    "word": "shout-out",
+    "pos": "n. · informal",
+    "meaning": "lời cảm ơn, chào hỏi hoặc ghi nhận ai trước mọi người",
+    "image": "📣",
+    "us": "ˈʃaʊt.aʊt",
+    "uk": "ˈʃaʊt.aʊt",
+    "example": "A quick shout-out to everyone who helped with the event.",
+    "translation": "Xin gửi lời cảm ơn đến mọi người đã giúp tổ chức sự kiện.",
+    "usage": "Dùng `a shout-out to + người` hoặc `give someone a shout-out`.",
+    "contrast": "`Thank someone` dùng được khi cảm ơn riêng; `a shout-out` thường là lời ghi nhận trước khán giả hoặc người theo dõi.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/shout-out",
+    "components": [
+      {
+        "word": "shout",
+        "id": 2686
+      },
+      {
+        "word": "out",
+        "id": 3430
+      }
+    ]
+  },
+  {
+    "id": 17,
+    "word": "fall apart",
+    "pos": "phrasal verb",
+    "meaning": "vỡ hoặc rời thành nhiều phần",
+    "image": "🍰",
+    "us": "fɔːl əˈpɑːrt",
+    "uk": "fɔːl əˈpɑːt",
+    "example": "The cake fell apart when I took it out of the pan.",
+    "translation": "Bánh vỡ vụn khi mình lấy ra khỏi khuôn.",
+    "usage": "Dùng khi một vật tự tách ra thành nhiều phần. Quá khứ `fell apart`. Nghĩa bóng cũng dùng cho kế hoạch hoặc một người đang suy sụp.",
+    "contrast": "`Break` có thể chỉ bị nứt hoặc gãy; `fall apart` gợi các phần rời nhau hoặc không giữ được hình dạng.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/fall-apart",
+    "components": [
+      {
+        "word": "fall",
+        "id": 1130
+      },
+      {
+        "word": "apart",
+        "id": 157
+      }
+    ]
+  },
+  {
+    "id": 18,
+    "word": "get it",
+    "pos": "idiom",
+    "meaning": "hiểu ý, hiểu lý do hoặc vừa hiểu ra",
+    "image": "💡",
+    "us": "ɡet ɪt",
+    "uk": "ɡet ɪt",
+    "example": "I get it now. The ticket is only valid on weekends.",
+    "translation": "Giờ mình hiểu rồi. Vé chỉ có giá trị vào cuối tuần.",
+    "usage": "Dùng `get it` khi hiểu lời giải thích hoặc nhận ra vì sao ai đó nghĩ như vậy. `I get it now` nhấn vào lúc vừa hiểu ra.",
+    "contrast": "`Understand` trung tính; `get it` mang sắc thái hội thoại.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/get-it",
+    "components": [
+      {
+        "word": "get",
+        "id": 1301
+      },
+      {
+        "word": "it",
+        "id": 1603
+      }
+    ]
+  },
+  {
+    "id": 19,
+    "word": "try out",
+    "pos": "phrasal verb",
+    "meaning": "thử dùng hoặc thử trải nghiệm để xem thế nào",
+    "image": "🧪",
+    "us": "traɪ aʊt",
+    "uk": "traɪ aʊt",
+    "example": "Let's try out that new café this weekend.",
+    "translation": "Cuối tuần này mình đi thử quán cà phê mới đó nhé.",
+    "usage": "Dùng `try out + thứ muốn thử` hoặc `try + thứ đó + out`. Với đại từ, dùng `try it out`.",
+    "contrast": "`Try to do` là cố gắng làm; `try out` tập trung vào việc trải nghiệm để xem thế nào.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/try-out",
+    "components": [
+      {
+        "word": "try",
+        "id": 3122
+      },
+      {
+        "word": "out",
+        "id": 3430
+      }
+    ]
+  },
+  {
+    "id": 20,
+    "word": "close by",
+    "pos": "adverbial phrase",
+    "meaning": "ở gần, ở quanh đây",
+    "image": "📍",
+    "us": "kloʊs baɪ",
+    "uk": "kləʊs baɪ",
+    "example": "Is there a pharmacy close by?",
+    "translation": "Quanh đây có hiệu thuốc nào không?",
+    "usage": "Dùng sau động từ hoặc danh từ để nói địa điểm ở gần. `Close` trong cụm đọc âm cuối /s/.",
+    "contrast": "`Nearby` gần nghĩa và còn có thể đứng trước danh từ, như `a nearby café`.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/close-by",
+    "components": [
+      {
+        "word": "close",
+        "id": 539
+      },
+      {
+        "word": "by",
+        "id": 413
+      }
+    ]
+  },
+  {
+    "id": 21,
+    "word": "go with",
+    "pos": "phrasal verb",
+    "meaning": "chọn một món hoặc một phương án",
+    "image": "✅",
+    "us": "ɡoʊ wɪð",
+    "uk": "ɡəʊ wɪð",
+    "example": "I'll go with the mushroom soup.",
+    "translation": "Mình chọn súp nấm nhé.",
+    "usage": "Dùng `go with + lựa chọn`, thường nghe khi gọi món hoặc cân nhắc vài phương án.",
+    "contrast": "`Choose` trung tính; `go with` là cách nói hội thoại khi chốt một lựa chọn.",
+    "source": "https://dictionary.cambridge.org/dictionary/english/go-with",
+    "components": [
+      {
+        "word": "go",
+        "id": 1314
+      },
+      {
+        "word": "with",
+        "id": 3346
+      }
+    ]
+  }
+]

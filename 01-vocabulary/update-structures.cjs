@@ -1,0 +1,82 @@
+const fs=require('fs'),path=require('path');const file=path.join(__dirname,'../04-common-structures/common-structures.html');let html=fs.readFileSync(file,'utf8');
+const groups=[
+['v500-ability','Nói về khả năng: can, able, capable, ability',5,'Khả năng thông thường: can. Cần dạng tương lai hoặc sau động từ khác: be able to. Nhấn mạnh năng lực: capable of. Gọi tên năng lực: ability.',[
+['Can + động từ nguyên mẫu','S + can + V','I can swim across this pool.','Tôi có thể bơi qua bể bơi này.','Sau can dùng swim trực tiếp, không có to; can không thêm s với he/she.'],
+['Be able to: có thể làm','S + be + able + to + V','I am able to swim across this pool.','Tôi có thể bơi qua bể bơi này.','Am chia theo I. Câu này và can swim đều dùng được; can thường gọn và tự nhiên hơn khi nói khả năng hiện tại.'],
+['Dùng được ở tương lai','S + will + be + able + to + V','I will be able to swim after the course.','Tôi sẽ có thể bơi sau khóa học.','Dùng be able to sau will; không dùng will can.'],
+['Capable of: có năng lực','S + be + capable + of + N / V-ing','She is capable of solving this problem.','Cô ấy có khả năng giải quyết vấn đề này.','Of là giới từ nên động từ sau nó là solving; không dùng capable to solve.'],
+['Ability: danh từ chỉ khả năng','S + have/has + the ability + to + V','She has the ability to solve difficult problems.','Cô ấy có khả năng giải những bài toán khó.','Ability là danh từ; to solve nêu năng lực đó là làm gì.']]],
+['v500-verb-to','Động từ + to V: afford, agree, aim, arrange, attempt',70,'Muốn nói đủ tiền để làm: afford to. Đồng ý: agree to. Đặt mục tiêu: aim to. Thu xếp: arrange to. Thử thực hiện: attempt to. Các động từ không đồng nghĩa; chúng có chung dạng theo sau.',[
+['Afford to: có đủ điều kiện làm','S + can/cannot + afford + to + V','We cannot afford to buy a new car.','Chúng tôi không đủ tiền mua ô tô mới.','Cannot afford thường nói giới hạn tiền bạc hoặc thời gian; buy theo sau to.'],
+['Agree to: đồng ý làm','S + agree(s)/agreed + to + V','They agreed to meet at noon.','Họ đồng ý gặp nhau lúc giữa trưa.','They là những người đồng ý và thực hiện việc gặp. Agree with someone là đồng ý với ý kiến của ai, không phải mẫu này.'],
+['Aim to: đặt mục tiêu làm','S + aim(s) + to + V','We aim to finish the work today.','Chúng tôi đặt mục tiêu hoàn thành công việc hôm nay.','Đây là mục tiêu dự định, không đảm bảo đã hoàn thành.'],
+['Arrange to: thu xếp làm','S + arrange(s)/arranged + to + V','We arranged to meet after work.','Chúng tôi thu xếp gặp nhau sau giờ làm.','Mẫu nêu việc đã thu xếp; không chỉ xếp đồ vật theo trật tự.'],
+['Attempt to: thử thực hiện','S + attempt(s)/attempted + to + V','He attempted to climb the wall.','Anh ấy thử leo lên tường.','Câu không khẳng định anh ấy leo thành công. So sánh try to ở mục đã có.']]],
+['v500-verb-ing','Động từ + V-ing: avoid, admit, appreciate',240,'Tránh một hành động: avoid doing. Thừa nhận đã làm: admit doing. Trân trọng sự giúp đỡ: appreciate someone doing. Không đổi máy móc thành to V.',[
+['Avoid doing','S + avoid(s) + V-ing','I avoid driving during rush hour.','Tôi tránh lái xe vào giờ cao điểm.','Driving là hành động được tránh. Không dùng avoid to drive.'],
+['Admit doing','S + admit(s)/admitted + V-ing','He admitted breaking the window.','Anh ấy thừa nhận đã làm vỡ cửa sổ.','Breaking nêu việc anh ấy thừa nhận. Câu kể sự thừa nhận trong quá khứ; không cần đổi thành admitted to break.'],
+['Appreciate someone doing','S + appreciate(s) + O + V-ing','I appreciate you helping me.','Tôi rất cảm kích việc bạn giúp tôi.','You là người giúp, I là người cảm kích. Your helping me cũng có thể dùng, trang trọng hơn.']]],
+['v500-person-to','Ai làm hành động? Allow, ask, advise + người + to V',100,'Cho phép: allow. Nhờ hoặc yêu cầu: ask. Khuyên: advise. Người đứng sau các động từ này là người thực hiện hành động sau to.',[
+['Allow someone to do','S + allow(s) + O + to + V','They allow visitors to take photos.','Họ cho phép khách tham quan chụp ảnh.','Visitors là người chụp ảnh. Không bỏ visitors rồi giữ nguyên mẫu allow to take.'],
+['Ask someone to do','S + ask(s)/asked + O + to + V','I asked him to open the window.','Tôi nhờ anh ấy mở cửa sổ.','Him thực hiện việc mở cửa, không phải I.'],
+['Advise someone to do','S + advise(s)/advised + O + to + V','The doctor advised me to rest.','Bác sĩ khuyên tôi nghỉ ngơi.','Me là người nên nghỉ. Đây là lời khuyên, khác với sự cho phép trong allow.']]],
+['v500-prep-ing','Giới từ đi với từ: accuse of, afraid of, apologize for, approve of',29,'Buộc tội ai làm gì: accuse someone of. Sợ: afraid of. Xin lỗi vì: apologize for. Tán thành: approve of. Học cả giới từ; sau giới từ dùng danh từ hoặc V-ing.',[
+['Accuse someone of','S + accuse(s)/accused + O + of + N / V-ing','They accused him of stealing a bicycle.','Họ buộc tội anh ấy ăn cắp một chiếc xe đạp.','Him là người bị buộc tội; stealing theo sau of. Lời buộc tội không khẳng định cáo buộc đúng.'],
+['Be afraid of','S + be + afraid + of + N / V-ing','He is afraid of flying.','Anh ấy sợ đi máy bay.','Flying chỉ trải nghiệm khiến anh ấy sợ; sau of không dùng fly nguyên mẫu.'],
+['Apologize for','S + apologize(s) + for + N / V-ing','I apologize for arriving late.','Tôi xin lỗi vì đến muộn.','Arriving late là lý do xin lỗi. Có thể thêm to someone để chỉ người nhận lời xin lỗi.'],
+['Apologize to someone for','S + apologize(s)/apologized + to + O + for + N / V-ing','I apologized to Mai for arriving late.','Tôi xin lỗi Mai vì đến muộn.','To Mai chỉ người; for arriving late chỉ lý do. Không đảo hai giới từ này.'],
+['Approve of','S + approve(s) + of + N / V-ing','My parents approve of my decision.','Bố mẹ tôi tán thành quyết định của tôi.','My decision là danh từ. Approve a request không có of thường là phê duyệt chính thức một yêu cầu, khác sắc thái tán thành của approve of.']]],
+['v500-arrive','Arrive at, arrive in và arrive home',194,'Đến một điểm như ga hoặc sân bay: at. Đến thành phố hoặc quốc gia: in. Với home, here, there: không thêm giới từ chỉ nơi đến.',[
+['Arrive at một địa điểm','S + arrive(s)/arrived + at + N','We arrived at the airport early.','Chúng tôi đến sân bay sớm.','Airport được xem như điểm đến cụ thể; không dùng arrive to the airport.'],
+['Arrive in một thành phố hoặc quốc gia','S + arrive(s)/arrived + in + N','We arrived in London on Friday.','Chúng tôi đến London vào thứ Sáu.','London là thành phố nên dùng in; on Friday chỉ thời gian.'],
+['Arrive home','S + arrive(s)/arrived + home/here/there','We arrived home at nine.','Chúng tôi về đến nhà lúc chín giờ.','Home ở đây là trạng từ chỉ nơi đến. At nine nói thời gian, không phải nơi chốn.']]],
+['v500-although','Although, but và despite: diễn tả tương phản',115,'Nối hai phần câu bằng mặc dù: although. Nói nhưng: but. Sau despite dùng danh từ hoặc V-ing. Chọn một cách nối phù hợp.',[
+['Although + mệnh đề','Although + S + V, S + V','Although it was cold, we went outside.','Mặc dù trời lạnh, chúng tôi vẫn ra ngoài.','It was cold có chủ ngữ và động từ. Không thêm but trước we trong câu này.'],
+['But nối hai ý','S + V, but + S + V','It was cold, but we went outside.','Trời lạnh, nhưng chúng tôi vẫn ra ngoài.','Tình huống tương tự; cấu trúc nối thay đổi. Không ghép although và but cùng một cặp mệnh đề.'],
+['Despite + danh từ','Despite + N / V-ing, S + V','Despite the cold weather, we went outside.','Mặc dù thời tiết lạnh, chúng tôi vẫn ra ngoài.','The cold weather là cụm danh từ. Không dùng despite of. In spite of the cold weather cũng đúng, với of thuộc cả cụm in spite of.']]],
+['v500-apply','Apply for, apply to và apply something to',169,'Xin một vị trí hoặc khoản hỗ trợ: apply for. Nộp cho một cơ quan: apply to. Áp dụng kiến thức vào việc gì: apply something to.',[
+['Apply for thứ muốn xin','S + apply/applies/applied + for + N','She applied for a job at the museum.','Cô ấy nộp đơn xin việc ở bảo tàng.','A job là vị trí muốn xin; at the museum bổ sung nơi làm việc.'],
+['Apply to nơi nhận đơn','S + apply/applies/applied + to + N + for + N','She applied to the museum for a job.','Cô ấy nộp đơn đến bảo tàng để xin việc.','The museum là tổ chức nhận đơn; for a job nói mục đích xin.'],
+['Apply kiến thức','S + apply/applies/applied + O + to + N','She applied her knowledge to the project.','Cô ấy áp dụng kiến thức của mình vào dự án.','Đây là nghĩa áp dụng, không phải nộp đơn; her knowledge là điều được đem áp dụng.']]],
+['v500-based','Be based on: dựa trên',269,'Nói tác phẩm hoặc ý kiến dựa trên điều gì: be based on. Nếu chủ động xây dựng kết luận trên dữ liệu, dùng base something on.',[
+['Be based on','S + be + based + on + N','The film is based on a true story.','Bộ phim dựa trên một câu chuyện có thật.','The film là thứ được xây dựng từ câu chuyện; based không phải tính từ basic.'],
+['Base something on','S + base(s)/based + O + on + N','We based our decision on the results.','Chúng tôi dựa quyết định của mình trên các kết quả.','Our decision là điều được đặt cơ sở; the results là cơ sở được sử dụng.']]],
+['v500-behalf','On behalf of và on someone’s behalf',296,'Khi đại diện hoặc làm thay một người/nhóm, dùng on behalf of + người/nhóm, hoặc on + sở hữu + behalf.',[
+['On behalf of + người hoặc nhóm','S + V + on behalf of + N','I am speaking on behalf of the team.','Tôi đang phát biểu thay mặt cho cả nhóm.','The team là nhóm được đại diện. Behalf hiếm khi được dùng độc lập ngoài các cụm như vậy.'],
+['On my/your/his/her behalf','S + V + on + my/your/his/her/our/their + behalf','She signed the letter on my behalf.','Cô ấy ký bức thư thay tôi.','My đứng trước behalf thay cho of me; không dùng on my behalf of.']]],
+['v500-borrow','Borrow và lend: mượn hay cho mượn?',355,'Người nhận tạm một vật: borrow … from. Người đưa vật cho mượn: lend … to. Hai câu có thể kể cùng một giao dịch từ hai phía.',[
+['Borrow something from someone','S + borrow(s)/borrowed + O + from + N','I borrowed a pen from Mai.','Tôi mượn Mai một chiếc bút.','I là người nhận bút tạm thời, Mai là người cho mượn.'],
+['Lend something to someone','S + lend(s)/lent + O + to + N','Mai lent a pen to me.','Mai cho tôi mượn một chiếc bút.','Mai là người đưa bút. Câu kể cùng tình huống với câu trước nhưng đổi góc nhìn; lend có dạng quá khứ lent.'],
+['Lend someone something','S + lend(s)/lent + O + N','Mai lent me a pen.','Mai cho tôi mượn một chiếc bút.','Có thể đặt me ngay sau lent và bỏ to. Không dùng borrowed me a pen để nói Mai cho tôi mượn trong cách dùng chuẩn này.']]],
+['v500-bound','Be bound to: rất chắc sẽ xảy ra',361,'Dự đoán điều gần như chắc chắn sẽ xảy ra: be bound to. Cụm này không chỉ đơn thuần nói khả năng làm được như be able to.',[
+['Be bound to + động từ','S + be + bound + to + V','You are bound to feel tired after that walk.','Chắc chắn bạn sẽ thấy mệt sau chuyến đi bộ đó.','Người nói dự đoán dựa trên chuyến đi bộ; không nói bạn bị buộc phải mệt.'],
+['So với be likely to','S + be + likely + to + V','You are likely to feel tired after that walk.','Bạn có khả năng sẽ thấy mệt sau chuyến đi bộ đó.','Likely cũng nói dự đoán nhưng thường ít chắc hơn bound. Cả hai đều đi với to + động từ.']]],
+['v500-busy','Busy doing, busy with và too busy to',407,'Bận làm hành động: busy doing. Bận với một việc: busy with + danh từ. Quá bận nên không làm được việc khác: too busy to.',[
+['Busy doing','S + be + busy + V-ing','She is busy preparing dinner.','Cô ấy đang bận chuẩn bị bữa tối.','Preparing là việc đang khiến cô ấy bận. Không dùng busy to prepare để diễn đạt ý này.'],
+['Busy with một việc','S + be + busy + with + N','She is busy with dinner preparations.','Cô ấy đang bận với việc chuẩn bị bữa tối.','Dinner preparations là cụm danh từ; sau with không đặt prepare nguyên mẫu.'],
+['Too busy to: quá bận để làm','S + be + too + busy + to + V','She is too busy to answer the phone.','Cô ấy quá bận nên không thể nghe điện thoại.','Answer the phone là việc không làm được do quá bận; không phải việc đang làm cô ấy bận.']]],
+['v500-care','Care for, care about và take care of',441,'Chăm sóc: care for hoặc take care of. Thấy ai/điều gì quan trọng, quan tâm về mặt cảm xúc: care about. Care for còn có nghĩa tình cảm hoặc thích trong ngữ cảnh khác.',[
+['Care for: chăm sóc','S + care(s)/cared + for + N','She cares for her elderly father.','Cô ấy chăm sóc người cha cao tuổi.','For her elderly father nói người nhận sự chăm sóc.'],
+['Take care of: chăm sóc','S + take(s)/took + care + of + N','She takes care of her elderly father.','Cô ấy chăm sóc người cha cao tuổi.','Trong tình huống này, hai cách đều dùng được. Take chia theo she thành takes.'],
+['Care about: quan tâm; coi trọng','S + care(s)/cared + about + N','She cares about her father’s happiness.','Cô ấy quan tâm đến hạnh phúc của cha.','Câu nêu điều cô ấy coi trọng; không tự khẳng định cô ấy thực hiện chăm sóc hằng ngày.']]]
+];
+const e=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sections=groups.map(([id,title,n,intro,patterns])=>`<section class="chapter" id="${id}"><div class="section-letter" aria-hidden="true">V</div><div class="section-body"><h2>${e(title)}</h2><div class="note"><strong>Chọn nhanh:</strong> ${e(intro)}</div><p>S = chủ ngữ; V = động từ nguyên mẫu trong mẫu to/can, hoặc phần động từ đã chia trong mệnh đề; N = danh từ/cụm danh từ; O = tân ngữ (người/vật chịu tác động); V-ing = dạng động từ thêm -ing. Be đổi thành am/is/are/was/were theo câu.</p>${patterns.map(([t,f,en,vi,ex])=>`<div class="learning-point"><h3>${e(t)}</h3><p class="formula" lang="en">${e(f)}</p><div class="example"><div class="sentence-pair"><p lang="en">${e(en)}</p><p class="translation">${e(vi)}</p></div><p class="explanation">${e(ex)}</p></div></div>`).join('')}</div><p class="back-to-lesson"><a href="../01-vocabulary/common-vocabulary.html#word-${n}">← Về từ vựng #${n}</a></p></section>`).join('\n');
+if(!html.includes('id="v500-ability"')){html=html.replace('</article>',sections+'</article>');html=html.replace('</nav>',`<div class="nav-formulas"><p class="nav-title">Trong 500 mục từ đầu</p>${groups.map(([id,title])=>`<a href="#${id}">${e(title)}</a>`).join('')}</div></nav>`);html=html.replace('</template>',`<section><h2>500 mục từ đầu — nguồn cấu trúc</h2><p>Biên soạn 01/11/2026. Tất cả ví dụ trong các mục có ID v500- là tự soạn, không trích nguyên văn. Đã đối chiếu các trang và đoạn kết quả tìm kiếm sau; Cambridge có trang chặn mở trực tiếp, không coi audio là đã xác minh.</p><ul>${[
+'https://learnenglish.britishcouncil.org/free-resources/grammar/english-grammar-reference/verbs-followed-ing-form',
+'https://dictionary.cambridge.org/dictionary/english/be-able-to-do',
+'https://dictionary.cambridge.org/us/dictionary/english/allow',
+'https://learnenglish.britishcouncil.org/free-resources/grammar/a1-a2/verbs-followed-ing-or-infinitive?page=2',
+'https://dictionaryblog.cambridge.org/2015/09/02/in-london-but-at-the-station-prepositions-for-talking-about-travel/',
+'https://learnenglish.britishcouncil.org/free-resources/grammar/b1-b2/contrasting-ideas-although-despite-others?page=0',
+'https://dictionary.cambridge.org/us/dictionary/english/apply',
+'https://dictionary.cambridge.org/dictionary/english/on-behalf-of',
+'https://www.abc.net.au/education/learn-english/learn-english-lend-and-borrow/7379624',
+'https://downloads.bbc.co.uk/worldservice/learningenglish/quiznet/pdfs/qnet_312_modal_expressions.pdf',
+'https://downloads.bbc.co.uk/learningenglish/features/qanda/bbc_qanda_adjective_to_do_doing.pdf',
+'https://dictionary.cambridge.org/dictionary/english/care-for',
+'https://learnenglish.britishcouncil.org/comment/135013'
+].map(u=>`<li><a href="${e(u)}">${e(u)}</a></li>`).join('')}</ul></section></template>`);}
+html=html.replace("const grammar = new URL('../03-grammar/grammar.html', location.href);\n    if (target.origin !== grammar.origin || target.pathname !== grammar.pathname) return;","const grammar = new URL('../03-grammar/grammar.html', location.href);\n    const vocabulary = new URL('../01-vocabulary/common-vocabulary.html', location.href);\n    if (target.origin !== grammar.origin || ![grammar.pathname, vocabulary.pathname].includes(target.pathname)) return;");
+html=html.replace(/if \(target\.origin !== grammar\.origin \|\| target\.pathname !== grammar\.pathname\) return;/,"const vocabulary = new URL('../01-vocabulary/common-vocabulary.html', location.href);\n    if (target.origin !== grammar.origin || ![grammar.pathname, vocabulary.pathname].includes(target.pathname)) return;");
+fs.writeFileSync(file,html,'utf8');console.log('Saved '+groups.length+' structure groups.');

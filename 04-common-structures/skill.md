@@ -1,0 +1,20 @@
+---
+name: common-sentence-structures
+description: Duy trì trang HTML tra cứu các cấu trúc câu thông dụng, bao gồm cấu trúc phụ xuất hiện trong bài grammar, và liên kết từ bài học tới đúng mục.
+---
+
+# Các cấu trúc câu thông dụng
+
+- Duy trì `04-common-structures/common-structures.html` tại chỗ. Đây là trang tra cứu cấu trúc dùng chung; bài học theo unit vẫn ở `03-grammar/grammar.html`. Sổ phân tích câu/ảnh người dùng gửi vẫn theo `02-sentence-structures/skill.md`. Không tạo sổ Markdown.
+- Khi một ví dụ grammar có cấu trúc phụ như when/while, because/so, want to hoặc try to cần giải thích, đặt phần giải thích ở trang này. Grammar giữ ví dụ, nghĩa và phân tích phục vụ trọng tâm bài; dẫn bằng đường dẫn tương đối kèm ID đến đúng cấu trúc. Không nhân bản phần giảng cấu trúc phụ ở grammar.
+- Tra nội dung hiện có trước khi thêm mục; bổ sung vào cấu trúc phù hợp thay vì tạo bản trùng theo từng unit. Giữ các ID cũ khi biên tập hoặc hợp nhất. Với nội dung chuyển từ grammar, giữ điểm dẫn tại ID cũ và sửa các liên kết trong grammar tới trang mới.
+- Mỗi cấu trúc có tên, cách dùng bằng tiếng Việt tự nhiên, công thức, ví dụ tiếng Anh đầy đủ, bản dịch sát ví dụ và giải thích vì sao ví dụ phù hợp. Giải thích ký hiệu khi xuất hiện; công thức chỉ gồm ký hiệu và từ tiếng Anh. Các ví dụ tự soạn, điều chỉnh và nguyên văn phải được phân biệt trong hồ sơ nguồn.
+- Viết từng mục như một trang tra cứu độc lập cho người mới. Dòng nghĩa và lời giải thích dùng từ quen thuộc, nói rõ người học dùng mẫu để diễn đạt điều gì. Nếu ví dụ cần bối cảnh, nêu ngay cạnh câu. Liên kết sang bài khác để đọc thêm, còn ý chính và ví dụ phải đủ hiểu tại chỗ.
+- Mở đầu mỗi nhóm bằng cách chọn nhanh theo điều người học muốn nói, rồi mới đi vào công thức. Bổ sung các mẫu liên quan phổ biến của cùng từ và các từ/cụm gần nghĩa nhưng khác cách dùng, khi chúng giúp người học lựa chọn thực tế. Ví dụ với want: muốn một thứ, muốn tự làm, muốn ai làm; đối chiếu với would like, hope, wish hoặc feel like. Không dừng ở một mẫu đơn lẻ hay danh sách từ đồng nghĩa.
+- Mỗi mẫu bổ sung cần nghĩa, công thức, ví dụ đầy đủ, dịch và giải thích tại chỗ. Ưu tiên cặp câu cùng tình huống để thấy khác biệt về người thực hiện, ý nghĩa, mức độ lịch sự hoặc dạng theo sau (danh từ, to + V, V-ing, mệnh đề). Nói rõ khi hai cách đều dùng được, khi thay từ phải đổi cấu trúc, và khi chúng không đồng nghĩa. Chọn mẫu thông dụng, không kéo dài bằng mẫu hiếm hoặc ép số lượng cố định. Dùng neo tới mục liên quan đã có thay vì viết lại nội dung.
+- Giữ giao diện trang giáo trình như grammar: CSS nội bộ, UTF-8, `lang="vi"`, mục lục neo hiển thị sẵn, ví dụ và dịch đặt cạnh nhau ở desktop và xếp dọc trên điện thoại. Không ẩn nội dung sau nút mở. Trang này không bắt buộc IPA/audio như sổ phân tích câu độc lập.
+- Mỗi mục có ID ổn định và liên kết trở về bài grammar liên quan. Khi liên kết từ trang này tới phần còn ở grammar, dùng `../03-grammar/grammar.html#ID`.
+- Khi mở từ grammar, lưu URL và vị trí cuộn của trang xuất phát trong tham số liên kết; các nút trở về phải đưa người đọc về đúng vị trí đã bấm, kể cả khi họ cuộn sang cấu trúc khác. Giữ liên kết tĩnh làm dự phòng khi mở trực tiếp hoặc tắt JavaScript. Với bố cục `.chapter` dạng grid, phần trở về là hàng riêng chiếm đủ chiều rộng (`grid-column: 1 / -1`), không rơi vào cột ký hiệu hẹp.
+- Khi chỉ chuyển bố cục, bảo toàn nội dung và hồ sơ nguồn đã có; không cần tra lại quy tắc không đổi. Khi thêm hoặc đổi kiến thức, đọc nguồn uy tín và lưu tài liệu/URL thực sự dùng trong `<template id="reference-record">`, không đưa hồ sơ nguồn vào giao diện đọc.
+- Trước khi giao, kiểm tra ID duy nhất, tất cả liên kết giữa các trang và neo tồn tại, nội dung chuyển không bị mất, mục lục đúng và có đường quay lại bài học. Nêu đúng giới hạn kiểm tra giao diện; giao liên kết HTML và skill đã sửa.
+- Khi thêm hoặc sửa nhiều mẫu, mở từng mục như người đọc đi thẳng từ một liên kết. Kiểm tra cả lô để chắc rằng nghĩa, cách dùng và ví dụ đọc hiểu được tại chỗ. Nếu góp ý nêu một lỗi có thể lặp lại, rà các mục vừa thêm khác trước khi giao.
